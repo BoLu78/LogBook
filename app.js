@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -30,11 +30,42 @@ function normalizeTypes(d) {
     else if (TYPE_ALIAS[t]) t = TYPE_ALIAS[t];
     if (t !== f.type) { f.type = t; n++; }
   }
+  // sessioni al simulatore: nome come nella lista FlightLog, tipo ricavato dalle note o dalla flotta del periodo
+  const fls = (d?.flights || []).filter(f => f.kind === 'flight' && f.type).sort((a, b) => a.date.localeCompare(b.date));
+  const near = date => { let lo = 0, hi = fls.length - 1, best = null; while (lo <= hi) { const m = (lo + hi) >> 1; if (fls[m].date <= date) { best = fls[m]; lo = m + 1; } else hi = m - 1; } return (fls.find(x => x.date >= date) || best)?.type || ''; };
+  for (const f of d?.flights || []) {
+    if (f.kind !== 'sim' || f.simChecked) continue;
+    const old = f.simType;
+    const name = simName(f, near(f.date));
+    // nell'Excel il campo a volte conteneva il nome dell'istruttore
+    const isPerson = old && !/sim|ffs|ftd|lpc|opc|occ|747|737|787|p180|avanti|b7|zftt|skill|refresh|recency|test|\brt\b/i.test(old);
+    if (/^self$/i.test(old)) { /* nulla da tenere */ } else if (isPerson && !f.picName) f.picName = old;
+    const same = old && old.replace(/\s+/g, ' ').replace(/- (\d)/g, '-$1').replace(/^FFS /i, '').trim().toLowerCase() === name.toLowerCase();
+    if (old && !same && !/^self$/i.test(old) && !isPerson && !f.remarks.includes(old)) f.remarks = f.remarks ? `${old} / ${f.remarks}` : old;
+    f.simType = name; f.simChecked = 1; n++;
+  }
   return n;
 }
 // Flotta conosciuta (dalla lista aerei di FlightLog): marca -> modello
 const KNOWN_AIRCRAFT = {"4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400", "VQBWS": "B747-400"};
-const KNOWN_SIMS = ["FFS BOEING 737-800", "FFS BOEING 787-9 Dreamliner", "FFS BOEING 747-400", "FFS BOEING 747-8"];
+// Simulatori dalla lista aerei di FlightLog: sigla -> nome
+const SIM_DEVICES = { 'B787/B777 FSTD NL-787': 'Boeing 787-9[3]', 'DE-1A-113': 'Boeing 787-9[3]', 'DE1A-049': 'BOEING 747-400',
+  'EU-A0244': 'BOEING 787-9 Dreamliner', 'EU-A0250': 'BOEING 787-9 Dreamliner', 'EU-UKFB607': 'BOEING 787-9 Dreamliner', 'EU-UKFB637': 'BOEING 787-9 Dreamliner',
+  'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-800', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8',
+  'SIM B787/B777 NL-787': 'BOEING 787-9 Dreamliner', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
+const KNOWN_SIMS = ['BOEING 737-800', 'BOEING 787-9 Dreamliner', 'Boeing 787-9[3]', 'BOEING 747-8', 'BOEING 747-400', 'P180 Avanti'];
+const SIM_BY_FAMILY = { 'Piaggio P180': 'P180 Avanti', 'Boeing 747': 'BOEING 747-400', 'Boeing 787': 'BOEING 787-9 Dreamliner', 'Boeing 737': 'BOEING 737-800' };
+function simName(f, nearType) {
+  const raw = (f.simType || '').replace(/\s+/g, ' ').replace(/- (\d)/g, '-$1').replace(/^FFS /i, '').trim();
+  const hit = KNOWN_SIMS.find(n => n.toLowerCase() === raw.toLowerCase()); if (hit) return hit;
+  const txt = `${f.simType} ${f.remarks}`;
+  if (/747-?8|B748|conversion -8/i.test(txt)) return 'BOEING 747-8';
+  if (/737|B738|B38M/i.test(txt)) return 'BOEING 737-800';
+  if (/787|B789|B777/i.test(txt)) return 'BOEING 787-9 Dreamliner';
+  if (/747|B744/i.test(txt)) return 'BOEING 747-400';
+  if (/P180|avanti/i.test(txt)) return 'P180 Avanti';
+  return SIM_BY_FAMILY[familyOf(nearType)] || '';
+}
 const FAMILY = { 'Do328-110': 'Dornier 328', 'P180 Avanti 1': 'Piaggio P180', 'P180 Avanti 2': 'Piaggio P180', 'B747-400': 'Boeing 747', 'B747-8': 'Boeing 747', 'B787-9': 'Boeing 787', 'B737-800': 'Boeing 737', 'B737-8': 'Boeing 737' };
 const familyOf = t => FAMILY[t] || t || '—';
 const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
@@ -313,7 +344,7 @@ function viewEdit(main, id) {
   const isSim = f.kind === 'sim';
   const regs = [...new Set([...data.flights.map(x => x.reg), ...Object.keys(KNOWN_AIRCRAFT)].filter(Boolean))].sort();
   const typesL = [...new Set([...TYPE_ORDER, ...data.flights.map(x => x.type)].filter(Boolean))];
-  const simTypes = [...new Set([...KNOWN_SIMS, ...data.flights.map(x => x.simType)].filter(Boolean))];
+  const simTypes = [...new Set([...KNOWN_SIMS, ...Object.keys(SIM_DEVICES)])];
   const mpOn = !orig || f.mp > 0 || !(f.spSe || f.spMe);
   const ifrAll = !orig || f.ifr === f.total;
 
@@ -354,7 +385,7 @@ function viewEdit(main, id) {
     <div id="fSim" ${isSim ? '' : 'hidden'}>
     <fieldset><legend>Sessione</legend><div class="grid">
       <div class="field"><label for="sdate">Data</label><input id="sdate" type="date" value="${esc(f.date)}"></div>
-      <div class="field w2"><label for="simType">Tipo FSTD</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="FFS BOEING 737-800"></div>
+      <div class="field w2"><label for="simType">Simulatore</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="BOEING 737-800"></div>
       <div class="field"><label for="sout">Inizio</label><input id="sout" value="${esc(f.out)}"></div>
       <div class="field"><label for="sinn">Fine</label><input id="sinn" value="${esc(f.inn)}"></div>
       <div class="field"><label for="sim">Durata</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
@@ -380,6 +411,7 @@ function viewEdit(main, id) {
   $('#ifr').oninput = () => delete $('#ifr').dataset.auto;
   ['out', 'inn'].forEach(k => $('#' + k).addEventListener('change', autoTotal));
   $('#total').addEventListener('change', syncIfr);
+  $('#simType').addEventListener('change', () => { const v = $('#simType').value.trim(); if (SIM_DEVICES[v]) { const r = $('#remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; $('#simType').value = SIM_DEVICES[v]; } });
   const autoSim = () => { const o = toMin($('#sout').value), i = toMin($('#sinn').value); if (o != null && i != null) $('#sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));
   $('#reg').addEventListener('change', () => {
@@ -608,7 +640,7 @@ function viewData(main) {
 // ---------- avvio ----------
 (async () => {
   try { data = await idb.get('data') || null; } catch (e) { toast('Archivio locale non disponibile: ' + e.message); }
-  if (data && normalizeTypes(data)) await save('Nomi degli aerei aggiornati');
+  if (data && normalizeTypes(data)) await save('Nomi di aerei e simulatori aggiornati');
   try {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }

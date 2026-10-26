@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.1.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -163,11 +163,63 @@ function renderBackupState() {
   el.innerHTML = `Backup in <b>${esc(dirHandle.name)}</b><br>salvato alle ${lastBackup.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+// ---------- geografia: aeroporti, distanze, notte ----------
+const AP_FIX = { EBL: 'EBLG', ELBG: 'EBLG', LMJ: 'LIMJ', LMG: 'LIMG', DTNZ: 'DTNH' };
+let APT = null, aptLoading = null;
+function loadAirports() { return aptLoading ||= fetch('data/airports.json').then(r => r.json()).then(j => (APT = j)).catch(() => { aptLoading = null; return null; }); }
+const apt = c => APT && (APT[c] || APT[AP_FIX[c]]);
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+function gcNM(a, b) {
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(rad);
+  const h = Math.sin((la2 - la1) / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2;
+  return 2 * 3440.065 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+const nmCache = new Map();
+function nmOf(f) {
+  if (f.kind !== 'flight') return 0;
+  if (f.nm) return f.nm;
+  const k = f.dep + '|' + f.arr; if (nmCache.has(k)) return nmCache.get(k);
+  const A = apt(f.dep), B = apt(f.arr); const v = A && B ? Math.round(gcNM(A, B)) : 0;
+  if (APT) nmCache.set(k, v); return v;
+}
+// elevazione del sole in gradi (algoritmo NOAA semplificato, precisione circa 1 grado)
+function sunElev(ms, lat, lon) {
+  const d = ms / 86400000 + 2440587.5 - 2451545.0;
+  const g = rad((357.529 + 0.98560028 * d) % 360), q = (280.459 + 0.98564736 * d) % 360;
+  const L = rad(q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)), e = rad(23.439 - 0.00000036 * d);
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
+  const H = rad(gmst * 15 + lon) - ra, la = rad(lat);
+  return deg(Math.asin(Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(H)));
+}
+function gcPoint(A, B, t) {
+  const [la1, lo1, la2, lo2] = [A[0], A[1], B[0], B[1]].map(rad);
+  const v1 = [Math.cos(la1) * Math.cos(lo1), Math.cos(la1) * Math.sin(lo1), Math.sin(la1)], v2 = [Math.cos(la2) * Math.cos(lo2), Math.cos(la2) * Math.sin(lo2), Math.sin(la2)];
+  const w = Math.acos(Math.max(-1, Math.min(1, v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2])));
+  if (w < 1e-9) return A;
+  const s1 = Math.sin((1 - t) * w) / Math.sin(w), s2 = Math.sin(t * w) / Math.sin(w);
+  const v = [0, 1, 2].map(i => s1 * v1[i] + s2 * v2[i]);
+  return [deg(Math.asin(v[2])), deg(Math.atan2(v[1], v[0]))];
+}
+// notte EASA: dalla fine del crepuscolo civile serale all'inizio di quello mattutino (sole sotto -6 gradi), minuto per minuto lungo la rotta
+function nightCalc(date, out, inn, dep, arr) {
+  const A = apt(dep), B = apt(arr), o = toMin(out), i = toMin(inn);
+  if (!A || !B || o == null || i == null || !date) return null;
+  const dur = ((i - o) + 1440) % 1440; if (!dur) return null;
+  const t0 = Date.parse(`${date}T${String(Math.floor(o / 60)).padStart(2, '0')}:${String(o % 60).padStart(2, '0')}:00Z`);
+  let n = 0;
+  for (let m = 0; m < dur; m++) { const p = gcPoint(A, B, (m + .5) / dur); if (sunElev(t0 + (m + .5) * 60000, p[0], p[1]) < -6) n++; }
+  return { night: n, dur, toNight: sunElev(t0, A[0], A[1]) < -6, ldgNight: sunElev(t0 + dur * 60000, B[0], B[1]) < -6, nm: Math.round(gcNM(A, B)) };
+}
+const fmtN = n => Math.round(n).toLocaleString('it-IT');
+const parseDec = v => { const n = parseFloat(String(v || '').replace(',', '.')); return n > 0 ? n : 0; };
+
 // ---------- calcoli ----------
 function sum(list, withOpening) {
   const t = Object.fromEntries(SUM_KEYS.map(k => [k, 0])); t.legs = 0; t.sims = 0;
   if (withOpening && data.opening) for (const k of SUM_KEYS) t[k] += data.opening[k] || 0;
-  for (const f of list) { for (const k of SUM_KEYS) t[k] += f[k] || 0; if (f.kind === 'sim') t.sims++; else t.legs++; }
+  t.nm = 0; t.pax = 0; t.paxLegs = 0; t.fuelUsed = 0; t.fuelLegs = 0; t.payload = 0;
+  for (const f of list) { for (const k of SUM_KEYS) t[k] += f[k] || 0; if (f.kind === 'sim') t.sims++; else { t.legs++; t.nm += nmOf(f); if (f.pax) { t.pax += f.pax; t.paxLegs++; } if (f.fuelUsed) { t.fuelUsed += f.fuelUsed; t.fuelLegs++; } t.payload += f.payload || 0; } }
   return t;
 }
 const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.remarks) ? 'PICUS' : 'PIC') : f.dual > 0 ? 'DUAL' : f.sic > 0 ? 'SIC' : '';
@@ -241,6 +293,10 @@ function viewSummary(main) {
   const typ90 = sum(fl.filter(f => f.type === curType && f.date >= addDays(td, -89)));
   const ok90 = (typ90.toDay + typ90.toNight) >= 3 && (typ90.ldgDay + typ90.ldgNight) >= 3;
 
+  // miglia
+  if (!APT) loadAirports().then(j => { if (j && location.hash.replace('#', '') in { '': 1, riepilogo: 1 }) viewSummary(main); });
+  const flYears = new Set(list.filter(f => f.kind === 'flight').map(f => f.date.slice(0, 4))).size || 1;
+  const m12nm = m12.nm;
   // per tipo
   const byType = {}; for (const f of list) if (f.kind === 'flight') (byType[f.type || '—'] ||= []).push(f);
   const tl = Object.entries(byType).map(([k, v]) => [k, sum(v), v[v.length - 1].date]).sort((a, b) => typeRank(a[0]) - typeRank(b[0]) || a[2].localeCompare(b[2]));
@@ -255,7 +311,7 @@ function viewSummary(main) {
   const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
   const yl = Object.keys(byYear).sort().reverse().map(yr => [yr, sum(byYear[yr])]);
   const ymax = Math.max(...yl.map(x => x[1].total), 1);
-  const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Apri i mesi del ${yr}"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
+  const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Apri i mesi del ${yr}"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Riepilogo</h1>
     <label class="row filters" style="margin:0">Periodo
@@ -271,6 +327,15 @@ function viewSummary(main) {
       </div></div>
   </div>
   ${stripHTML(t)}
+  <h2>Miglia e curiosità</h2>
+  <div class="recency">
+    <div><b>${fmtN(t.nm)} NM</b><span>${sel === 'all' ? 'percorse in carriera' : 'percorse nel periodo'}, in linea d'aria</span></div>
+    <div><b>${fmtN(t.nm / flYears)} NM</b><span>media annuale${flYears > 1 ? ` su ${flYears} anni` : ''}</span></div>
+    <div><b>${fmtN(m12nm)} NM</b><span>ultimi 12 mesi</span></div>
+    <div><b>${t.legs ? fmtN(t.nm / t.legs) : 0} NM</b><span>distanza media per tratta</span></div>
+    ${t.paxLegs ? `<div><b>${fmtN(t.pax)}</b><span>passeggeri trasportati, su ${t.paxLegs} tratte con il dato</span></div>` : ''}
+    ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>carburante usato, su ${t.fuelLegs} tratte con il dato</span></div>` : ''}
+  </div>
   <h2>Limiti e recency</h2>
   <div class="recency">
     <div><b>${hm0(d28.total)}</b><span>ultimi 28 giorni, limite 100 h</span>${gauge(d28.total, 6000)}</div>
@@ -286,7 +351,7 @@ function viewSummary(main) {
   <table class="data"><thead><tr><th class="l">Tipo</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${trows}</tbody></table>
   ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per tipo e per anno.</p>` : ''}
   <h2>Per anno</h2>
-  <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
+  <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
   const yt = main.querySelectorAll('table.data')[2].tBodies[0];
   const open = e => { const tr = e.target.closest('tr[data-year]'); if (tr) showYear(tr.dataset.year); };
@@ -299,17 +364,17 @@ function showYear(yr) {
   const tot = sum(data.flights.filter(f => f.date.startsWith(yr)));
   const max = Math.max(...rows.map(r => r[2].total), 1);
   const body = rows.map(([m, , s]) => s.legs || s.sims
-    ? `<tr><td class="l"><b>${m}</b></td><td class="barcell">${splitBar(s, max)}</td><td>${s.legs || ''}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.dual)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`
-    : `<tr class="idle"><td class="l">${m}</td><td class="barcell"></td><td colspan="9" class="l hint">nessun volo</td></tr>`).join('');
+    ? `<tr><td class="l"><b>${m}</b></td><td class="barcell">${splitBar(s, max)}</td><td>${s.legs || ''}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.dual)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`
+    : `<tr class="idle"><td class="l">${m}</td><td class="barcell"></td><td colspan="10" class="l hint">nessun volo</td></tr>`).join('');
   const act = rows.filter(r => r[2].total);
   const best = act.length ? act.reduce((a, b) => b[2].total > a[2].total ? b : a) : null;
   let dlg = $('#yearDlg');
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'yearDlg'; document.body.append(dlg); dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); }
   dlg.innerHTML = `<div class="dlg-head"><div><h2>${yr}, mese per mese</h2>
-      <p class="lede">${tot.legs} tratte, ${hm0(tot.total)} di volo, media per tratta ${avg(tot)}${act.length ? `, ${hm0(Math.round(tot.total / act.length))} al mese nei mesi con voli` : ''}${best ? `. Il mese più pieno è ${best[0].toLowerCase()} con ${hm0(best[2].total)}` : ''}.</p></div>
+      <p class="lede">${tot.legs} tratte, ${hm0(tot.total)} di volo, media per tratta ${avg(tot)}, ${fmtN(tot.nm)} NM${act.length ? `, ${hm0(Math.round(tot.total / act.length))} al mese nei mesi con voli` : ''}${best ? `. Il mese più pieno è ${best[0].toLowerCase()} con ${hm0(best[2].total)}` : ''}.</p></div>
       <button class="btn" id="dlgClose" aria-label="Chiudi">Chiudi</button></div>
-    <table class="data"><thead><tr><th class="l">Mese</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Dual</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead>
-    <tbody>${body}<tr class="sum"><td class="l">Totale ${yr}</td><td></td><td>${tot.legs}</td><td>${hm0(tot.total)}</td><td>${avg(tot)}</td><td>${hm(tot.pic)}</td><td>${hm(tot.sic)}</td><td>${hm(tot.dual)}</td><td>${hm(tot.night)}</td><td>${tot.ldgDay + tot.ldgNight || ''}</td><td>${hm(tot.sim)}</td></tr></tbody></table>
+    <table class="data"><thead><tr><th class="l">Mese</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Dual</th><th>Notte</th><th>Atterr.</th><th>NM</th><th>Sim</th></tr></thead>
+    <tbody>${body}<tr class="sum"><td class="l">Totale ${yr}</td><td></td><td>${tot.legs}</td><td>${hm0(tot.total)}</td><td>${avg(tot)}</td><td>${hm(tot.pic)}</td><td>${hm(tot.sic)}</td><td>${hm(tot.dual)}</td><td>${hm(tot.night)}</td><td>${tot.ldgDay + tot.ldgNight || ''}</td><td>${tot.nm ? fmtN(tot.nm) : ''}</td><td>${hm(tot.sim)}</td></tr></tbody></table>
     <p class="row" style="margin-top:14px"><button class="btn" id="dlgVoli">Vedi i voli del ${yr}</button></p>`;
   $('#dlgClose').onclick = () => dlg.close();
   $('#dlgVoli').onclick = () => { dlg.close(); viewFlights.st = { year: yr, type: '', q: '', all: false }; location.hash = 'voli'; if (location.hash === '#voli') route(); };
@@ -392,12 +457,19 @@ function viewEdit(main, id) {
         <label><input type="checkbox" id="mpOn" ${mpOn ? 'checked' : ''}> Multi pilot</label></div>
       <p class="hint" id="roleHint"></p></fieldset>
     <fieldset><legend>Condizioni, decolli e atterraggi</legend><div class="grid">
-      <div class="field"><label for="night">Notte</label><input id="night" value="${hm(f.night)}" placeholder="0:00"></div>
+      <div class="field"><label for="night">Notte</label><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night ? 'data-auto="1"' : ''}></div>
       <div class="field"><label for="ifr">IFR</label><input id="ifr" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></div>
       <div class="field"><label for="toDay">Decolli giorno</label><input id="toDay" type="number" min="0" value="${f.toDay || ''}"></div>
       <div class="field"><label for="toNight">Decolli notte</label><input id="toNight" type="number" min="0" value="${f.toNight || ''}"></div>
       <div class="field"><label for="ldgDay">Atterr. giorno</label><input id="ldgDay" type="number" min="0" value="${f.ldgDay || ''}"></div>
       <div class="field"><label for="ldgNight">Atterr. notte</label><input id="ldgNight" type="number" min="0" value="${f.ldgNight || ''}"></div>
+    </div><p class="hint" id="nightHint" aria-live="polite"></p></fieldset>
+    <fieldset><legend>Dati del volo (facoltativi)</legend><div class="grid">
+      <div class="field"><label for="pax">Passeggeri</label><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}"></div>
+      <div class="field"><label for="payload">Payload (t)</label><input id="payload" inputmode="decimal" value="${f.payload || ''}"></div>
+      <div class="field"><label for="fuelPlan">Carburante pianificato (t)</label><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}"></div>
+      <div class="field"><label for="fuelUsed">Carburante usato (t)</label><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}"></div>
+      <div class="field w2"><label for="approach">Avvicinamento</label><input id="approach" list="apprs" value="${esc(f.approach || '')}" placeholder="CAT I, RNP, CAT IIIB…"></div>
     </div></fieldset>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
@@ -415,6 +487,7 @@ function viewEdit(main, id) {
       <a class="btn" href="#voli">Annulla</a></div>
     <datalist id="regs">${regs.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
     <datalist id="types">${typesL.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
+    <datalist id="apprs">${['CAT I', 'CAT II', 'CAT IIIA', 'CAT IIIB', 'RNP', 'LNAV/VNAV', 'LNAV', 'VOR', 'NDB', 'LOC', 'Visual', 'Circling'].map(r => `<option>${r}</option>`).join('')}</datalist>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
   </form>`;
 
@@ -429,6 +502,30 @@ function viewEdit(main, id) {
   $('#ifr').oninput = () => delete $('#ifr').dataset.auto;
   ['out', 'inn'].forEach(k => $('#' + k).addEventListener('change', autoTotal));
   $('#total').addEventListener('change', syncIfr);
+  // notte, decollo e atterraggio di giorno o di notte calcolati dalla posizione del sole lungo la rotta
+  let calc = null;
+  $('#night').addEventListener('input', () => delete $('#night').dataset.auto);
+  const placeTOLDG = () => {
+    if (!calc) return;
+    const to = num($('#toDay').value) + num($('#toNight').value), ld = num($('#ldgDay').value) + num($('#ldgNight').value);
+    if (to) { $('#toDay').value = calc.toNight ? '' : to; $('#toNight').value = calc.toNight ? to : ''; }
+    if (ld) { $('#ldgDay').value = calc.ldgNight ? '' : ld; $('#ldgNight').value = calc.ldgNight ? ld : ''; }
+  };
+  const runNight = async () => {
+    await loadAirports();
+    calc = nightCalc($('#date').value, $('#out').value.trim(), $('#inn').value.trim(), $('#dep').value.trim().toUpperCase(), $('#arr').value.trim().toUpperCase());
+    const h = $('#nightHint');
+    if (!calc) { h.textContent = ''; return; }
+    const tipo = calc.night === 0 ? 'Volo tutto di giorno' : calc.night >= calc.dur ? 'Volo tutto di notte' : `Notte calcolata ${hm(calc.night)} su ${hm(calc.dur)}`;
+    h.innerHTML = `${tipo}: decollo ${calc.toNight ? 'di notte' : 'di giorno'}, atterraggio ${calc.ldgNight ? 'di notte' : 'di giorno'}. Distanza ${fmtN(calc.nm)} NM.` +
+      (!$('#night').dataset.auto && parseHM($('#night').value) !== calc.night ? ` <button type="button" class="btn small" id="useNight">Usa ${hm(calc.night) || '0:00'}</button>` : '');
+    if ($('#night').dataset.auto) $('#night').value = hm(calc.night);
+    const u = $('#useNight'); if (u) u.onclick = () => { $('#night').value = hm(calc.night); $('#night').dataset.auto = '1'; placeTOLDG(); runNight(); };
+    if (!orig || $('#night').dataset.auto) placeTOLDG();
+  };
+  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', runNight));
+  ['toDay', 'toNight', 'ldgDay', 'ldgNight'].forEach(k => $('#' + k).addEventListener('change', placeTOLDG));
+  runNight();
   $('#simType').addEventListener('change', () => { const v = $('#simType').value.trim(); if (SIM_DEVICES[v]) { const r = $('#remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; $('#simType').value = SIM_DEVICES[v]; } });
   const autoSim = () => { const o = toMin($('#sout').value), i = toMin($('#sinn').value); if (o != null && i != null) $('#sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));
@@ -481,7 +578,9 @@ function viewEdit(main, id) {
         mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
         pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
         instr: $('#instrOn').checked ? total : 0, toDay: num($('#toDay').value), toNight: num($('#toNight').value),
-        ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem
+        ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem,
+        pax: num($('#pax').value), payload: parseDec($('#payload').value), fuelPlan: parseDec($('#fuelPlan').value), fuelUsed: parseDec($('#fuelUsed').value),
+        approach: $('#approach').value.trim(), nm: calc ? calc.nm : (rec.nm || 0)
       });
     }
     rec.mt = Date.now();
@@ -582,13 +681,32 @@ function flightLogRecord(x, regType) {
   Object.assign(f, { dep: x['Departure'], arr: x['Arrival'], out: x['Out'], inn: x['In'], reg, type: regType[reg] || '', flightNo: x['Flight Number'] });
   const t = m('Total Block') || m('Total Flight');
   Object.assign(f, { total: t, mp: t, ifr: t, night: m('Night Time'), pic: m('PIC Time'), sic: m('SIC Time'), dual: m('DUAL Time'), instr: m('INS Time'),
-    picName: x['PIC Name'], toDay: num(x['Takeoff']), ldgDay: num(x['Day Landing']), ldgNight: num(x['Night Landing']), remarks: x['Notes'] });
+    picName: x['PIC Name'], toDay: num(x['Takeoff']), ldgDay: num(x['Day Landing']), ldgNight: num(x['Night Landing']), remarks: x['Notes'],
+    pax: num(x['Pax']), payload: parseDec(x['Payload']), fuelUsed: parseDec(x['Fuel']), fuelPlan: parseDec(x['Fuel Prev']), approach: x['Approaches'] || '', nm: num(x['Distance']) });
   return f;
+}
+// file "sync" della cartella FlightLog Sync: completa i voli passati con pax, carburante, payload, avvicinamento e distanza
+async function enrichFromFlightLog(rows) {
+  if (!data) throw new Error('importa prima il logbook');
+  const td = today(); let filled = 0, notFound = 0;
+  const idx = new Map(data.flights.filter(f => f.kind === 'flight').map(f => [`${f.date}|${f.dep}|${f.out}`, f]));
+  for (const x of rows) {
+    if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate >= td) continue;
+    const f = idx.get(`${x.outschedDate}|${x.OUTOACI}|${x.outreal}`);
+    if (!f) { notFound++; continue; }
+    const add = { pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho) };
+    let ch = false;
+    for (const [k, v] of Object.entries(add)) if (v && !f[k]) { f[k] = v; ch = true; }
+    if (ch) { f.mt = Date.now(); filled++; }
+  }
+  await save(`Completate ${filled} tratte con i dati di FlightLog${notFound ? `, ${notFound} non trovate` : ''}`);
+  route();
 }
 async function importFile(file) {
   const text = await file.text();
-  if (/\.json$/i.test(file.name) || text.trim().startsWith('{')) {
+  if (/\.json$/i.test(file.name) || /^[{[]/.test(text.trim())) {
     const d = JSON.parse(text);
+    if (Array.isArray(d) && d[0] && 'sessiontype' in d[0]) return enrichFromFlightLog(d);
     if (!d.flights || !Array.isArray(d.flights)) throw new Error('il file non contiene un logbook');
     if (data && data.flights.length && !confirm(`Sostituire il logbook attuale (${data.flights.length} righe) con quello del file (${d.flights.length} righe)?`)) return;
     normalizeTypes(d); d.forcePush = true; data = d; await save(`Importate ${d.flights.length} righe`); route(); return;
@@ -645,8 +763,8 @@ function viewData(main) {
     <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Cambia cartella' : 'Scegli cartella'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
     ${fsSupported ? '' : '<p class="hint">Questo browser non permette di scrivere in una cartella: apri l\'app con Chrome.</p>'}</div>
   <div class="panel"><h2>Importa</h2>
-    <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario).</p>
-    <div class="row"><input type="file" id="dFile" accept=".json,.csv,application/json,text/csv"></div></div>
+    <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario). Il file <b>sync</b> della cartella FlightLog Sync completa i voli passati con passeggeri, carburante, payload, avvicinamento e distanza, senza toccare il resto.</p>
+    <div class="row"><input type="file" id="dFile"></div></div>
   <div class="panel"><h2>Esporta</h2>
     <p>Una copia da conservare o da aprire in un foglio di calcolo.</p>
     <div class="row"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>Scarica logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>Scarica CSV</button></div></div>

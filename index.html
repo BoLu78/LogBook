@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logbook</title>
 <meta name="description" content="Logbook pilota personale: voli, totali e stampa in formato EASA.">
-<meta name="theme-color" content="#16243f">
+<meta name="theme-color" content="#14213b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preload" href="fonts/b612-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/b612-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,12 +20,13 @@
       <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="32" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M32 27 C30 18 33 12 38 8"/><path d="M36 30 C44 26 50 28 55 32"/><path d="M35 36 C40 44 39 50 36 56"/><path d="M29 36 C22 42 16 42 10 40"/><path d="M27 30 C20 24 18 18 19 11"/></g></svg>
       <span>Logbook</span>
     </div>
-    <a href="#riepilogo" data-view="riepilogo">Riepilogo</a>
-    <a href="#voli" data-view="voli">Voli</a>
-    <a href="#nuovo" data-view="nuovo" class="new">Nuovo volo</a>
-    <a href="#stampa" data-view="stampa">Stampa EASA</a>
-    <a href="#dati" data-view="dati">Dati e backup</a>
+    <a href="#riepilogo" data-view="riepilogo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9M8 17V4M13 17v-6M18 17V7"/></svg>Riepilogo</a>
+    <a href="#voli" data-view="voli"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>Voli</a>
+    <a href="#nuovo" data-view="nuovo" class="new"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Nuovo volo</a>
+    <a href="#stampa" data-view="stampa"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 8V3h10v5M5 14H3V8h14v6h-2M6 12h8v6H6z"/></svg>Stampa EASA</a>
+    <a href="#dati" data-view="dati"><svg viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="5" rx="6" ry="2.5"/><path d="M4 5v10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5M4 10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/></svg>Dati e backup</a>
     <div class="backup-state" id="backupState" role="status"></div>
+    <div class="version" id="version"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
 </div>

@@ -1,4 +1,6 @@
 'use strict';
+const APP_VERSION = '1.2.0';
+const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
 // ---------- utilità ----------
@@ -151,7 +153,6 @@ function stripHTML(t) {
   const c = (h, v, big) => `<div class="c${big ? ' big' : ''}"><div class="ch">${h}</div><div class="cv">${v}</div></div>`;
   const g = (h, cols) => `<div class="grp"><div class="gh">${h}</div><div class="cols">${cols}</div></div>`;
   return `<div class="strip" role="group" aria-label="Totali">
-    ${g('Tempo totale', c('Totale', hm0(t.total), true))}
     ${g('Single pilot', c('SE', hm0(t.spSe)) + c('ME', hm0(t.spMe)))}
     ${g('Multi pilot', c('MP', hm0(t.mp)))}
     ${g('Funzione', c('PIC', hm0(t.pic)) + c('Copilota', hm0(t.sic)) + c('Dual', hm0(t.dual)) + c('Istruttore', hm0(t.instr)))}
@@ -161,13 +162,23 @@ function stripHTML(t) {
     ${g('Simulatore', c('FSTD', hm0(t.sim)))}
   </div>`;
 }
+function splitBar(t, max, cls = 'hbar') {
+  const w = v => max ? (100 * v / max).toFixed(2) + '%' : '0';
+  return `<div class="${cls}" role="img" aria-label="PIC ${hm0(t.pic)}, copilota ${hm0(t.sic)}, dual ${hm0(t.dual)}"><i class="c-pic" style="width:${w(t.pic)}"></i><i class="c-sic" style="width:${w(t.sic)}"></i><i class="c-dual" style="width:${w(t.dual)}"></i></div>`;
+}
+function gauge(v, limit) {
+  const p = Math.min(100, 100 * v / limit);
+  return `<div class="gauge ${p >= 100 ? 'over' : p >= 80 ? 'hi' : ''}"><i style="width:${p.toFixed(1)}%"></i></div>`;
+}
 function viewSummary(main) {
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const sel = viewSummary.period || 'all';
-  let list = data.flights, withOpen = true, label = 'dall\'inizio della carriera, compreso il riporto ante 2007';
-  if (sel === '12m') { list = flightsIn(addDays(today(), -365)); withOpen = false; label = 'ultimi 12 mesi'; }
-  else if (/^\d{4}$/.test(sel)) { list = flightsIn(sel + '-01-01', sel + '-12-31'); withOpen = false; label = 'anno ' + sel; }
+  let list = data.flights, withOpen = true, label = 'dal 2007, riporto precedente incluso';
+  if (sel === '12m') { list = flightsIn(addDays(today(), -365)); withOpen = false; label = 'negli ultimi 12 mesi'; }
+  else if (/^\d{4}$/.test(sel)) { list = flightsIn(sel + '-01-01', sel + '-12-31'); withOpen = false; label = 'nel ' + sel; }
   const t = sum(list, withOpen);
+  const fn = t.pic + t.sic + t.dual;
+  const pct = v => fn ? Math.round(100 * v / fn) + '%' : '';
 
   // limiti e recency
   const td = today();
@@ -179,33 +190,45 @@ function viewSummary(main) {
   const typ90 = sum(fl.filter(f => f.type === curType && f.date >= addDays(td, -89)));
   const ok90 = (typ90.toDay + typ90.toNight) >= 3 && (typ90.ldgDay + typ90.ldgNight) >= 3;
 
-  // per anno
-  const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
-  const yrows = Object.keys(byYear).sort().reverse().map(yr => { const s = sum(byYear[yr]); return `<tr><td class="l">${yr}</td><td>${s.legs}</td><td>${hm(s.total)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.dual)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`; }).join('');
   // per tipo
   const byType = {}; for (const f of list) if (f.kind === 'flight') (byType[f.type || '—'] ||= []).push(f);
-  const trows = Object.entries(byType).map(([k, v]) => [k, sum(v), v[v.length - 1].date]).sort((a, b) => typeRank(a[0]) - typeRank(b[0]) || a[2].localeCompare(b[2]))
-    .map(([k, s, ld]) => `<tr><td class="l">${esc(k)}</td><td>${s.legs}</td><td>${hm(s.total)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${dmy(ld)}</td></tr>`).join('');
+  const tl = Object.entries(byType).map(([k, v]) => [k, sum(v), v[v.length - 1].date]).sort((a, b) => typeRank(a[0]) - typeRank(b[0]) || a[2].localeCompare(b[2]));
+  const tmax = Math.max(...tl.map(x => x[1].total), 1);
+  const trows = tl.map(([k, s, ld]) => `<tr><td class="l"><b>${esc(k)}</b></td><td class="barcell">${splitBar(s, tmax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${dmy(ld)}</td></tr>`).join('');
+  // per anno
+  const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
+  const yl = Object.keys(byYear).sort().reverse().map(yr => [yr, sum(byYear[yr])]);
+  const ymax = Math.max(...yl.map(x => x[1].total), 1);
+  const yrows = yl.map(([yr, s]) => `<tr><td class="l"><b>${yr}</b></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
-  main.innerHTML = `<h1>Riepilogo</h1>
-  <p class="lede">${t.legs} tratte e ${t.sims} sessioni al simulatore, ${label}.</p>
-  <div class="row filters"><label for="per">Periodo</label>
-    <select id="per"><option value="all">Tutta la carriera</option><option value="12m">Ultimi 12 mesi</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></div>
+  main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Riepilogo</h1>
+    <label class="row filters" style="margin:0">Periodo
+    <select id="per"><option value="all">Tutta la carriera</option><option value="12m">Ultimi 12 mesi</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
+  <p class="lede">${t.legs} tratte e ${t.sims} sessioni al simulatore ${label}.</p>
+  <div class="hero">
+    <div class="tot">${hm0(t.total)}<small>ore di volo</small></div>
+    <div class="split">${splitBar(t, fn, 'bar')}
+      <div class="legend">
+        <span><i class="dot c-pic"></i>PIC <b>${hm0(t.pic)}</b> ${pct(t.pic)}</span>
+        <span><i class="dot c-sic"></i>Copilota <b>${hm0(t.sic)}</b> ${pct(t.sic)}</span>
+        <span><i class="dot c-dual"></i>Dual <b>${hm0(t.dual)}</b> ${pct(t.dual)}</span>
+      </div></div>
+  </div>
   ${stripHTML(t)}
   <h2>Limiti e recency</h2>
   <div class="recency">
-    <div><b>${hm0(d28.total)}</b><span>ultimi 28 giorni (limite 100 h)</span></div>
-    <div><b>${hm0(y.total)}</b><span>anno ${td.slice(0, 4)} (limite 900 h)</span></div>
-    <div><b>${hm0(m12.total)}</b><span>ultimi 12 mesi (limite 1000 h)</span></div>
-    <div><b>${d90.toDay + d90.toNight} / ${d90.ldgDay + d90.ldgNight}</b><span>decolli / atterraggi ultimi 90 giorni</span></div>
+    <div><b>${hm0(d28.total)}</b><span>ultimi 28 giorni, limite 100 h</span>${gauge(d28.total, 6000)}</div>
+    <div><b>${hm0(y.total)}</b><span>anno ${td.slice(0, 4)}, limite 900 h</span>${gauge(y.total, 54000)}</div>
+    <div><b>${hm0(m12.total)}</b><span>ultimi 12 mesi, limite 1000 h</span>${gauge(m12.total, 60000)}</div>
+    <div><b>${d90.toDay + d90.toNight} / ${d90.ldgDay + d90.ldgNight}</b><span>decolli e atterraggi negli ultimi 90 giorni</span></div>
     <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} negli ultimi 90 giorni${ok90 ? '' : ': meno di 3, serve recency'}</span></div>
     <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>ultimo volo${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
   </div>
-  <div class="two">
-    <div><h2>Per anno</h2><div class="scroll"><table class="data"><thead><tr><th class="l">Anno</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Dual</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table></div></div>
-    <div><h2>Per tipo di aereo</h2><table class="data"><thead><tr><th class="l">Tipo</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${trows}</tbody></table>
-    ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per anno e per tipo.</p>` : ''}</div>
-  </div>`;
+  <h2>Per tipo di aereo</h2>
+  <table class="data"><thead><tr><th class="l">Tipo</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${trows}</tbody></table>
+  ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per tipo e per anno.</p>` : ''}
+  <h2>Per anno</h2>
+  <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
 }
 
@@ -541,7 +564,15 @@ function viewData(main) {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }
   } catch { dirHandle = null; }
+  $('#version').textContent = `Versione ${APP_VERSION} del ${APP_DATE}`;
   renderBackupState();
   route();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw?.addEventListener('statechange', () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) toast('App aggiornata: ricarica la pagina per la nuova versione'); });
+      });
+    }).catch(() => {});
+  }
 })();

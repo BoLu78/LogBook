@@ -22,7 +22,7 @@ function normalizeTypes(d) {
   let n = 0;
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
-    let t = f.type;
+    let t = f.type || KNOWN_AIRCRAFT[f.reg] || '';
     if (f.reg === 'I-SWIA' || f.reg === 'I-SWIB') t = 'B747-400';
     else if (t === 'P180') t = AVANTI1.has(f.reg) ? 'P180 Avanti 1' : 'P180 Avanti 2';
     else if (TYPE_ALIAS[t]) t = TYPE_ALIAS[t];
@@ -30,6 +30,9 @@ function normalizeTypes(d) {
   }
   return n;
 }
+// Flotta conosciuta (dalla lista aerei di FlightLog): marca -> modello
+const KNOWN_AIRCRAFT = {"4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400", "VQBWS": "B747-400"};
+const KNOWN_SIMS = ["FFS BOEING 737-800", "FFS BOEING 787-9 Dreamliner", "FFS BOEING 747-400", "FFS BOEING 747-8"];
 const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
 const SUM_KEYS = ['total', 'spSe', 'spMe', 'mp', 'night', 'ifr', 'pic', 'sic', 'dual', 'instr', 'sim', 'toDay', 'toNight', 'ldgDay', 'ldgNight'];
 const EMPTY = () => ({ id: '', date: '', kind: 'flight', dep: '', arr: '', out: '', inn: '', type: '', reg: '', spSe: 0, spMe: 0, mp: 0, total: 0, picName: '', toDay: 0, toNight: 0, ldgDay: 0, ldgNight: 0, night: 0, ifr: 0, pic: 0, sic: 0, dual: 0, instr: 0, simType: '', sim: 0, remarks: '', src: 'app' });
@@ -250,9 +253,9 @@ function viewEdit(main, id) {
   const f = orig ? { ...orig } : { ...EMPTY(), date: today(), type: last?.type || '', reg: '', dep: last?.arr || '' };
   const role = orig ? roleOf(orig) : 'PIC';
   const isSim = f.kind === 'sim';
-  const regs = [...new Set(data.flights.map(x => x.reg).filter(Boolean))].sort();
-  const typesL = [...new Set(data.flights.map(x => x.type).filter(Boolean))].sort();
-  const simTypes = [...new Set(data.flights.map(x => x.simType).filter(Boolean))].sort();
+  const regs = [...new Set([...data.flights.map(x => x.reg), ...Object.keys(KNOWN_AIRCRAFT)].filter(Boolean))].sort();
+  const typesL = [...new Set([...TYPE_ORDER, ...data.flights.map(x => x.type)].filter(Boolean))];
+  const simTypes = [...new Set([...KNOWN_SIMS, ...data.flights.map(x => x.simType)].filter(Boolean))];
   const mpOn = !orig || f.mp > 0 || !(f.spSe || f.spMe);
   const ifrAll = !orig || f.ifr === f.total;
 
@@ -323,7 +326,7 @@ function viewEdit(main, id) {
   ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));
   $('#reg').addEventListener('change', () => {
     const r = $('#reg').value.trim().toUpperCase(); const k = data.flights.findLast(x => x.reg === r);
-    if (k && !$('#type').value) $('#type').value = k.type; else if (k) $('#type').value = k.type;
+    const t = k?.type || KNOWN_AIRCRAFT[r]; if (t) $('#type').value = t;
   });
   const hint = () => {
     const r = form.role.value;
@@ -479,7 +482,7 @@ async function importFile(file) {
   const rows = parseCSV(text);
   if (!rows.length || !('Date' in rows[0]) || !('Registration' in rows[0])) throw new Error('non sembra un export CSV di FlightLog');
   if (!data) data = { version: 1, pilot: '', opening: Object.fromEntries(SUM_KEYS.map(k => [k, 0])), flights: [] };
-  const regType = {}; for (const f of data.flights) if (f.reg && f.type) regType[f.reg] = f.type;
+  const regType = { ...KNOWN_AIRCRAFT }; for (const f of data.flights) if (f.reg && f.type) regType[f.reg] = f.type;
   const key = f => `${f.date}|${f.kind === 'sim' ? 'SIM' : f.dep}|${f.out}`;
   const have = new Set(data.flights.map(key));
   let added = 0, untyped = 0;

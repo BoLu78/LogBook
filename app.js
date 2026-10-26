@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.3.1';
+const APP_VERSION = '2.3.2';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -9,8 +9,21 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const hm = m => { m = Math.round(m || 0); if (!m) return ''; const s = m < 0 ? '-' : ''; m = Math.abs(m); return `${s}${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
 const hm0 = m => hm(m) || '0:00';
 const avg = s => s.legs ? hm(Math.round(s.total / s.legs)) : '';
-const parseHM = s => { s = String(s || '').trim().replace('.', ':'); if (!s) return 0; const m = s.match(/^(\d{1,5})(?::(\d{1,2}))?$/); if (!m) return NaN; return +m[1] * 60 + (+m[2] || 0); };
-const toMin = t => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
+// durate: "5:40", "5.40", "540" (= 5:40), "5" (= 5:00)
+const parseHM = s => { s = String(s || '').trim().replace('.', ':'); if (!s) return 0; if (/^\d{3,6}$/.test(s)) s = s.slice(0, -2) + ':' + s.slice(-2); const m = s.match(/^(\d{1,5})(?::(\d{1,2}))?$/); if (!m) return NaN; return +m[1] * 60 + (+m[2] || 0); };
+// orari: "0636", "636", "06:36", "6.36", "6" diventano "06:36" / "06:00"
+function normTime(v) {
+  v = String(v || '').trim().replace(/[.,h ]/g, ':'); if (!v) return '';
+  let h, m;
+  if (/^\d{1,2}:\d{1,2}$/.test(v)) [h, m] = v.split(':').map(Number);
+  else if (/^\d{3,4}$/.test(v)) { h = +v.slice(0, -2); m = +v.slice(-2); }
+  else if (/^\d{1,2}$/.test(v)) { h = +v; m = 0; }
+  else return v;
+  if (h > 23 || m > 59) return v;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+const normDur = v => { const n = parseHM(v); return v && !isNaN(n) ? hm0(n) : v; };
+const toMin = t => { const m = normTime(t).match(/^(\d{2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; };
 const today = () => new Date().toISOString().slice(0, 10);
 const dmy = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(2, 4)}` : '';
 const addDays = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
@@ -542,6 +555,20 @@ function viewEdit(main, id) {
   </form>`;
 
   const form = $('#ff');
+  // campi orario e durata: al tocco selezionano tutto, si scrivono anche senza i due punti
+  const TIME_IDS = ['out', 'off', 'on', 'inn', 'sout', 'sinn'], DUR_IDS = ['total', 'night', 'ifr', 'sim'];
+  for (const id of [...TIME_IDS, ...DUR_IDS]) { const el = $('#' + id); if (el) { el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off'); } }
+  form.addEventListener('focusin', e => {
+    const el = e.target; if (!(TIME_IDS.includes(el.id) || DUR_IDS.includes(el.id))) return;
+    setTimeout(() => { try { el.select(); el.setSelectionRange(0, el.value.length); } catch { /* ok */ } }, 0);
+  });
+  form.addEventListener('mouseup', e => { if (TIME_IDS.includes(e.target.id) || DUR_IDS.includes(e.target.id)) e.preventDefault(); });
+  // la normalizzazione avviene prima degli altri calcoli (fase di cattura)
+  form.addEventListener('change', e => {
+    const el = e.target;
+    if (TIME_IDS.includes(el.id)) el.value = normTime(el.value);
+    else if (DUR_IDS.includes(el.id)) el.value = normDur(el.value);
+  }, true);
   const kind = () => form.kind.value;
   form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { $('#fFlight').hidden = kind() === 'sim'; $('#fSim').hidden = kind() !== 'sim'; });
   const autoTotal = () => {
@@ -643,7 +670,7 @@ function viewEdit(main, id) {
       const sim = parseHM($('#sim').value);
       if (!$('#sdate').value) return bad($('#sdate'));
       if (!sim || isNaN(sim)) return bad($('#sim'));
-      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src, kind: 'sim', date: $('#sdate').value, simType: $('#simType').value.trim(), out: $('#sout').value.trim(), inn: $('#sinn').value.trim(), sim, picName: $('#spic').value.trim(), remarks });
+      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src, kind: 'sim', date: $('#sdate').value, simType: $('#simType').value.trim(), out: normTime($('#sout').value), inn: normTime($('#sinn').value), sim, picName: $('#spic').value.trim(), remarks });
     } else {
       const total = parseHM($('#total').value), night = parseHM($('#night').value), ifr = parseHM($('#ifr').value);
       if (!$('#date').value) return bad($('#date'));
@@ -657,7 +684,7 @@ function viewEdit(main, id) {
       if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
       Object.assign(rec, {
         kind: 'flight', date: $('#date').value, dep: $('#dep').value.trim().toUpperCase(), arr: $('#arr').value.trim().toUpperCase(),
-        out: $('#out').value.trim(), inn: $('#inn').value.trim(), off: $('#off').value.trim(), on: $('#on').value.trim(), reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
+        out: normTime($('#out').value), inn: normTime($('#inn').value), off: normTime($('#off').value), on: normTime($('#on').value), reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
         flightNo: $('#flightNo').value.trim(), picName: $('#picName').value.trim(), total, night, ifr,
         mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
         pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,

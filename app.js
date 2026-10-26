@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -206,7 +206,7 @@ function viewSummary(main) {
   const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
   const yl = Object.keys(byYear).sort().reverse().map(yr => [yr, sum(byYear[yr])]);
   const ymax = Math.max(...yl.map(x => x[1].total), 1);
-  const yrows = yl.map(([yr, s]) => `<tr><td class="l"><b>${yr}</b></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
+  const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Apri i mesi del ${yr}"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Riepilogo</h1>
     <label class="row filters" style="margin:0">Periodo
@@ -239,6 +239,32 @@ function viewSummary(main) {
   <h2>Per anno</h2>
   <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
+  const yt = main.querySelectorAll('table.data')[2].tBodies[0];
+  const open = e => { const tr = e.target.closest('tr[data-year]'); if (tr) showYear(tr.dataset.year); };
+  yt.onclick = open; yt.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } };
+}
+
+const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+function showYear(yr) {
+  const rows = MESI.map((m, i) => { const mm = String(i + 1).padStart(2, '0'); return [m, mm, sum(data.flights.filter(f => f.date.startsWith(`${yr}-${mm}`)))]; });
+  const tot = sum(data.flights.filter(f => f.date.startsWith(yr)));
+  const max = Math.max(...rows.map(r => r[2].total), 1);
+  const body = rows.map(([m, , s]) => s.legs || s.sims
+    ? `<tr><td class="l"><b>${m}</b></td><td class="barcell">${splitBar(s, max)}</td><td>${s.legs || ''}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.dual)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${hm(s.sim)}</td></tr>`
+    : `<tr class="idle"><td class="l">${m}</td><td class="barcell"></td><td colspan="8" class="l hint">nessun volo</td></tr>`).join('');
+  const act = rows.filter(r => r[2].total);
+  const best = act.length ? act.reduce((a, b) => b[2].total > a[2].total ? b : a) : null;
+  let dlg = $('#yearDlg');
+  if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'yearDlg'; document.body.append(dlg); dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); }
+  dlg.innerHTML = `<div class="dlg-head"><div><h2>${yr}, mese per mese</h2>
+      <p class="lede">${tot.legs} tratte, ${hm0(tot.total)} di volo${act.length ? `, in media ${hm0(Math.round(tot.total / act.length))} nei mesi con voli` : ''}${best ? `. Il mese più pieno è ${best[0].toLowerCase()} con ${hm0(best[2].total)}` : ''}.</p></div>
+      <button class="btn" id="dlgClose" aria-label="Chiudi">Chiudi</button></div>
+    <table class="data"><thead><tr><th class="l">Mese</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Dual</th><th>Notte</th><th>Atterr.</th><th>Sim</th></tr></thead>
+    <tbody>${body}<tr class="sum"><td class="l">Totale ${yr}</td><td></td><td>${tot.legs}</td><td>${hm0(tot.total)}</td><td>${hm(tot.pic)}</td><td>${hm(tot.sic)}</td><td>${hm(tot.dual)}</td><td>${hm(tot.night)}</td><td>${tot.ldgDay + tot.ldgNight || ''}</td><td>${hm(tot.sim)}</td></tr></tbody></table>
+    <p class="row" style="margin-top:14px"><button class="btn" id="dlgVoli">Vedi i voli del ${yr}</button></p>`;
+  $('#dlgClose').onclick = () => dlg.close();
+  $('#dlgVoli').onclick = () => { dlg.close(); viewFlights.st = { year: yr, type: '', q: '', all: false }; location.hash = 'voli'; if (location.hash === '#voli') route(); };
+  dlg.showModal();
 }
 
 // ---------- Voli ----------

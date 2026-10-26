@@ -1,0 +1,4 @@
+# i dati di volo non vanno mai nel repository pubblico
+*.json
+*.csv
+tools/

@@ -2,3 +2,6 @@
 *.json
 *.csv
 tools/
+
+# dati pubblici della mappa
+!data/*.json

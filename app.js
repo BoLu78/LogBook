@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -164,7 +164,14 @@ const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.rema
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData };
+// librerie della mappa caricate solo quando serve
+let mapLoading = null;
+function loadMap() {
+  const js = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('file ' + src + ' non disponibile')); document.head.append(s); });
+  return mapLoading ||= js('lib/d3-array.min.js').then(() => js('lib/d3-geo.min.js')).then(() => js('lib/topojson-client.min.js')).then(() => js('map.js'))
+    .catch(e => { mapLoading = null; $('#main').innerHTML = `<h1>Mappa</h1><p class="lede">${esc(e.message)}. Apri l'app una volta con la connessione attiva.</p>`; throw e; });
+}
 function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';

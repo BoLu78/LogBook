@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -441,46 +441,86 @@ function viewEdit(main, id) {
   const ifrAll = !orig || f.ifr === f.total;
 
   main.innerHTML = `<h1>${orig ? 'Modifica' : 'Nuovo'} ${isSim ? 'simulatore' : 'volo'}</h1>
-  <p class="lede">${orig ? dmy(orig.date) + (isSim ? '' : ` ${esc(orig.dep)}–${esc(orig.arr)}`) : 'I tempi si calcolano da Off e On; puoi correggerli a mano.'}</p>
   ${orig?.planned ? `<div class="plan-note"><b>Volo importato da NetLine${orig.flightNo ? ` (${esc(orig.flightNo)})` : ''}</b>: gli orari sono quelli schedulati, ${esc(orig.sched?.out || orig.out)}–${esc(orig.sched?.inn || orig.inn)} UTC. Metti off e on blocks effettivi${orig.acHint && !orig.type ? `, la marca (nel turno: ${esc(orig.acHint)})` : ''} e salva: da quel momento il volo entra nei totali.${orig.change ? `<br>Ultima modifica nel turno: ${esc(orig.change)}` : ''}</div>` : ''}
-  <form class="flight" id="ff" novalidate>
+  <form class="flight sheet" id="ff" novalidate>
     <fieldset><div class="seg" role="radiogroup" aria-label="Tipo di registrazione">
       <label><input type="radio" name="kind" value="flight" ${!isSim ? 'checked' : ''}><span>Volo</span></label>
       <label><input type="radio" name="kind" value="sim" ${isSim ? 'checked' : ''}><span>Simulatore</span></label></div></fieldset>
     <div id="fFlight" ${isSim ? 'hidden' : ''}>
-    <fieldset><legend>Tratta</legend><div class="grid">
-      <div class="field"><label for="date">Data</label><input id="date" type="date" value="${esc(f.date)}" required></div>
-      <div class="field"><label for="dep">Partenza</label><input id="dep" value="${esc(f.dep)}" maxlength="4" style="text-transform:uppercase" placeholder="LIMC"></div>
-      <div class="field"><label for="out">Off blocks (UTC)</label><input id="out" value="${esc(f.out)}" placeholder="06:00" inputmode="numeric"></div>
-      <div class="field"><label for="arr">Arrivo</label><input id="arr" value="${esc(f.arr)}" maxlength="4" style="text-transform:uppercase"></div>
-      <div class="field"><label for="inn">On blocks (UTC)</label><input id="inn" value="${esc(f.inn)}" placeholder="08:30" inputmode="numeric"></div>
-      <div class="field"><label for="total">Tempo totale</label><input id="total" value="${hm(f.total)}" placeholder="2:30"></div>
-      <div class="field w2"><label for="reg">Marca</label><input id="reg" list="regs" value="${esc(f.reg)}" style="text-transform:uppercase"></div>
-      <div class="field"><label for="type">Modello</label><input id="type" list="types" value="${esc(f.type)}"></div>
-      <div class="field"><label for="flightNo">Numero volo</label><input id="flightNo" value="${esc(f.flightNo || '')}"></div>
-      <div class="field w2"><label for="picName">Nome del PIC</label><input id="picName" value="${esc(f.picName)}"></div>
-    </div></fieldset>
-    <fieldset><legend>Funzione</legend>
-      <div class="row"><div class="seg" role="radiogroup" aria-label="Funzione">
-        ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r === 'SIC' ? 'Copilota' : r}</span></label>`).join('')}</div>
-        <label><input type="checkbox" id="instrOn" ${f.instr ? 'checked' : ''}> Istruttore</label>
-        <label><input type="checkbox" id="mpOn" ${mpOn ? 'checked' : ''}> Multi pilot</label></div>
-      <p class="hint" id="roleHint"></p></fieldset>
-    <fieldset><legend>Condizioni, decolli e atterraggi</legend><div class="grid">
-      <div class="field"><label for="night">Notte</label><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}></div>
-      <div class="field"><label for="ifr">IFR</label><input id="ifr" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></div>
-      <div class="field"><label for="toDay">Decolli giorno</label><input id="toDay" type="number" min="0" value="${f.toDay || ''}"></div>
-      <div class="field"><label for="toNight">Decolli notte</label><input id="toNight" type="number" min="0" value="${f.toNight || ''}"></div>
-      <div class="field"><label for="ldgDay">Atterr. giorno</label><input id="ldgDay" type="number" min="0" value="${f.ldgDay || ''}"></div>
-      <div class="field"><label for="ldgNight">Atterr. notte</label><input id="ldgNight" type="number" min="0" value="${f.ldgNight || ''}"></div>
-    </div><p class="hint" id="nightHint" aria-live="polite"></p></fieldset>
-    <fieldset><legend>Dati del volo (facoltativi)</legend><div class="grid">
-      <div class="field"><label for="pax">Passeggeri</label><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}"></div>
-      <div class="field"><label for="payload">Payload (t)</label><input id="payload" inputmode="decimal" value="${f.payload || ''}"></div>
-      <div class="field"><label for="fuelPlan">Carburante pianificato (t)</label><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}"></div>
-      <div class="field"><label for="fuelUsed">Carburante usato (t)</label><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}"></div>
-      <div class="field w2"><label for="approach">Avvicinamento</label><input id="approach" list="apprs" value="${esc(f.approach || '')}" placeholder="CAT I, RNP, CAT IIIB…"></div>
-    </div></fieldset>
+    <section class="sheet-head">
+      <div class="chips">
+        <label class="chip"><input id="date" type="date" value="${esc(f.date)}" required aria-label="Data"></label>
+        <span class="chip" id="chipIfr">IFR</span>
+        <span class="chip" id="chipRole">${role === 'SIC' ? 'COPILOTA' : role}</span>
+        ${orig?.planned ? '<span class="chip warn">PROGRAMMATO</span>' : ''}
+      </div>
+      <div class="route">
+        <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Partenza" autocapitalize="characters"><div class="apt-sub" id="depSub"></div></div>
+        <div class="mid"><svg viewBox="0 0 200 40" aria-hidden="true"><path d="M8 34 Q100 -8 192 34" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+          <input id="flightNo" class="fno" value="${esc(f.flightNo || '')}" placeholder="N° volo" aria-label="Numero volo"></div>
+        <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrivo" autocapitalize="characters"><div class="apt-sub" id="arrSub"></div></div>
+      </div>
+      <div class="times">
+        <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.out || '')}</b><small>UTC</small></div>
+        <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--" inputmode="numeric"></label>
+        <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--" inputmode="numeric"></label>
+        <label class="t"><span>ON</span><input id="on" value="${esc(f.on || '')}" placeholder="--:--" inputmode="numeric"></label>
+        <label class="t"><span>IN</span><input id="inn" value="${esc(f.inn)}" placeholder="--:--" inputmode="numeric"></label>
+        <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.inn || '')}</b><small>UTC</small></div>
+      </div>
+      <div class="blocks">
+        <div><span>Blocco schedulato</span><b id="schedBlock">${f.sched ? hm(((toMin(f.sched.inn) - toMin(f.sched.out)) + 1440) % 1440) : '—'}</b></div>
+        <label><span>Blocco reale</span><input id="total" value="${hm(f.total)}" placeholder="0:00"></label>
+        <div><span>Tempo di volo</span><b id="airTime">—</b></div>
+        <label><span>Notte <i class="moon-ico" aria-hidden="true">☾</i></span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}></label>
+      </div>
+      <p class="hint" id="nightHint" aria-live="polite"></p>
+    </section>
+
+    <section class="sheet-card">
+      <h3>Volo</h3>
+      <div class="flight-grid">
+        <div class="col">
+          <div class="cap">Partenza</div>
+          <div class="counter" id="cTO"><div class="lbl">Decolli <button type="button" class="moon" aria-label="Decollo di notte" aria-pressed="false">☾</button></div>
+            <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
+        </div>
+        <div class="col ac">
+          <div class="cap">Aeromobile</div>
+          <input id="reg" list="regs" class="reg" value="${esc(f.reg)}" placeholder="${esc(f.acHint || 'Marca')}" aria-label="Marca" autocapitalize="characters">
+          <input id="type" list="types" class="type" value="${esc(f.type)}" placeholder="Modello" aria-label="Modello">
+        </div>
+        <div class="col">
+          <div class="cap">Arrivo</div>
+          <input id="approach" list="apprs" class="appr" value="${esc(f.approach || '')}" placeholder="Avvicinamento" aria-label="Avvicinamento">
+          <div class="counter" id="cLDG"><div class="lbl">Atterraggi <button type="button" class="moon" aria-label="Atterraggio di notte" aria-pressed="false">☾</button></div>
+            <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
+        </div>
+      </div>
+      <input type="hidden" id="toDay" value="${f.toDay || ''}"><input type="hidden" id="toNight" value="${f.toNight || ''}">
+      <input type="hidden" id="ldgDay" value="${f.ldgDay || ''}"><input type="hidden" id="ldgNight" value="${f.ldgNight || ''}">
+      <div class="func">
+        <div class="seg" role="radiogroup" aria-label="Funzione">
+          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r === 'SIC' ? 'Copilota' : r}</span></label>`).join('')}</div>
+        <label class="pic"><span>Nome del PIC</span><input id="picName" value="${esc(f.picName)}"></label>
+        <label class="small"><span>IFR</span><input id="ifr" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
+        <label class="chk"><input type="checkbox" id="mpOn" ${mpOn ? 'checked' : ''}> Multi pilot</label>
+        <label class="chk"><input type="checkbox" id="instrOn" ${f.instr ? 'checked' : ''}> Istruttore</label>
+      </div>
+      <p class="hint" id="roleHint"></p>
+    </section>
+
+    <section class="sheet-card">
+      <h3>Payload e carburante</h3>
+      <div class="tiles">
+        <label><span>Payload</span><input id="payload" inputmode="decimal" value="${f.payload || ''}" placeholder="0"><small>t</small></label>
+        <label><span>Pax</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
+        <label><span>Carburante usato</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small>t</small></label>
+        <label><span>Carburante pianificato</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
+        <div><span>Distanza</span><b id="distNM">—</b><small>NM</small></div>
+        <div><span>CO₂</span><b id="co2">—</b><small>t</small></div>
+      </div>
+    </section>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
     <fieldset><legend>Sessione</legend><div class="grid">
@@ -532,10 +572,44 @@ function viewEdit(main, id) {
     if ($('#night').dataset.auto) $('#night').value = hm(calc.night);
     const u = $('#useNight'); if (u) u.onclick = () => { $('#night').value = hm(calc.night); $('#night').dataset.auto = '1'; placeTOLDG(); runNight(); };
     if (!orig || $('#night').dataset.auto) placeTOLDG();
+    if (typeof extras === 'function') setTimeout(extras, 0);
   };
   ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', runNight));
   ['toDay', 'toNight', 'ldgDay', 'ldgNight'].forEach(k => $('#' + k).addEventListener('change', placeTOLDG));
   runNight();
+  // contatori decolli e atterraggi con la luna
+  const counter = (box, dayId, nightId, calcKey) => {
+    const el = $(box), b = el.querySelector('b'), moon = el.querySelector('.moon');
+    let manual = null; // scelta a mano della luna, vince sul calcolo
+    const night = () => manual ?? (num($(nightId).value) > 0 || (!num($(dayId).value) && !!calc?.[calcKey]));
+    const draw = () => { b.textContent = num($(dayId).value) + num($(nightId).value); const n = night(); moon.setAttribute('aria-pressed', n); el.classList.toggle('night', n); };
+    const put = tot => { const n = night(); $(dayId).value = n ? '' : (tot || ''); $(nightId).value = n ? (tot || '') : ''; draw(); };
+    const tot = () => num($(dayId).value) + num($(nightId).value);
+    el.querySelector('.inc').onclick = () => put(tot() + 1);
+    el.querySelector('.dec').onclick = () => put(Math.max(0, tot() - 1));
+    moon.onclick = () => { manual = !night(); put(tot()); };
+    return draw;
+  };
+  const drawTO = counter('#cTO', '#toDay', '#toNight', 'toNight'), drawLDG = counter('#cLDG', '#ldgDay', '#ldgNight', 'ldgNight');
+  const aptLabel = async () => {
+    await loadAirports(); IATA ||= await fetch('data/iata.json').then(r => r.json()).catch(() => ({}));
+    const rev = c => Object.keys(IATA).find(k => IATA[k] === c) || '';
+    for (const [inp, sub] of [['#dep', '#depSub'], ['#arr', '#arrSub']]) { const c = $(inp).value.trim().toUpperCase(), p = apt(c); $(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(p[2])}` : ''; }
+  };
+  const extras = () => {
+    const off = toMin($('#off').value), on = toMin($('#on').value);
+    $('#airTime').textContent = off != null && on != null ? hm(((on - off) + 1440) % 1440) || '0:00' : '—';
+    $('#distNM').textContent = calc ? fmtN(calc.nm) : (f.nm ? fmtN(f.nm) : '—');
+    const fu = parseDec($('#fuelUsed').value); $('#co2').textContent = fu ? (fu * 3.16).toFixed(1).replace('.', ',') : '—';
+    $('#chipIfr').hidden = !parseHM($('#ifr').value);
+    drawTO(); drawLDG();
+  };
+  ['off', 'on', 'fuelUsed', 'ifr'].forEach(k => $('#' + k).addEventListener('input', extras));
+  ['dep', 'arr'].forEach(k => $('#' + k).addEventListener('change', aptLabel));
+  const runNight0 = runNight;
+  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 50)));
+  aptLabel(); setTimeout(extras, 80); void runNight0;
+  form.querySelectorAll('input[name=role]').forEach(r => r.addEventListener('change', () => { $('#chipRole').textContent = r.value === 'SIC' ? 'COPILOTA' : r.value; }));
   $('#simType').addEventListener('change', () => { const v = $('#simType').value.trim(); if (SIM_DEVICES[v]) { const r = $('#remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; $('#simType').value = SIM_DEVICES[v]; } });
   const autoSim = () => { const o = toMin($('#sout').value), i = toMin($('#sinn').value); if (o != null && i != null) $('#sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));
@@ -583,7 +657,7 @@ function viewEdit(main, id) {
       if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
       Object.assign(rec, {
         kind: 'flight', date: $('#date').value, dep: $('#dep').value.trim().toUpperCase(), arr: $('#arr').value.trim().toUpperCase(),
-        out: $('#out').value.trim(), inn: $('#inn').value.trim(), reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
+        out: $('#out').value.trim(), inn: $('#inn').value.trim(), off: $('#off').value.trim(), on: $('#on').value.trim(), reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
         flightNo: $('#flightNo').value.trim(), picName: $('#picName').value.trim(), total, night, ifr,
         mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
         pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
@@ -692,7 +766,7 @@ function flightLogRecord(x, regType) {
   const t = m('Total Block') || m('Total Flight');
   Object.assign(f, { total: t, mp: t, ifr: t, night: m('Night Time'), pic: m('PIC Time'), sic: m('SIC Time'), dual: m('DUAL Time'), instr: m('INS Time'),
     picName: x['PIC Name'], toDay: num(x['Takeoff']), ldgDay: num(x['Day Landing']), ldgNight: num(x['Night Landing']), remarks: x['Notes'],
-    pax: num(x['Pax']), payload: parseDec(x['Payload']), fuelUsed: parseDec(x['Fuel']), fuelPlan: parseDec(x['Fuel Prev']), approach: x['Approaches'] || '', nm: num(x['Distance']) });
+    pax: num(x['Pax']), payload: parseDec(x['Payload']), fuelUsed: parseDec(x['Fuel']), fuelPlan: parseDec(x['Fuel Prev']), approach: x['Approaches'] || '', nm: num(x['Distance']), off: x['Off'] || '', on: x['On'] || '' });
   return f;
 }
 // file "sync" della cartella FlightLog Sync: completa i voli passati con pax, carburante, payload, avvicinamento e distanza
@@ -704,7 +778,7 @@ async function enrichFromFlightLog(rows) {
     if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate >= td) continue;
     const f = idx.get(`${x.outschedDate}|${x.OUTOACI}|${x.outreal}`);
     if (!f) { notFound++; continue; }
-    const add = { pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho) };
+    const add = { pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho), off: x.offtime || '', on: x.ontime || '' };
     let ch = false;
     for (const [k, v] of Object.entries(add)) if (v && !f[k]) { f[k] = v; ch = true; }
     if (ch) { f.mt = Date.now(); filled++; }

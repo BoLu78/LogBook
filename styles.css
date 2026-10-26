@@ -280,3 +280,90 @@ table.data tr.planned td:first-child { font-style: normal; }
 .plan-alert, .plan-note { border: 1px solid var(--amber); border-left-width: 4px; background: color-mix(in srgb, var(--amber) 10%, var(--sheet)); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px; line-height: 1.5; }
 .plan-alert .btn { margin-left: 8px; }
 .side a .badge { margin-left: auto; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---------- Scheda volo ---------- */
+form.sheet { background: transparent; border: 0; padding: 0; max-width: 1000px; }
+form.sheet > fieldset:first-child { margin-bottom: 12px; }
+.sheet-head { position: relative; border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px 12px; margin-bottom: 14px;
+  background-color: var(--sheet);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 13%, transparent) 1.1px, transparent 1.3px);
+  background-size: 9px 9px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; background: var(--accent); color: var(--on-accent); font-family: var(--font); font-weight: 700; font-size: 13px; padding: 4px 10px; border-radius: 6px; letter-spacing: .02em; }
+.chip input { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
+.chip input::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .8; }
+.chip.warn { background: var(--amber); }
+.route { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 220px) minmax(0, 1fr); align-items: center; gap: 10px; margin: 10px 0 6px; }
+.apt { text-align: center; }
+.icao { width: 100%; max-width: 230px; text-align: center; font-family: var(--font); font-size: 54px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; border: 0; background: transparent; color: var(--ink); padding: 0; }
+.icao::placeholder { color: var(--rule); }
+.icao:focus { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 6px; }
+.apt-sub { min-height: 36px; font-size: 13px; color: var(--muted); line-height: 1.3; }
+.apt-sub b { display: block; color: var(--ink-2); font-family: var(--font); font-size: 15px; }
+.mid { text-align: center; color: var(--dual); }
+.mid svg { width: 100%; height: 34px; display: block; }
+.fno { width: 100%; text-align: center; border: 0; background: transparent; font-family: var(--font); font-size: 20px; font-weight: 700; color: var(--ink); text-transform: uppercase; }
+.times { display: grid; grid-template-columns: repeat(6, 1fr); background: color-mix(in srgb, var(--sheet) 92%, transparent); border-radius: 10px; border: 1px solid var(--rule-soft); margin-top: 6px; }
+.times .t { display: flex; flex-direction: column; align-items: center; padding: 8px 4px 10px; gap: 2px; }
+.times .t:nth-child(3) { border-right: 1px solid var(--rule); }
+.times span, .blocks span { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.times b { font-family: var(--font); font-size: 22px; color: var(--ink-2); min-height: 28px; }
+.times small { font-size: 10px; color: var(--muted); }
+.times input { width: 100%; max-width: 90px; text-align: center; font-family: var(--font); font-size: 22px; border: 0; border-bottom: 1px dashed var(--rule); background: transparent; color: var(--ink); padding: 2px 0; }
+.times input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+.blocks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; text-align: center; }
+.blocks > * { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.blocks b, .blocks input { font-family: var(--font); font-size: 24px; font-weight: 700; color: var(--ink); }
+.blocks input { width: 100%; max-width: 110px; text-align: center; border: 0; border-bottom: 1px dashed var(--rule); background: transparent; padding: 0; }
+.blocks input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+.moon-ico { font-style: normal; }
+.sheet-head .hint { text-align: center; margin: 8px 0 0; }
+
+.sheet-card { border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 14px; background: var(--sheet); }
+.sheet-card h3 { margin: 0; background: var(--accent); color: var(--on-accent); font-family: var(--font); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 12px 18px; }
+.flight-grid { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 10px; padding: 14px; }
+.flight-grid .col { display: flex; flex-direction: column; gap: 8px; }
+.cap { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+.col.ac { background: var(--paper); border-radius: 10px; padding: 12px; align-items: center; justify-content: center; }
+.col.ac .reg { font-family: var(--font); font-size: 30px; font-weight: 700; text-align: center; border: 0; background: transparent; width: 100%; text-transform: uppercase; color: var(--ink); }
+.col.ac .type { text-align: center; border: 0; background: transparent; color: var(--muted); font-family: var(--font); font-size: 16px; width: 100%; }
+.appr { border: 0; background: var(--paper); border-radius: 8px; padding: 10px; text-align: center; font-family: var(--font); color: var(--ink); }
+.counter { background: var(--paper); border-radius: 10px; padding: 10px; text-align: center; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+.counter.night { background: color-mix(in srgb, var(--ink) 14%, var(--paper)); }
+.counter .lbl { font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.moon { border: 0; background: transparent; font-size: 18px; color: var(--rule); cursor: pointer; padding: 0 4px; line-height: 1; }
+.moon[aria-pressed="true"] { color: var(--ink); }
+.counter .ctl { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.counter .ctl b { font-family: var(--font); font-size: 30px; min-width: 30px; }
+.counter .ctl button { width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid var(--ink-2); background: transparent; color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; }
+.func { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; padding: 0 14px 4px; }
+.func label.pic, .func label.small { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.func label.pic input { width: 200px; } .func label.small input { width: 70px; }
+.func input:not([type]), .func input[id] { border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; padding: 6px 8px; color: var(--ink); }
+.func .chk { display: inline-flex; gap: 6px; align-items: center; padding-bottom: 6px; }
+.sheet-card > .hint { padding: 4px 14px 12px; margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 14px; }
+.tiles > * { background: var(--paper); border-radius: 10px; padding: 12px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tiles span { font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.tiles input, .tiles b { font-family: var(--font); font-size: 28px; font-weight: 400; text-align: center; border: 0; background: transparent; color: var(--ink); width: 100%; }
+.tiles small { color: var(--muted); }
+@media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 760px) {
+  .route { grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr); }
+  .icao { font-size: 34px; }
+  .fno { font-size: 15px; }
+  .times { grid-template-columns: repeat(3, 1fr); }
+  .times .t:nth-child(3) { border-right: 0; }
+  .times b, .times input { font-size: 19px; }
+  .blocks { grid-template-columns: repeat(2, 1fr); }
+  .flight-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 10px; }
+  .counter .ctl { gap: 10px; }
+  .counter .ctl b { font-size: 26px; }
+  .tiles input, .tiles b { font-size: 22px; }
+  .tiles { padding: 10px; gap: 8px; }
+  .func label.pic input { width: 160px; }
+  .sheet-head { padding: 12px 10px 10px; }
+  .apt-sub { font-size: 11px; }
+  .flight-grid .col.ac { grid-column: 1 / -1; order: -1; }
+  .counter .ctl button { width: 34px; height: 34px; }
+}

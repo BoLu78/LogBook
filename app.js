@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -21,8 +21,16 @@ const toast = msg => { const t = $('#toast'); t.textContent = msg; t.classList.a
 const TYPE_ORDER = ['Do328-110', 'P180 Avanti 1', 'P180 Avanti 2', 'B747-400', 'B747-8', 'B787-9', 'B737-800', 'B737-8'];
 const AVANTI1 = new Set(['I-FXRB', 'I-FXRC', 'I-FXRD', 'I-FXRE']);
 const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 'B787-9', B738: 'B737-800', B38M: 'B737-8' };
+// correzioni dei codici aeroporto indicate da Luca (applicate una volta, poi sincronizzate)
+const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH' };
 function normalizeTypes(d) {
   let n = 0;
+  for (const f of d?.flights || []) {
+    if (f.kind !== 'flight') continue;
+    let ch = false;
+    for (const k of ['dep', 'arr']) if (CODE_FIX[f[k]]) { f[k] = CODE_FIX[f[k]]; ch = true; }
+    if (ch) { f.mt = Date.now(); n++; }
+  }
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
     let t = f.type || KNOWN_AIRCRAFT[f.reg] || '';

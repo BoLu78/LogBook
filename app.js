@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '2.0.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -92,7 +92,8 @@ let dirHandle = null;      // cartella di backup
 let backupOk = false, lastBackup = null;
 
 function sortFlights() { data.flights.sort((a, b) => (a.date + (a.out || '99:99')).localeCompare(b.date + (b.out || '99:99'))); }
-function nextId() { let n = 0; for (const f of data.flights) { const k = parseInt(String(f.id).slice(1), 10); if (k > n) n = k; } return 'f' + String(n + 1).padStart(5, '0'); }
+// id unici anche tra dispositivi diversi (Mac, iPhone, iPad)
+function nextId() { return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
 async function save(msg) {
   sortFlights();
@@ -100,6 +101,7 @@ async function save(msg) {
   await idb.set('data', data);
   if (msg) toast(msg);
   scheduleBackup();
+  scheduleSync();
 }
 
 // ---------- backup su cartella (File System Access API, Chrome) ----------
@@ -434,7 +436,7 @@ function viewEdit(main, id) {
   form.querySelectorAll('input[name=role]').forEach(r => r.onchange = hint); hint();
 
   if (orig) {
-    $('#del').onclick = async () => { if (!confirm('Eliminare questa riga dal logbook?')) return; data.flights = data.flights.filter(x => x.id !== orig.id); await save('Riga eliminata'); location.hash = 'voli'; };
+    $('#del').onclick = async () => { if (!confirm('Eliminare questa riga dal logbook?')) return; data.flights = data.flights.filter(x => x.id !== orig.id); (data.deleted ||= {})[orig.id] = Date.now(); await save('Riga eliminata'); location.hash = 'voli'; };
     $('#dup').onclick = () => { viewEdit.dup = orig; location.hash = 'nuovo'; };
   } else if (viewEdit.dup) {
     const d = viewEdit.dup; viewEdit.dup = null;
@@ -474,6 +476,7 @@ function viewEdit(main, id) {
         ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem
       });
     }
+    rec.mt = Date.now();
     if (orig) data.flights[data.flights.findIndex(x => x.id === orig.id)] = rec; else data.flights.push(rec);
     await save(orig ? 'Modifiche salvate' : 'Volo salvato');
     location.hash = 'voli';
@@ -580,7 +583,7 @@ async function importFile(file) {
     const d = JSON.parse(text);
     if (!d.flights || !Array.isArray(d.flights)) throw new Error('il file non contiene un logbook');
     if (data && data.flights.length && !confirm(`Sostituire il logbook attuale (${data.flights.length} righe) con quello del file (${d.flights.length} righe)?`)) return;
-    normalizeTypes(d); data = d; await save(`Importate ${d.flights.length} righe`); route(); return;
+    normalizeTypes(d); d.forcePush = true; data = d; await save(`Importate ${d.flights.length} righe`); route(); return;
   }
   // CSV FlightLog: aggiunge solo le righe nuove
   const rows = parseCSV(text);
@@ -593,7 +596,7 @@ async function importFile(file) {
   for (const x of rows) {
     const f = flightLogRecord(x, regType);
     if (!f.date || have.has(key(f))) continue;
-    f.id = nextId(); data.flights.push(f); have.add(key(f)); added++;
+    f.id = nextId(); f.mt = Date.now(); data.flights.push(f); have.add(key(f)); added++;
     if (f.kind === 'flight' && !f.type) untyped++;
   }
   await save(added ? `Aggiunte ${added} righe da FlightLog` : 'Nessuna riga nuova nel CSV');
@@ -626,6 +629,7 @@ function viewData(main) {
   const cur = document.documentElement.dataset.theme || '';
   main.innerHTML = `<h1>Dati e backup</h1>
   <p class="lede">${n ? `${n} righe nel logbook${data.updated ? `, ultima modifica ${new Date(data.updated).toLocaleString('it-IT')}` : ''}.` : 'Il logbook è vuoto.'}</p>
+  ${drivePanelHTML()}
   <div class="panel"><h2>Colori</h2>
     <div class="theme-pick" role="radiogroup" aria-label="Colori">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
   <div class="panel"><h2>Cartella di backup</h2>
@@ -642,13 +646,152 @@ function viewData(main) {
     <div class="row"><label>Nome sul logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Salva nome</button></div>
     <p class="hint">Riporto ante 2007: ${hm0(data.opening?.total)} totali, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} copilota, ${hm0(data.opening?.sim)} simulatore.</p></div>` : ''}`;
   main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
+  bindDrivePanel(main);
   $('#dChoose').onclick = chooseFolder;
   $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Importazione non riuscita: ' + err.message); } e.target.value = ''; };
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');
     $('#dCsv').onclick = exportCSV;
-    $('#dPilotSave').onclick = async () => { data.pilot = $('#dPilot').value.trim(); await save('Nome salvato'); };
+    $('#dPilotSave').onclick = async () => { data.pilot = $('#dPilot').value.trim(); data.metaMt = Date.now(); await save('Nome salvato'); };
   }
+}
+
+
+// ---------- Google Drive: un unico logbook per Mac, iPhone e iPad ----------
+const GD_CLIENT_ID = '';   // ID client OAuth di Google (non è segreto); si può anche incollare in Dati e backup
+const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* ok */ } } };
+const ss = { get: k => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* ok */ } } };
+const GD = { token: ss.get('gdTok'), exp: +ss.get('gdExp') || 0, state: '', msg: '', busy: false };
+const gdClientId = () => GD_CLIENT_ID || ls.get('gdClient') || '';
+const gdConnected = () => !!gdClientId() && ls.get('gdOn') === '1';
+const gdTokenOk = () => GD.token && Date.now() < GD.exp - 60000;
+
+let gisLoading = null;
+function gisLoad() {
+  return gisLoading ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.onload = res; s.onerror = () => { gisLoading = null; rej(new Error('Google non raggiungibile, controlla la connessione')); }; document.head.append(s); });
+}
+async function gdToken(interactive) {
+  if (gdTokenOk()) return GD.token;
+  if (!interactive) throw Object.assign(new Error('accesso a Google da rinnovare'), { auth: true });
+  await gisLoad();
+  return new Promise((res, rej) => {
+    const tc = google.accounts.oauth2.initTokenClient({
+      client_id: gdClientId(), scope: GD_SCOPE,
+      callback: r => { if (r.error) return rej(new Error(r.error_description || r.error)); GD.token = r.access_token; GD.exp = Date.now() + r.expires_in * 1000; ss.set('gdTok', GD.token); ss.set('gdExp', GD.exp); res(GD.token); },
+      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'accesso annullato' : e.type === 'popup_failed_to_open' ? 'il browser ha bloccato la finestra di Google' : (e.message || e.type)))
+    });
+    tc.requestAccessToken({ prompt: ls.get('gdOn') === '1' ? '' : 'consent' });
+  });
+}
+async function gdFetch(url, opt = {}) {
+  const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + GD.token } });
+  if (r.status === 401) { GD.token = null; ss.set('gdTok', null); throw Object.assign(new Error('accesso a Google scaduto'), { auth: true }); }
+  if (!r.ok) throw new Error(`Google Drive ${r.status}: ${(await r.text()).slice(0, 140)}`);
+  return r;
+}
+const GAPI = 'https://www.googleapis.com/drive/v3/files', GUP = 'https://www.googleapis.com/upload/drive/v3/files';
+async function gdFindFile() {
+  const known = ls.get('gdFile');
+  if (known) {
+    try { const j = await (await gdFetch(`${GAPI}/${known}?fields=id,trashed`)).json(); if (!j.trashed) return known; } catch (e) { if (e.auth) throw e; }
+  }
+  const q = encodeURIComponent("name='logbook.json' and trashed=false and appProperties has { key='logbook' and value='1' }");
+  const j = await (await gdFetch(`${GAPI}?q=${q}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`)).json();
+  const id = j.files?.[0]?.id || null; ls.set('gdFile', id); return id;
+}
+async function gdFolder() {
+  const q = encodeURIComponent("name='Logbook' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  const j = await (await gdFetch(`${GAPI}?q=${q}&fields=files(id)`)).json();
+  if (j.files?.[0]) return j.files[0].id;
+  const c = await (await gdFetch(GAPI, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Logbook', mimeType: 'application/vnd.google-apps.folder' }) })).json();
+  return c.id;
+}
+async function gdUpload(id, obj) {
+  const body = JSON.stringify(obj);
+  if (id) { await gdFetch(`${GUP}/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }); return id; }
+  const meta = { name: 'logbook.json', parents: [await gdFolder()], mimeType: 'application/json', appProperties: { logbook: '1' } };
+  const bnd = 'lb' + Date.now();
+  const multipart = `--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bnd}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${bnd}--`;
+  const j = await (await gdFetch(`${GUP}?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + bnd }, body: multipart })).json();
+  ls.set('gdFile', j.id); return j.id;
+}
+// unione riga per riga: vince la modifica più recente, le cancellazioni restano cancellate
+function mergeData(local, remote) {
+  const del = { ...(remote.deleted || {}) };
+  for (const [k, v] of Object.entries(local.deleted || {})) del[k] = Math.max(v, del[k] || 0);
+  const m = new Map();
+  for (const f of remote.flights) m.set(f.id, f);
+  for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
+  const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
+  const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
+  return { version: meta.version || 1, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+}
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
+async function syncNow(interactive) {
+  if (!gdClientId() || GD.busy) return;
+  GD.busy = true; GD.state = 'sync'; renderSyncState();
+  try {
+    await gdToken(interactive);
+    ls.set('gdOn', '1');
+    const id = await gdFindFile();
+    const remote = id ? await (await gdFetch(`${GAPI}/${id}?alt=media`)).json() : null;
+    let merged;
+    if (!remote) merged = data;
+    else if (!data || !data.flights.length) merged = remote;
+    else if (data.forcePush) merged = data;
+    else merged = mergeData(data, remote);
+    if (merged) delete merged.forcePush;
+    const localChanged = sig(merged) !== sig(data), remoteChanged = !remote || sig(merged) !== sig(remote) || data?.forcePush;
+    if (merged && (localChanged || data?.forcePush)) {
+      data = merged; normalizeTypes(data); sortFlights(); await idb.set('data', data); scheduleBackup();
+      if (localChanged && !/nuovo|modifica/.test(location.hash)) route();
+    }
+    if (merged && remoteChanged) await gdUpload(id, merged);
+    GD.state = 'ok'; GD.msg = ''; ls.set('gdLast', new Date().toISOString());
+  } catch (e) {
+    GD.state = e.auth ? 'login' : 'err'; GD.msg = e.message;
+    if (interactive) toast('Sincronizzazione non riuscita: ' + e.message);
+  } finally { GD.busy = false; renderSyncState(); if (location.hash === '#dati') route(); }
+}
+let syncTimer;
+function scheduleSync() { if (gdConnected() && gdTokenOk()) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
+function renderSyncState() {
+  let el = $('#syncState');
+  if (!el) { el = document.createElement('div'); el.id = 'syncState'; el.className = 'sync-state'; $('#backupState').before(el); }
+  if (!gdClientId()) { el.innerHTML = ''; el.hidden = true; return; }
+  el.hidden = false;
+  const last = ls.get('gdLast');
+  const when = last ? new Date(last).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
+  if (!gdConnected()) el.innerHTML = `Google Drive non collegato.<br><button class="btn small" id="sySync">Collega Google Drive</button>`;
+  else if (GD.state === 'sync') el.innerHTML = 'Google Drive: sincronizzo…';
+  else if (GD.state === 'err') el.innerHTML = `Google Drive: ${esc(GD.msg)}<br><button class="btn small" id="sySync">Riprova</button>`;
+  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: ultima sincronizzazione alle ${when}` : ''}.<br><button class="btn small" id="sySync">Sincronizza</button>`;
+  else el.innerHTML = `Google Drive sincronizzato${when ? ` alle ${when}` : ''}`;
+  const b = $('#sySync'); if (b) b.onclick = () => syncNow(true);
+}
+function drivePanelHTML() {
+  const cid = gdClientId(), last = ls.get('gdLast');
+  return `<div class="panel"><h2>Google Drive</h2>
+    <p>Collega il tuo Google Drive per usare lo stesso logbook sul Mac, sull'iPhone e sull'iPad. Il file è <b>Logbook/logbook.json</b> nel tuo Drive e si aggiorna da solo a ogni modifica.</p>
+    ${cid ? `<div class="row">
+        <button class="btn primary" id="gdSync">${gdConnected() ? 'Sincronizza ora' : 'Collega Google Drive'}</button>
+        ${gdConnected() ? '<button class="btn" id="gdOff">Scollega questo dispositivo</button>' : ''}
+        <span class="hint">${gdConnected() ? (last ? `Ultima sincronizzazione ${new Date(last).toLocaleString('it-IT')}` : 'Non ancora sincronizzato') : ''}${GD.state === 'err' ? `. Errore: ${esc(GD.msg)}` : ''}</span></div>`
+      : `<p class="hint">Serve prima l'ID client di Google (si crea una volta nella Google Cloud Console). Incollalo qui:</p>
+      <div class="row"><input id="gdCid" class="btn" style="flex:1;min-width:260px;text-align:left" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Salva</button></div>`}
+  </div>`;
+}
+function bindDrivePanel(main) {
+  const s = main.querySelector('#gdSync'); if (s) s.onclick = () => syncNow(true);
+  const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Scollegare Google Drive da questo dispositivo? I dati restano sia qui sia su Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
+  const c = main.querySelector('#gdCidSave'); if (c) c.onclick = () => { const v = main.querySelector('#gdCid').value.trim(); if (!/\.apps\.googleusercontent\.com$/.test(v)) return toast('Non sembra un ID client di Google'); ls.set('gdClient', v); renderSyncState(); route(); };
+}
+function driveStartup() {
+  renderSyncState();
+  if (gdConnected() && gdTokenOk()) syncNow(false);
+  window.addEventListener('online', () => { if (gdConnected() && gdTokenOk()) syncNow(false); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && gdConnected() && gdTokenOk()) syncNow(false); });
 }
 
 // ---------- avvio ----------
@@ -662,6 +805,7 @@ function viewData(main) {
   $('#version').textContent = `Versione ${APP_VERSION} del ${APP_DATE}`;
   renderBackupState();
   route();
+  driveStartup();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').then(reg => {
       reg.addEventListener('updatefound', () => {

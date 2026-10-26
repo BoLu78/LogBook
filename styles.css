@@ -81,6 +81,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .backup-state { margin-top: auto; font-size: 12px; color: var(--side-dim); padding: 10px; line-height: 1.4; border-top: 1px solid var(--side-line); }
 .backup-state b { color: var(--side-fg); font-weight: 600; }
 .backup-state button { margin-top: 6px; }
+.sync-state { margin-top: auto; font-size: 12px; color: var(--side-dim); padding: 10px; line-height: 1.4; border-top: 1px solid var(--side-line); }
+.sync-state + .backup-state { margin-top: 0; }
+.sync-state button { margin-top: 6px; }
 .version { font-size: 11px; color: var(--side-dim); padding: 4px 10px 0; font-family: "B612 Mono", ui-monospace, monospace; }
 
 main { padding: 30px 40px 64px; max-width: 1260px; width: 100%; }
@@ -188,12 +191,30 @@ legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
 
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; }
-  .backup-state { display: none; }
-  main { padding: 18px 16px 40px; }
+  .side { position: sticky; top: 0; z-index: 5; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px; padding: 8px 10px 6px; border-right: 0; border-bottom: 1px solid var(--side-line); }
+  .brand { padding: 0 8px 0 2px; font-size: 16px; } .brand span { display: none; }
+  .side a { padding: 7px 9px; font-size: 13px; gap: 6px; }
+  .side a svg { width: 15px; height: 15px; }
+  .side a.new { margin: 0; }
+  .backup-state, .version { display: none; }
+  .sync-state { order: 9; flex-basis: 100%; margin: 4px 0 0; padding: 6px 4px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sync-state br { display: none; } .sync-state button { margin: 0; }
+  main { padding: 18px 14px 40px; overflow-x: hidden; }
+  h1 { font-size: 24px; }
+  .hero { grid-template-columns: 1fr; gap: 14px; padding: 16px; }
+  .hero .tot { font-size: 46px; }
+  .legend { gap: 6px 14px; }
+  .recency { grid-template-columns: 1fr 1fr; }
+  table.data { display: block; overflow-x: auto; }
+  td.barcell { min-width: 120px; }
   .two { grid-template-columns: 1fr; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field.w3, .field.w6 { grid-column: span 2; }
+  .panel { padding: 14px; }
+  .easa-preview { max-height: 50vh; }
+  dialog#yearDlg { padding: 14px; width: 96vw; }
+  .theme-pick label { width: calc(50% - 6px); }
+}
 }
 
 /* ---------- Stampa EASA ---------- */

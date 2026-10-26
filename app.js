@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -503,28 +503,34 @@ function easaPageHTML(p, rowsPerPage, totalPages) {
     <div class="easa-foot"><span>${esc(data.pilot || '')}</span><span>Page ${p.n} / ${totalPages}</span></div></section>`;
 }
 function viewPrint(main) {
-  const st = viewPrint.st ||= { rpp: 18, from: '', to: '' };
+  const st = viewPrint.st ||= { rpp: 18, from: '', to: '', last: (() => { try { return +localStorage.getItem('lastPages') || 3; } catch { return 3; } })() };
   const pages = easaPages(st.rpp);
   const sel = pages.filter(p => (!st.from || p.lastd >= st.from) && (!st.to || p.first <= st.to));
+  const lastN = pages.slice(-Math.max(1, Math.min(st.last, pages.length)));
+  const range = ps => ps.length ? `pagine ${ps[0].n}–${ps.at(-1).n}, dal ${dmy(ps[0].first)} al ${dmy(ps.at(-1).lastd)}` : '';
+  const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length)).join(''); setTimeout(() => window.print(), 50); };
   main.innerHTML = `<h1>Stampa EASA</h1>
-  <p class="lede">Formato logbook EASA (AMC1 FCL.050). Il riporto ante 2007 parte come "total from previous pages" della prima pagina.</p>
-  <div class="row filters">
-    <label>Righe per pagina <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-    <label>Dal <input type="date" id="pf" value="${st.from}"></label>
-    <label>Al <input type="date" id="pt" value="${st.to}"></label>
-    <button class="btn primary" id="doPrint">Stampa o salva PDF (${sel.length} pagine)</button>
-  </div>
-  <p class="hint">Le pagine selezionate mantengono numerazione e riporti del logbook completo. Nel dialogo di stampa scegli "Salva come PDF".</p>
-  <div class="easa-preview" id="pv">${sel.slice(-2).map(p => easaPageHTML(p, st.rpp, pages.length)).join('') || '<p>Nessuna pagina nel periodo scelto.</p>'}</div>
-  <p class="hint">Anteprima delle ultime ${Math.min(2, sel.length)} pagine della selezione.</p>`;
+  <p class="lede">Formato logbook EASA (AMC1 FCL.050), ${pages.length} pagine da ${st.rpp} righe. Nel dialogo di stampa scegli "Salva come PDF".</p>
+  <div class="panel"><h2>Ultime pagine del logbook</h2>
+    <p>Quella che di solito chiede un'azienda: le pagine più recenti, con i riporti e il totale aggiornato.</p>
+    <div class="row"><label>Ultime <input type="number" id="lastN" min="1" max="${pages.length}" value="${st.last}" style="width:64px" class="btn"> pagine</label>
+      <button class="btn primary" id="doLast">Stampa le ultime ${lastN.length} pagine</button>
+      <span class="hint">${range(lastN)}</span></div></div>
+  <div class="panel"><h2>Per periodo</h2>
+    <div class="row filters" style="margin:0">
+      <label>Dal <input type="date" id="pf" value="${st.from}"></label>
+      <label>Al <input type="date" id="pt" value="${st.to}"></label>
+      <button class="btn" id="doPrint">Stampa ${st.from || st.to ? 'il periodo' : 'tutto il logbook'} (${sel.length} pagine)</button></div>
+    <p class="hint" style="margin-top:8px">Le pagine mantengono la numerazione e i riporti del logbook completo.</p></div>
+  <div class="row filters"><label>Righe per pagina <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+  <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length)).join('')}</div>
+  <p class="hint">Anteprima dell'ultima pagina.</p>`;
   $('#rpp').onchange = e => { st.rpp = +e.target.value; viewPrint(main); };
   $('#pf').onchange = e => { st.from = e.target.value; viewPrint(main); };
   $('#pt').onchange = e => { st.to = e.target.value; viewPrint(main); };
-  $('#doPrint').onclick = () => {
-    if (!sel.length) return;
-    $('#printArea').innerHTML = sel.map(p => easaPageHTML(p, st.rpp, pages.length)).join('');
-    setTimeout(() => window.print(), 50);
-  };
+  $('#lastN').onchange = e => { st.last = Math.max(1, Math.min(pages.length, parseInt(e.target.value, 10) || 1)); try { localStorage.setItem('lastPages', st.last); } catch { /* ok */ } viewPrint(main); };
+  $('#doLast').onclick = () => print(lastN);
+  $('#doPrint').onclick = () => print(sel);
 }
 window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
 

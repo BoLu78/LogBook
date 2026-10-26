@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -35,6 +35,8 @@ function normalizeTypes(d) {
 // Flotta conosciuta (dalla lista aerei di FlightLog): marca -> modello
 const KNOWN_AIRCRAFT = {"4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400", "VQBWS": "B747-400"};
 const KNOWN_SIMS = ["FFS BOEING 737-800", "FFS BOEING 787-9 Dreamliner", "FFS BOEING 747-400", "FFS BOEING 747-8"];
+const FAMILY = { 'Do328-110': 'Dornier 328', 'P180 Avanti 1': 'Piaggio P180', 'P180 Avanti 2': 'Piaggio P180', 'B747-400': 'Boeing 747', 'B747-8': 'Boeing 747', 'B787-9': 'Boeing 787', 'B737-800': 'Boeing 737', 'B737-8': 'Boeing 737' };
+const familyOf = t => FAMILY[t] || t || '—';
 const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
 const SUM_KEYS = ['total', 'spSe', 'spMe', 'mp', 'night', 'ifr', 'pic', 'sic', 'dual', 'instr', 'sim', 'toDay', 'toNight', 'ldgDay', 'ldgNight'];
 const EMPTY = () => ({ id: '', date: '', kind: 'flight', dep: '', arr: '', out: '', inn: '', type: '', reg: '', spSe: 0, spMe: 0, mp: 0, total: 0, picName: '', toDay: 0, toNight: 0, ldgDay: 0, ldgNight: 0, night: 0, ifr: 0, pic: 0, sic: 0, dual: 0, instr: 0, simType: '', sim: 0, remarks: '', src: 'app' });
@@ -195,6 +197,11 @@ function viewSummary(main) {
   const tl = Object.entries(byType).map(([k, v]) => [k, sum(v), v[v.length - 1].date]).sort((a, b) => typeRank(a[0]) - typeRank(b[0]) || a[2].localeCompare(b[2]));
   const tmax = Math.max(...tl.map(x => x[1].total), 1);
   const trows = tl.map(([k, s, ld]) => `<tr><td class="l"><b>${esc(k)}</b></td><td class="barcell">${splitBar(s, tmax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${dmy(ld)}</td></tr>`).join('');
+  // per famiglia
+  const byFam = {}; for (const [k, , ] of tl) (byFam[familyOf(k)] ||= []).push(k);
+  const fl2 = Object.entries(byFam).map(([fam, types]) => [fam, types, sum(list.filter(f => f.kind === 'flight' && types.includes(f.type || '—'))), tl.filter(x => types.includes(x[0])).map(x => x[2]).sort().at(-1)]);
+  const fmax = Math.max(...fl2.map(x => x[2].total), 1);
+  const frows = fl2.map(([fam, types, s, ld]) => `<tr><td class="l"><b>${esc(fam)}</b><br><span class="hint">${types.map(esc).join(' + ')}</span></td><td class="barcell">${splitBar(s, fmax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${dmy(ld)}</td></tr>`).join('');
   // per anno
   const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
   const yl = Object.keys(byYear).sort().reverse().map(yr => [yr, sum(byYear[yr])]);
@@ -224,6 +231,8 @@ function viewSummary(main) {
     <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} negli ultimi 90 giorni${ok90 ? '' : ': meno di 3, serve recency'}</span></div>
     <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>ultimo volo${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
   </div>
+  <h2>Per famiglia</h2>
+  <table class="data"><thead><tr><th class="l">Famiglia</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${frows}</tbody></table>
   <h2>Per tipo di aereo</h2>
   <table class="data"><thead><tr><th class="l">Tipo</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${trows}</tbody></table>
   ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per tipo e per anno.</p>` : ''}

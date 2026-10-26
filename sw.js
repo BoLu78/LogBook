@@ -1,4 +1,4 @@
-const CACHE = 'logbook-1.4.0';
+const CACHE = 'logbook-1.5.0';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'fonts/b612-400.woff2', 'fonts/b612-700.woff2', 'fonts/b612-mono-400.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

@@ -1,32 +1,58 @@
 @font-face { font-family: "B612"; src: url(fonts/b612-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "B612"; src: url(fonts/b612-700.woff2) format("woff2"); font-weight: 700; font-display: swap; }
 @font-face { font-family: "B612 Mono"; src: url(fonts/b612-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
-:root {
-  --ink: #14213b;          /* blu inchiostro del logbook */
-  --ink-2: #3f4b64;
-  --muted: #687389;
-  --paper: #eceff4;
-  --sheet: #ffffff;
-  --rule: #c6cdd9;
-  --rule-soft: #e2e6ed;
-  --accent: #2459a6;       /* blu penna: PIC */
-  --sic: #8a97ad;          /* copilota */
-  --dual: #c98a00;         /* dual / cautela */
-  --amber: #b47800;
-  --red: #b3261e;
-  --ok: #2c7a4b;
-  --font: "B612", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-  --body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+/* ---------- Palette ----------
+   neutro  : chiaro, sobrio (predefinito di giorno)
+   carta   : come un logbook cartaceo, inchiostro nero e rosso bordeaux
+   cockpit : scuro, colori dei display Boeing (magenta, ciano, ambra)
+   Senza scelta l'app usa neutro di giorno e cockpit con il Mac in modalità scura. */
+:root, :root[data-theme="neutro"] {
+  --ink: #1d232c; --ink-2: #48515e; --muted: #707987;
+  --paper: #f4f5f7; --sheet: #ffffff; --rule: #d3d8df; --rule-soft: #e8ebef;
+  --accent: #0f766e; --on-accent: #ffffff;   /* PIC: verde petrolio */
+  --sic: #9aa5b4; --dual: #d97706;
+  --amber: #b45309; --red: #b42318; --ok: #15803d;
+  --side-bg: #ffffff; --side-fg: #1d232c; --side-dim: #5b6472; --side-line: #e3e7ec;
+  --side-hover: #f1f3f6; --side-active: #e6f2f0; --side-mark: #0f766e;
+  --new-bg: #0f766e; --new-fg: #ffffff; --line: #1d232c;
   color-scheme: light;
 }
+:root[data-theme="carta"] {
+  --ink: #1b1b1b; --ink-2: #444240; --muted: #77736d;
+  --paper: #f5f4f0; --sheet: #fffefb; --rule: #cfccc4; --rule-soft: #e7e4dd;
+  --accent: #8c1c2b; --on-accent: #ffffff;   /* PIC: bordeaux */
+  --sic: #8f9aa6; --dual: #c08a1e;
+  --amber: #a16207; --red: #b42318; --ok: #3f6212;
+  --side-bg: #22262b; --side-fg: #f3f2ee; --side-dim: #b9b6ae; --side-line: rgba(255,255,255,.12);
+  --side-hover: rgba(255,255,255,.07); --side-active: rgba(255,255,255,.13); --side-mark: #d9a1a9;
+  --new-bg: #8c1c2b; --new-fg: #ffffff; --line: #1b1b1b;
+  color-scheme: light;
+}
+:root[data-theme="cockpit"] {
+  --ink: #e8ecf1; --ink-2: #b9c1cc; --muted: #8a94a3;
+  --paper: #0b0e12; --sheet: #141a21; --rule: #2c3540; --rule-soft: #1e252e;
+  --accent: #e15bd8; --on-accent: #12060f;   /* PIC: magenta */
+  --sic: #3fc1d3; --dual: #f2a900;           /* copilota: ciano, dual: ambra */
+  --amber: #f2a900; --red: #ff5a52; --ok: #43d17a;
+  --side-bg: #07090c; --side-fg: #e8ecf1; --side-dim: #8a94a3; --side-line: #1e252e;
+  --side-hover: #121820; --side-active: #18202a; --side-mark: #3fc1d3;
+  --new-bg: #3fc1d3; --new-fg: #061214; --line: #5a6675;
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ink: #e3e8f1; --ink-2: #b4bdcd; --muted: #8590a5;
-    --paper: #0d1424; --sheet: #151e33; --rule: #33405b; --rule-soft: #222d45;
-    --accent: #6f9de6; --sic: #6b7891; --dual: #e2a93a; --amber: #e2a93a; --red: #ef7b72; --ok: #67c38a;
+  :root:not([data-theme]) {
+    --ink: #e8ecf1; --ink-2: #b9c1cc; --muted: #8a94a3;
+    --paper: #0b0e12; --sheet: #141a21; --rule: #2c3540; --rule-soft: #1e252e;
+    --accent: #e15bd8; --on-accent: #12060f; --sic: #3fc1d3; --dual: #f2a900;
+    --amber: #f2a900; --red: #ff5a52; --ok: #43d17a;
+    --side-bg: #07090c; --side-fg: #e8ecf1; --side-dim: #8a94a3; --side-line: #1e252e;
+    --side-hover: #121820; --side-active: #18202a; --side-mark: #3fc1d3;
+    --new-bg: #3fc1d3; --new-fg: #061214; --line: #5a6675;
     color-scheme: dark;
   }
 }
+:root { --font: "B612", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--body); font-variant-numeric: tabular-nums; }
@@ -35,20 +61,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .num, h1, h2, .strip, table.data, .recency b, .hero, .brand { font-family: var(--font); }
 
 .app { display: grid; grid-template-columns: 216px 1fr; min-height: 100vh; }
-.side { background: var(--ink); color: #eef2f8; padding: 20px 12px 14px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side { background: #070c18; border-right: 1px solid var(--rule-soft); } }
+.side { background: var(--side-bg); color: var(--side-fg); border-right: 1px solid var(--side-line); padding: 20px 12px 14px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; padding: 2px 10px 22px; }
 .brand svg { width: 28px; height: 28px; }
-.side a { display: flex; align-items: center; gap: 10px; color: #b9c4d9; text-decoration: none; padding: 8px 10px; border-radius: 7px; }
+.side a { display: flex; align-items: center; gap: 10px; color: var(--side-dim); text-decoration: none; padding: 8px 10px; border-radius: 7px; }
 .side a svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-.side a:hover { background: rgba(255,255,255,.07); color: #fff; }
-.side a.active { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 3px 0 0 #8fb4ee; }
-.side a.new { margin: 8px 0; background: #2f63b3; color: #fff; }
-.side a.new:hover { background: #3a71c4; }
-.backup-state { margin-top: auto; font-size: 12px; color: #9aa7bf; padding: 10px; line-height: 1.4; border-top: 1px solid rgba(255,255,255,.1); }
-.backup-state b { color: #fff; font-weight: 600; }
+.side a:hover { background: var(--side-hover); color: var(--side-fg); }
+.side a.active { background: var(--side-active); color: var(--side-fg); box-shadow: inset 3px 0 0 var(--side-mark); }
+.side a.new { margin: 8px 0; background: var(--new-bg); color: var(--new-fg); }
+.side a.new:hover { background: var(--new-bg); color: var(--new-fg); filter: brightness(1.1); }
+.backup-state { margin-top: auto; font-size: 12px; color: var(--side-dim); padding: 10px; line-height: 1.4; border-top: 1px solid var(--side-line); }
+.backup-state b { color: var(--side-fg); font-weight: 600; }
 .backup-state button { margin-top: 6px; }
-.version { font-size: 11px; color: #7f8ba3; padding: 4px 10px 0; font-family: "B612 Mono", ui-monospace, monospace; }
+.version { font-size: 11px; color: var(--side-dim); padding: 4px 10px 0; font-family: "B612 Mono", ui-monospace, monospace; }
 
 main { padding: 30px 40px 64px; max-width: 1260px; width: 100%; }
 main:focus { outline: none; }
@@ -58,10 +83,10 @@ h2 { font-size: 15px; font-weight: 700; margin: 36px 0 12px; }
 
 .btn { display: inline-block; text-decoration: none; color: var(--ink); border: 1px solid var(--rule); background: var(--sheet); padding: 6px 12px; border-radius: 7px; cursor: pointer; }
 .btn:hover { border-color: var(--ink-2); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.danger { color: var(--red); }
 .btn.small { padding: 3px 8px; font-size: 12px; }
-.side .btn { background: transparent; color: #fff; border-color: rgba(255,255,255,.35); }
+.side .btn { background: transparent; color: var(--side-fg); border-color: var(--side-line); }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
 /* Testata riepilogo */
@@ -88,10 +113,10 @@ td.barcell { width: 38%; text-align: left !important; }
 .recency .gauge.over i { background: var(--red); }
 
 /* Striscia totali in stile modulo EASA: l'elemento distintivo */
-.strip { background: var(--sheet); border: 1.5px solid var(--ink); display: flex; overflow-x: auto; }
-.strip .grp { display: flex; flex-direction: column; border-right: 1px solid var(--ink); flex: 1 1 auto; }
+.strip { background: var(--sheet); border: 1.5px solid var(--line); display: flex; overflow-x: auto; }
+.strip .grp { display: flex; flex-direction: column; border-right: 1px solid var(--line); flex: 1 1 auto; }
 .strip .grp:last-child { border-right: 0; }
-.strip .gh { font-size: 10.5px; font-weight: 700; text-align: center; padding: 5px 6px; border-bottom: 1px solid var(--ink); color: var(--ink-2); white-space: nowrap; }
+.strip .gh { font-size: 10.5px; font-weight: 700; text-align: center; padding: 5px 6px; border-bottom: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
 .strip .cols { display: flex; flex: 1; }
 .strip .c { border-right: 1px solid var(--rule); display: flex; flex-direction: column; flex: 1 1 0; min-width: 66px; }
 .strip .c:last-child { border-right: 0; }
@@ -107,7 +132,7 @@ table.data { width: 100%; border-collapse: collapse; background: var(--sheet); b
 table.data th, table.data td { padding: 5px 8px; border-bottom: 1px solid var(--rule-soft); text-align: right; white-space: nowrap; }
 table.data th { font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--sheet); position: sticky; top: 0; border-bottom: 1px solid var(--rule); }
 table.data td.l, table.data th.l { text-align: left; }
-table.data tr.sum td { font-weight: 700; border-top: 1.5px solid var(--ink); }
+table.data tr.sum td { font-weight: 700; border-top: 1.5px solid var(--line); }
 table.data tbody tr.click { cursor: pointer; }
 table.data tbody tr.click:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 table.data td.rem { white-space: normal; text-align: left; color: var(--ink-2); max-width: 260px; font-size: 12.5px; }
@@ -138,8 +163,8 @@ legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
 .seg label { padding: 6px 12px; cursor: pointer; border-right: 1px solid var(--rule); font-size: 13px; color: var(--ink); }
 .seg label:last-child { border-right: 0; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg input:checked + span { color: #fff; }
-.seg label:has(input:checked) { background: var(--accent); color: #fff; }
+
+.seg label:has(input:checked) { background: var(--accent); color: var(--on-accent); }
 .seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hint { font-size: 12px; color: var(--muted); }
 .actions { display: flex; gap: 10px; margin-top: 8px; }
@@ -190,10 +215,6 @@ legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
   .easa td { height: 8.4mm; }
   .easa tr.tot td { height: 7mm; }
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .btn.primary,
-  :root:not([data-theme="light"]) .seg label:has(input:checked) { color: #0f1626; }
-}
 
 /* Finestra mesi dell'anno */
 dialog#yearDlg { width: min(1040px, 94vw); max-height: 88vh; border: 1px solid var(--rule); border-radius: 10px; padding: 22px 26px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 60px rgba(10, 20, 40, .35); }
@@ -204,3 +225,11 @@ dialog#yearDlg::backdrop { background: rgba(12, 20, 36, .45); }
 table.data tr.idle td { color: var(--muted); }
 .chev { color: var(--muted); font-weight: 400; }
 table.data tr[data-year]:hover .chev { color: var(--accent); }
+
+.theme-pick { display: flex; gap: 12px; flex-wrap: wrap; }
+.theme-pick label { cursor: pointer; border: 1px solid var(--rule); border-radius: 8px; padding: 10px; width: 170px; background: var(--sheet); }
+.theme-pick label:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.theme-pick input { position: absolute; opacity: 0; }
+.theme-pick .sw { display: flex; height: 34px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; border: 1px solid var(--rule); }
+.theme-pick .sw i { flex: 1; }
+.theme-pick b { display: block; } .theme-pick span { font-size: 12px; color: var(--muted); }

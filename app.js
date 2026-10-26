@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -565,10 +565,23 @@ function exportCSV() {
   const lines = [cols.join(','), ...data.flights.map(f => cols.map(c => q(String(timeCols.has(c) ? hm(f[c]) : (f[c] ?? '')))).join(','))];
   download(`logbook-${today()}.csv`, lines.join('\n'), 'text/csv');
 }
+const THEMES = [
+  ['', 'Automatico', 'Neutro di giorno, Cockpit con il Mac in modalità scura', ['#f4f5f7', '#0f766e', '#9aa5b4', '#0b0e12', '#e15bd8']],
+  ['neutro', 'Neutro', 'Chiaro e sobrio, PIC in verde petrolio', ['#ffffff', '#1d232c', '#0f766e', '#9aa5b4', '#d97706']],
+  ['carta', 'Carta', 'Come un logbook cartaceo, PIC in bordeaux', ['#fffefb', '#22262b', '#8c1c2b', '#8f9aa6', '#c08a1e']],
+  ['cockpit', 'Cockpit', 'Scuro, colori dei display Boeing', ['#0b0e12', '#141a21', '#e15bd8', '#3fc1d3', '#f2a900']]
+];
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  try { t ? localStorage.setItem('theme', t) : localStorage.removeItem('theme'); } catch { /* preferenza non salvata */ }
+}
 function viewData(main) {
   const n = data?.flights.length || 0;
+  const cur = document.documentElement.dataset.theme || '';
   main.innerHTML = `<h1>Dati e backup</h1>
   <p class="lede">${n ? `${n} righe nel logbook${data.updated ? `, ultima modifica ${new Date(data.updated).toLocaleString('it-IT')}` : ''}.` : 'Il logbook è vuoto.'}</p>
+  <div class="panel"><h2>Colori</h2>
+    <div class="theme-pick" role="radiogroup" aria-label="Colori">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
   <div class="panel"><h2>Cartella di backup</h2>
     <p>L'app salva <b>logbook.json</b> nella cartella a ogni modifica, più una copia giornaliera nella sottocartella <b>storico</b>. Scegli iCloud Drive › Logbook per averla anche nel cloud.</p>
     <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Cambia cartella' : 'Scegli cartella'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
@@ -582,6 +595,7 @@ function viewData(main) {
   ${n ? `<div class="panel"><h2>Intestazione e riporto iniziale</h2>
     <div class="row"><label>Nome sul logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Salva nome</button></div>
     <p class="hint">Riporto ante 2007: ${hm0(data.opening?.total)} totali, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} copilota, ${hm0(data.opening?.sim)} simulatore.</p></div>` : ''}`;
+  main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
   $('#dChoose').onclick = chooseFolder;
   $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Importazione non riuscita: ' + err.message); } e.target.value = ''; };
   if (n) {

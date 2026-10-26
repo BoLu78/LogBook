@@ -196,7 +196,8 @@ legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
   .side a { padding: 7px 9px; font-size: 13px; gap: 6px; }
   .side a svg { width: 15px; height: 15px; }
   .side a.new { margin: 0; }
-  .backup-state, .version { display: none; }
+  .backup-state { display: none; }
+  .version { order: -1; flex-basis: 100%; padding: 0 2px 4px; font-size: 11px; }
   .sync-state { order: 9; flex-basis: 100%; margin: 4px 0 0; padding: 6px 4px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .sync-state br { display: none; } .sync-state button { margin: 0; }
   main { padding: 18px 14px 40px; overflow-x: hidden; }

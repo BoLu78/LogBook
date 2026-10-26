@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -658,7 +658,7 @@ function viewData(main) {
 
 
 // ---------- Google Drive: un unico logbook per Mac, iPhone e iPad ----------
-const GD_CLIENT_ID = '';   // ID client OAuth di Google (non è segreto); si può anche incollare in Dati e backup
+const GD_CLIENT_ID = '541510620978-gs4am93a0a224qa0lvg7uaqq5c1919tb.apps.googleusercontent.com';   // ID client OAuth di Google (non è segreto); si può anche incollare in Dati e backup
 const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* ok */ } } };
 const ss = { get: k => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* ok */ } } };

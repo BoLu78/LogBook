@@ -271,3 +271,12 @@ table.data tr[data-year]:hover .chev { color: var(--accent); }
 .map-legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; background: color-mix(in srgb, var(--sheet) 85%, transparent); padding: 5px 9px; border-radius: 6px; }
 .map-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .map-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+
+/* Voli programmati da NetLine */
+.newdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); margin-right: 6px; vertical-align: middle; }
+.tag.plan { border-color: var(--amber); color: var(--amber); }
+table.data tr.planned td { color: var(--muted); font-style: italic; }
+table.data tr.planned td:first-child { font-style: normal; }
+.plan-alert, .plan-note { border: 1px solid var(--amber); border-left-width: 4px; background: color-mix(in srgb, var(--amber) 10%, var(--sheet)); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px; line-height: 1.5; }
+.plan-alert .btn { margin-left: 8px; }
+.side a .badge { margin-left: auto; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; }

@@ -28,7 +28,7 @@ async function viewMap(main) {
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const fams = [...new Set(data.flights.filter(f => f.kind === 'flight').map(f => familyOf(f.type)))].sort((a, b) => Object.keys(FAM_VAR).indexOf(a) - Object.keys(FAM_VAR).indexOf(b));
 
-  let list = data.flights.filter(f => f.kind === 'flight');
+  let list = data.flights.filter(f => f.kind === 'flight' && !f.planned);
   if (st.period === '12m') list = list.filter(f => f.date >= addDays(today(), -365));
   else if (/^\d{4}$/.test(st.period)) list = list.filter(f => f.date.startsWith(st.period));
   if (st.fam) list = list.filter(f => familyOf(f.type) === st.fam);

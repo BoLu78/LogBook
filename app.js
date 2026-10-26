@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -219,7 +219,7 @@ function sum(list, withOpening) {
   const t = Object.fromEntries(SUM_KEYS.map(k => [k, 0])); t.legs = 0; t.sims = 0;
   if (withOpening && data.opening) for (const k of SUM_KEYS) t[k] += data.opening[k] || 0;
   t.nm = 0; t.pax = 0; t.paxLegs = 0; t.fuelUsed = 0; t.fuelLegs = 0; t.payload = 0;
-  for (const f of list) { for (const k of SUM_KEYS) t[k] += f[k] || 0; if (f.kind === 'sim') t.sims++; else { t.legs++; t.nm += nmOf(f); if (f.pax) { t.pax += f.pax; t.paxLegs++; } if (f.fuelUsed) { t.fuelUsed += f.fuelUsed; t.fuelLegs++; } t.payload += f.payload || 0; } }
+  for (const f of list) { if (f.planned) continue; for (const k of SUM_KEYS) t[k] += f[k] || 0; if (f.kind === 'sim') t.sims++; else { t.legs++; t.nm += nmOf(f); if (f.pax) { t.pax += f.pax; t.paxLegs++; } if (f.fuelUsed) { t.fuelUsed += f.fuelUsed; t.fuelLegs++; } t.payload += f.payload || 0; } }
   return t;
 }
 const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.remarks) ? 'PICUS' : 'PIC') : f.dual > 0 ? 'DUAL' : f.sic > 0 ? 'SIC' : '';
@@ -285,7 +285,7 @@ function viewSummary(main) {
 
   // limiti e recency
   const td = today();
-  const fl = data.flights.filter(f => f.kind === 'flight');
+  const fl = data.flights.filter(f => f.kind === 'flight' && !f.planned);
   const last = (from) => sum(fl.filter(f => f.date >= from && f.date <= td));
   const d28 = last(addDays(td, -27)), y = last(td.slice(0, 4) + '-01-01'), m12 = last(addDays(td, -364)), d90 = last(addDays(td, -89));
   const lastFlight = fl[fl.length - 1];
@@ -316,6 +316,7 @@ function viewSummary(main) {
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Riepilogo</h1>
     <label class="row filters" style="margin:0">Periodo
     <select id="per"><option value="all">Tutta la carriera</option><option value="12m">Ultimi 12 mesi</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
+  ${plannedBanner()}
   <p class="lede">${t.legs} tratte e ${t.sims} sessioni al simulatore ${label}. Media per tratta ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
     <div class="tot">${hm0(t.total)}<small>ore di volo</small></div>
@@ -353,6 +354,7 @@ function viewSummary(main) {
   <h2>Per anno</h2>
   <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
+  bindPlannedBanner(main);
   const yt = main.querySelectorAll('table.data')[2].tBodies[0];
   const open = e => { const tr = e.target.closest('tr[data-year]'); if (tr) showYear(tr.dataset.year); };
   yt.onclick = open; yt.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } };
@@ -388,7 +390,7 @@ function viewFlights(main) {
   const types = [...new Set(data.flights.map(f => f.kind === 'sim' ? 'Simulatore' : f.type).filter(Boolean))].sort();
   const q = st.q.toLowerCase();
   let list = data.flights.filter(f => (!st.year || f.date.startsWith(st.year)) &&
-    (!st.type || (st.type === 'Simulatore' ? f.kind === 'sim' : f.type === st.type)) &&
+    (!st.type || (st.type === 'Simulatore' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
     (!q || [f.dep, f.arr, f.reg, f.picName, f.remarks, f.simType, f.flightNo].join(' ').toLowerCase().includes(q)));
   const t = sum(list);
   list = list.slice().reverse();
@@ -396,13 +398,17 @@ function viewFlights(main) {
   const rows = shown.map(f => {
     const r = roleOf(f);
     if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td></td><td>${hm(f.sim)}</td><td></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
+    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Da vedere"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'da completare' : 'programmato'}</span></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.change || f.flightNo || '')}</td></tr>`;
     return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td>${hm(f.night)}</td><td>${(f.toDay + f.toNight) || ''}</td><td>${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
   }).join('');
+  const nPlan = data.flights.filter(f => f.planned).length, nDot = data.flights.filter(f => f.planned && !f.seen).length;
   main.innerHTML = `<h1>Voli</h1>
+  ${plannedBanner()}
   <p class="lede">${t.legs} tratte, ${hm0(t.total)} di volo${t.sims ? `, ${t.sims} sessioni al simulatore (${hm0(t.sim)})` : ''}.</p>
   <div class="row filters">
     <select id="fy" aria-label="Anno"><option value="">Tutti gli anni</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
-    <select id="ft" aria-label="Tipo"><option value="">Tutti i tipi</option>${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
+    <select id="ft" aria-label="Tipo"><option value="">Tutti i tipi</option>${nPlan ? `<option value="__planned">Programmati da NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Con il pallino (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
+    ${nDot ? '<button class="btn" id="seenAll">Segna tutti come visti</button>' : ''}
     <input id="fq" type="search" placeholder="Cerca aeroporto, marca, comandante, note" size="36" value="${esc(st.q)}">
     <a class="btn primary" href="#nuovo">Nuovo volo</a>
   </div>
@@ -414,6 +420,8 @@ function viewFlights(main) {
   $('#ft').onchange = e => { st.type = e.target.value; viewFlights(main); };
   let deb; $('#fq').oninput = e => { clearTimeout(deb); deb = setTimeout(() => { st.q = e.target.value; viewFlights(main); const i = $('#fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
   if ($('#more')) $('#more').onclick = () => { st.all = true; viewFlights(main); };
+  if ($('#seenAll')) $('#seenAll').onclick = async () => { for (const f of data.flights) if (f.planned && !f.seen) f.seen = true; await save(); updateBadge(); viewFlights(main); };
+  bindPlannedBanner(main);
   main.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) location.hash = 'modifica/' + tr.dataset.id; };
 }
 
@@ -421,6 +429,7 @@ function viewFlights(main) {
 function viewEdit(main, id) {
   const orig = id ? data.flights.find(f => f.id === id) : null;
   if (id && !orig) { main.innerHTML = '<h1>Volo non trovato</h1><p><a href="#voli">Torna ai voli</a></p>'; return; }
+  if (orig?.planned && !orig.seen) { orig.seen = true; save(); updateBadge(); }
   const last = data.flights.filter(f => f.kind === 'flight').at(-1);
   const f = orig ? { ...orig } : { ...EMPTY(), date: today(), type: last?.type || '', reg: '', dep: last?.arr || '' };
   const role = orig ? roleOf(orig) : 'PIC';
@@ -433,6 +442,7 @@ function viewEdit(main, id) {
 
   main.innerHTML = `<h1>${orig ? 'Modifica' : 'Nuovo'} ${isSim ? 'simulatore' : 'volo'}</h1>
   <p class="lede">${orig ? dmy(orig.date) + (isSim ? '' : ` ${esc(orig.dep)}–${esc(orig.arr)}`) : 'I tempi si calcolano da Off e On; puoi correggerli a mano.'}</p>
+  ${orig?.planned ? `<div class="plan-note"><b>Volo importato da NetLine${orig.flightNo ? ` (${esc(orig.flightNo)})` : ''}</b>: gli orari sono quelli schedulati, ${esc(orig.sched?.out || orig.out)}–${esc(orig.sched?.inn || orig.inn)} UTC. Metti off e on blocks effettivi${orig.acHint && !orig.type ? `, la marca (nel turno: ${esc(orig.acHint)})` : ''} e salva: da quel momento il volo entra nei totali.${orig.change ? `<br>Ultima modifica nel turno: ${esc(orig.change)}` : ''}</div>` : ''}
   <form class="flight" id="ff" novalidate>
     <fieldset><div class="seg" role="radiogroup" aria-label="Tipo di registrazione">
       <label><input type="radio" name="kind" value="flight" ${!isSim ? 'checked' : ''}><span>Volo</span></label>
@@ -457,7 +467,7 @@ function viewEdit(main, id) {
         <label><input type="checkbox" id="mpOn" ${mpOn ? 'checked' : ''}> Multi pilot</label></div>
       <p class="hint" id="roleHint"></p></fieldset>
     <fieldset><legend>Condizioni, decolli e atterraggi</legend><div class="grid">
-      <div class="field"><label for="night">Notte</label><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night ? 'data-auto="1"' : ''}></div>
+      <div class="field"><label for="night">Notte</label><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}></div>
       <div class="field"><label for="ifr">IFR</label><input id="ifr" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></div>
       <div class="field"><label for="toDay">Decolli giorno</label><input id="toDay" type="number" min="0" value="${f.toDay || ''}"></div>
       <div class="field"><label for="toNight">Decolli notte</label><input id="toNight" type="number" min="0" value="${f.toNight || ''}"></div>
@@ -482,7 +492,7 @@ function viewEdit(main, id) {
       <div class="field w3"><label for="spic">Istruttore o esaminatore</label><input id="spic" value="${esc(f.picName)}"></div>
     </div></fieldset></div>
     <fieldset><div class="grid"><div class="field w6"><label for="remarks">Note e firme</label><textarea id="remarks" rows="2">${esc(f.remarks)}</textarea></div></div></fieldset>
-    <div class="actions"><button class="btn primary" type="submit">${orig ? 'Salva modifiche' : 'Salva volo'}</button>
+    <div class="actions"><button class="btn primary" type="submit">${orig?.planned ? 'Conferma con gli orari effettivi' : orig ? 'Salva modifiche' : 'Salva volo'}</button>
       ${orig ? '<button class="btn" type="button" id="dup">Duplica</button><button class="btn danger" type="button" id="del">Elimina</button>' : ''}
       <a class="btn" href="#voli">Annulla</a></div>
     <datalist id="regs">${regs.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
@@ -583,7 +593,7 @@ function viewEdit(main, id) {
         approach: $('#approach').value.trim(), nm: calc ? calc.nm : (rec.nm || 0)
       });
     }
-    rec.mt = Date.now();
+    rec.mt = Date.now(); delete rec.planned; delete rec.change; rec.seen = true;
     if (orig) data.flights[data.flights.findIndex(x => x.id === orig.id)] = rec; else data.flights.push(rec);
     await save(orig ? 'Modifiche salvate' : 'Volo salvato');
     location.hash = 'voli';
@@ -594,7 +604,7 @@ function viewEdit(main, id) {
 const EASA_COLS = [ // [larghezza mm]
   13, 10, 9, 10, 9, 11, 14, 10, 10, 11, 11, 16, 8, 8, 8, 8, 11, 11, 10, 10, 11, 11, 13, 10, 0];
 function easaPages(rowsPerPage) {
-  const all = data.flights; const pages = [];
+  const all = data.flights.filter(f => !f.planned); const pages = [];
   let prev = Object.fromEntries(SUM_KEYS.map(k => [k, data.opening?.[k] || 0]));
   for (let i = 0; i < all.length; i += rowsPerPage) {
     const rows = all.slice(i, i + rowsPerPage);
@@ -703,6 +713,8 @@ async function enrichFromFlightLog(rows) {
   route();
 }
 async function importFile(file) {
+  const head = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+  if (/\.pdf$/i.test(file.name) || String.fromCharCode(...head) === '%PDF-') return importNetline(await file.arrayBuffer());
   const text = await file.text();
   if (/\.json$/i.test(file.name) || /^[{[]/.test(text.trim())) {
     const d = JSON.parse(text);
@@ -763,7 +775,7 @@ function viewData(main) {
     <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Cambia cartella' : 'Scegli cartella'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
     ${fsSupported ? '' : '<p class="hint">Questo browser non permette di scrivere in una cartella: apri l\'app con Chrome.</p>'}</div>
   <div class="panel"><h2>Importa</h2>
-    <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario). Il file <b>sync</b> della cartella FlightLog Sync completa i voli passati con passeggeri, carburante, payload, avvicinamento e distanza, senza toccare il resto.</p>
+    <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario). Un <b>PDF Individual duty plan di NetLine</b> aggiunge i voli nuovi con gli orari schedulati, da completare con gli effettivi; i voli già nel logbook non vengono toccati. Il file <b>sync</b> della cartella FlightLog Sync completa i voli passati con passeggeri, carburante, payload, avvicinamento e distanza, senza toccare il resto.</p>
     <div class="row"><input type="file" id="dFile"></div></div>
   <div class="panel"><h2>Esporta</h2>
     <p>Una copia da conservare o da aprire in un foglio di calcolo.</p>
@@ -782,6 +794,84 @@ function viewData(main) {
   }
 }
 
+
+
+// ---------- NetLine: voli programmati dal PDF "Individual duty plan" ----------
+// I voli già nel logbook non si toccano mai. Entrano solo i voli nuovi, con i blocchi schedulati, segnati come programmati
+// (fuori dai totali) con il pallino finché non si apre il volo. Se un volo ancora programmato cambia nel turno, si aggiorna e riprende il pallino.
+let IATA = null;
+async function importNetline(buf) {
+  if (!data) throw new Error('importa prima il logbook');
+  toast('Leggo il PDF NetLine…');
+  const pdfjs = await import(new URL('lib/netline/pdf.min.mjs', location.href).href);
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('lib/netline/pdf.worker.min.mjs', location.href).href;
+  const { parsePdf } = await import(new URL('lib/netline/parser.js', location.href).href);
+  const roster = await parsePdf(pdfjs, buf);
+  await loadAirports();
+  IATA ||= await fetch('data/iata.json').then(r => r.json());
+  const me = roster.meta?.pilotCode || '';
+  const icao = c => IATA[c] || c;
+  const legs = [];
+  for (const d of roster.days || []) for (const l of d.legs || []) if (l.kind === 'flight') legs.push({ d, l });
+  if (!legs.length) throw new Error('nel PDF non ho trovato voli: è un Individual duty plan di NetLine?');
+  const hhmm = t => t ? `${t.slice(0, 2)}:${t.slice(2)}` : '';
+  const key = f => `${f.date}|${f.dep}|${f.arr}`;
+  const byKey = new Map(); for (const f of data.flights) if (f.kind === 'flight') byKey.set(key(f), f);
+  let added = 0, updated = 0, untouched = 0, gone = 0;
+  const seenKeys = new Set();
+  for (const { d, l } of legs) {
+    const dep = icao(l.dep), arr = icao(l.arr), out = hhmm(l.depTime), inn = hhmm(l.arrTime);
+    const k = `${d.date}|${dep}|${arr}`; seenKeys.add(k);
+    const cockpit = l.crew?.cockpit || [];
+    const mine = cockpit.find(c => c.code === me);
+    const iAmCaptain = cockpit.length ? cockpit[0].code === me : true;
+    const total = ((toMin(inn) - toMin(out)) + 1440) % 1440;
+    const nc = nightCalc(d.date, out, inn, dep, arr);
+    const to = /TKO/.test(mine?.tag || '') ? 1 : 0, ld = /LND/.test(mine?.tag || '') ? 1 : 0;
+    const fields = {
+      date: d.date, dep, arr, out, inn, sched: { out, inn }, flightNo: `${l.airline || ''}${l.number || ''}`, acHint: l.ac || '',
+      total, mp: total, ifr: total, pic: iAmCaptain ? total : 0, sic: iAmCaptain ? 0 : total, picName: iAmCaptain ? 'SELF' : (cockpit[0]?.code || ''),
+      night: nc ? nc.night : 0, nm: nc ? nc.nm : 0,
+      toDay: to && !(nc?.toNight) ? 1 : 0, toNight: to && nc?.toNight ? 1 : 0, ldgDay: ld && !(nc?.ldgNight) ? 1 : 0, ldgNight: ld && nc?.ldgNight ? 1 : 0,
+      remarks: cockpit.length ? `Equipaggio: ${cockpit.map(c => c.code).join(' ')}` : ''
+    };
+    const ex = byKey.get(k);
+    if (ex && !ex.planned) { untouched++; continue; }       // già nel logbook con gli effettivi: non si tocca
+    if (ex && ex.planned) {
+      if (ex.sched?.out !== out || ex.sched?.inn !== inn) {
+        ex.change = `orario cambiato da ${ex.sched?.out}–${ex.sched?.inn} a ${out}–${inn}`;
+        Object.assign(ex, fields, { seen: false, mt: Date.now() }); updated++;
+      } else if (ex.change === 'non più nel turno') { delete ex.change; ex.seen = false; ex.mt = Date.now(); updated++; }
+      continue;
+    }
+    const rec = { ...EMPTY(), ...fields, id: nextId(), kind: 'flight', type: '', reg: '', src: 'netline', planned: true, seen: false, mt: Date.now() };
+    data.flights.push(rec); byKey.set(k, rec); added++;
+  }
+  // voli ancora programmati nel periodo del PDF che nel turno nuovo non ci sono più
+  const p0 = roster.meta?.periodStart, p1 = roster.meta?.periodEnd;
+  if (p0 && p1) for (const f of data.flights) if (f.planned && f.date >= p0 && f.date <= p1 && !seenKeys.has(key(f)) && f.change !== 'non più nel turno') { f.change = 'non più nel turno'; f.seen = false; f.mt = Date.now(); gone++; }
+  const parts = [`${added} voli nuovi`, updated && `${updated} cambiati`, gone && `${gone} non più nel turno`, untouched && `${untouched} già nel logbook non toccati`].filter(Boolean);
+  await save('NetLine: ' + parts.join(', '));
+  updateBadge(); route();
+}
+function plannedLate() {
+  const now = Date.now();
+  return data.flights.filter(f => f.planned && Date.parse(`${f.date}T${f.inn || '23:59'}:00Z`) + (toMin(f.inn) < toMin(f.out) ? 86400000 : 0) < now);
+}
+function plannedBanner() {
+  const late = plannedLate();
+  if (!late.length) return '';
+  return `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 volo già fatto ha' : `${late.length} voli già fatti hanno`} ancora gli orari schedulati.</b> Inserisci gli orari effettivi per farli entrare nei totali.
+    <button class="btn small" data-plan-go>Mostrali</button></div>`;
+}
+function bindPlannedBanner(main) { const b = main.querySelector('[data-plan-go]'); if (b) b.onclick = () => { viewFlights.st = { year: '', type: '__planned', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; }
+function updateBadge() {
+  const a = document.querySelector('.side a[data-view="voli"]'); if (!a || !data) return;
+  const n = data.flights.filter(f => f.planned && !f.seen).length;
+  let b = a.querySelector('.badge'); if (!n) { b?.remove(); return; }
+  if (!b) { b = document.createElement('span'); b.className = 'badge'; a.append(b); }
+  b.textContent = n; b.title = `${n} voli da vedere`;
+}
 
 // ---------- Google Drive: un unico logbook per Mac, iPhone e iPad ----------
 const GD_CLIENT_ID = '541510620978-gs4am93a0a224qa0lvg7uaqq5c1919tb.apps.googleusercontent.com';   // ID client OAuth di Google (non è segreto); si può anche incollare in Dati e backup
@@ -872,6 +962,7 @@ async function syncNow(interactive) {
     if (merged && (localChanged || data?.forcePush)) {
       data = merged; normalizeTypes(data); sortFlights(); await idb.set('data', data); scheduleBackup();
       if (localChanged && !/nuovo|modifica/.test(location.hash)) route();
+      updateBadge();
     }
     if (merged && remoteChanged) await gdUpload(id, merged);
     GD.state = 'ok'; GD.msg = ''; ls.set('gdLast', new Date().toISOString());
@@ -931,6 +1022,7 @@ function driveStartup() {
   $('#version').textContent = `Versione ${APP_VERSION} del ${APP_DATE}`;
   renderBackupState();
   route();
+  updateBadge();
   driveStartup();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').then(reg => {

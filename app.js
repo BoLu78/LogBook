@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.3';
+const APP_VERSION = '2.9.4';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1173,22 +1173,34 @@ function flightLogRecord(x, regType) {
   return f;
 }
 // file "sync" della cartella FlightLog Sync: completa i voli passati con pax, carburante, payload, avvicinamento e distanza
+// completa solo i campi vuoti: non sovrascrive mai, vale anche per i voli col lucchetto
+function fillGaps(f, add) {
+  let ch = false;
+  for (const [k, v] of Object.entries(add)) {
+    if (k === 'sched') { if (v.out && v.inn && !(f.sched?.out && f.sched?.inn)) { f.sched = { out: f.sched?.out || v.out, inn: f.sched?.inn || v.inn }; ch = true; } continue; }
+    if (v && !f[k]) { f[k] = v; ch = true; }
+  }
+  if (ch) f.mt = Date.now();
+  return ch;
+}
 async function enrichFromFlightLog(rows) {
   if (!data) throw new Error('import the logbook first');
   const td = today(); let filled = 0, notFound = 0;
   const idx = new Map(data.flights.filter(f => f.kind === 'flight').map(f => [`${f.date}|${f.dep}|${f.out}`, f]));
   for (const x of rows) {
-    if (x.sessiontype === 'SIMULATOR' && x.immat) { const sm = data.flights.find(f => f.kind === 'sim' && f.date === x.outschedDate && !f.simReg); if (sm) { sm.simReg = x.immat; sm.mt = Date.now(); filled++; } if (!simFleet()[x.immat] && x.aircraftname) (data.simulators ||= {})[x.immat] = { type: x.aircraftname }; continue; }
-    if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate >= td) continue;
+    if (x.sessiontype === 'SIMULATOR' && x.outschedDate) {
+      const sm = data.flights.find(f => f.kind === 'sim' && f.date === x.outschedDate);
+      if (sm && fillGaps(sm, { simReg: x.immat || '', picName: x.instructorName || '' })) filled++;
+      if (x.immat && !simFleet()[x.immat] && x.aircraftname) (data.simulators ||= {})[x.immat] = { type: x.aircraftname };
+      continue;
+    }
+    if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate > td) continue;
     const f = idx.get(`${x.outschedDate}|${x.OUTOACI}|${x.outreal}`);
     if (!f) { notFound++; continue; }
-    if (f.locked) continue;
-    const add = { pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho), off: x.offtime || '', on: x.ontime || '' };
-    let ch = false;
-    for (const [k, v] of Object.entries(add)) if (v && !f[k]) { f[k] = v; ch = true; }
-    if (ch) { f.mt = Date.now(); filled++; }
+    const add = { sched: { out: x.outsched || '', inn: x.insched || '' }, off: x.offtime || '', on: x.ontime || '', pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho), flightNo: x.flightnumber || '' };
+    if (fillGaps(f, add)) filled++;
   }
-  await save(`${filled} sectors completed with FlightLog data${notFound ? `, ${notFound} not found` : ''}`);
+  await save(`${filled} entries completed with FlightLog data${notFound ? `, ${notFound} not found` : ''}`);
   route();
 }
 async function importFile(file) {
@@ -1209,14 +1221,20 @@ async function importFile(file) {
   const regType = { ...KNOWN_AIRCRAFT }; for (const f of data.flights) if (f.reg && f.type) regType[f.reg] = f.type;
   const key = f => `${f.date}|${f.kind === 'sim' ? 'SIM' : f.dep}|${f.out}`;
   const have = new Set(data.flights.map(key));
-  let added = 0, untyped = 0;
+  let added = 0, untyped = 0, completed = 0;
   for (const x of rows) {
     const f = flightLogRecord(x, regType);
-    if (!f.date || have.has(key(f))) continue;
+    if (!f.date) continue;
+    if (have.has(key(f))) {
+      const ex = data.flights.find(e => key(e) === key(f));
+      if (ex && ex.kind === 'flight' && fillGaps(ex, { sched: { out: x.SchedOut || '', inn: x.SchedIn || '' }, off: x.Off || '', on: x.On || '', pax: num(x.Pax), payload: parseDec(x.Payload), fuelUsed: parseDec(x.Fuel), fuelPlan: parseDec(x['Fuel Prev']), approach: x.Approaches || '', nm: num(x.Distance) })) completed++;
+      continue;
+    }
     f.id = nextId(); f.mt = Date.now(); data.flights.push(f); have.add(key(f)); added++;
     if (f.kind === 'flight' && !f.type) untyped++;
   }
-  await save(added ? `${added} entries added from FlightLog` : 'No new entries in the CSV');
+  const msg = [added && `${added} entries added`, completed && `${completed} completed`].filter(Boolean).join(', ');
+  await save(msg ? msg + ' from FlightLog' : 'Nothing new in the CSV');
   if (untyped) toast(`${untyped} flights without aircraft type: complete them in Flights`);
   route();
 }

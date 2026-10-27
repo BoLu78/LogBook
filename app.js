@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.2';
+const APP_VERSION = '2.9.3';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -40,6 +40,8 @@ function normalizeTypes(d) {
   let n = 0;
   for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; f.mt = Date.now(); n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
+  // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
+  if (d && !d.lockAllDone) { const now = Date.now(); for (const f of d.flights || []) if (!f.planned && !f.locked) { f.locked = true; f.mt = now; } d.lockAllDone = 1; n++; }
   // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
   const byNorm = new Map(Object.keys(KNOWN_AIRCRAFT).map(r => [r.replace(/[^A-Z0-9]/g, ''), r]));
   for (const f of d?.flights || []) if (f.kind === 'flight' && f.reg && !KNOWN_AIRCRAFT[f.reg]) { const r = byNorm.get(f.reg.toUpperCase().replace(/[^A-Z0-9]/g, '')); if (r && r !== f.reg) { f.reg = r; if (!f.type) f.type = KNOWN_AIRCRAFT[r]; f.mt = Date.now(); n++; } }
@@ -1274,6 +1276,9 @@ function viewData(main) {
       <li><b>logbook.json</b>: replaces the whole logbook.</li></ul></details>`)}
   ${sec(I.exp, 'Export', `
     <div class="set-row act"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>CSV for spreadsheets</button><a class="btn" href="#stampa">EASA print</a></div>`)}
+  ${n ? sec('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 'Lock', `
+    <div class="set-row"><span class="k">Locked entries</span><span class="v">${fmtN(data.flights.filter(f => f.locked).length)} of ${fmtN(data.flights.filter(f => !f.planned).length)} completed</span></div>
+    <div class="set-row act"><button class="btn" id="dLockAll">Lock all completed entries</button><span class="hint">Planned flights from the roster stay editable.</span></div>`) : ''}
   ${sec(I.theme, 'Theme', `
     <div class="set-row col"><div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>`)}
   <p class="hint set-ver">Logbook ${APP_VERSION} · ${APP_DATE}</p>`;
@@ -1284,6 +1289,7 @@ function viewData(main) {
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');
     $('#dCsv').onclick = exportCSV;
+    $('#dLockAll').onclick = async () => { const now = Date.now(); let k = 0; for (const f of data.flights) if (!f.planned && !f.locked) { f.locked = true; f.mt = now; k++; } await save(k ? `${k} entries locked` : 'All completed entries are already locked'); viewData(main); };
     const p = $('#dPilot');
     p.onchange = async () => { const v = p.value.trim().toUpperCase(); p.value = v; if (v === (data.pilot || '')) return; data.pilot = v; data.metaMt = Date.now(); await save('Name saved'); };
   }
@@ -1450,7 +1456,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, simRegDone: local.simRegDone || remote.simRegDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

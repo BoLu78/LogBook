@@ -1,6 +1,6 @@
 'use strict';
-const APP_VERSION = '2.4.0';
-const APP_DATE = '26/10/2026';
+const APP_VERSION = '2.5.0';
+const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
 // ---------- utilità ----------
@@ -38,6 +38,7 @@ const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 
 const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH' };
 function normalizeTypes(d) {
   let n = 0;
+  for (const f of d?.flights || []) if (f.src === 'netline' && /^Equipaggio: /.test(f.remarks || '')) { f.crew = f.remarks.replace(/^Equipaggio: /, ''); f.remarks = ''; f.mt = Date.now(); n++; }
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
     let ch = false;
@@ -436,6 +437,7 @@ function viewFlights(main) {
   if ($('#seenAll')) $('#seenAll').onclick = async () => { for (const f of data.flights) if (f.planned && !f.seen) f.seen = true; await save(); updateBadge(); viewFlights(main); };
   bindPlannedBanner(main);
   main.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) location.hash = 'modifica/' + tr.dataset.id; };
+  if (viewFlights.hl) { const tr = main.querySelector(`tr[data-id="${viewFlights.hl}"]`); viewFlights.hl = null; if (tr) { tr.classList.add('hl'); tr.scrollIntoView({ block: 'center' }); } }
 }
 
 // ---------- Nuovo / modifica ----------
@@ -443,7 +445,7 @@ function viewEdit(main, id) {
   const orig = id ? data.flights.find(f => f.id === id) : null;
   if (id && !orig) { main.innerHTML = '<h1>Volo non trovato</h1><p><a href="#voli">Torna ai voli</a></p>'; return; }
   if (orig?.planned && !orig.seen) { orig.seen = true; save(); updateBadge(); }
-  const last = data.flights.filter(f => f.kind === 'flight').at(-1);
+  const last = data.flights.filter(f => f.kind === 'flight' && !f.planned && f.date <= today()).at(-1);
   const f = orig ? { ...orig } : { ...EMPTY(), date: today(), type: last?.type || '', reg: '', dep: last?.arr || '' };
   const role = orig ? roleOf(orig) : 'PIC';
   const isSim = f.kind === 'sim';
@@ -466,48 +468,51 @@ function viewEdit(main, id) {
         ${orig?.planned ? '<span class="chip warn">PROGRAMMATO</span>' : ''}
       </div>
       <div class="route">
-        <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Partenza" autocapitalize="characters"><div class="apt-sub" id="depSub"></div></div>
+        <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Partenza" autocapitalize="characters"><div class="apt-sub" id="depSub"></div>
+          <label class="sch"><span>STD</span><input id="std" value="${esc(f.sched?.out || '')}" placeholder="--:--" aria-label="Partenza schedulata"></label></div>
         <div class="mid"><svg viewBox="0 0 200 40" aria-hidden="true"><path d="M8 34 Q100 -8 192 34" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
           <input id="flightNo" class="fno" value="${esc(f.flightNo || '')}" placeholder="N° volo" aria-label="Numero volo"></div>
-        <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrivo" autocapitalize="characters"><div class="apt-sub" id="arrSub"></div></div>
+        <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrivo" autocapitalize="characters"><div class="apt-sub" id="arrSub"></div>
+          <label class="sch"><span>STA</span><input id="sta" value="${esc(f.sched?.inn || '')}" placeholder="--:--" aria-label="Arrivo schedulato"></label></div>
       </div>
-      <div class="times">
-        <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.out || '')}</b><small>UTC</small></div>
-        <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOut"></small></label>
-        <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOff"></small></label>
-        <label class="t"><span>ON</span><input id="on" value="${esc(f.on || '')}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOn"></small></label>
-        <label class="t"><span>IN</span><input id="inn" value="${esc(f.inn)}" placeholder="--:--" inputmode="numeric"><small class="d" id="dIn"></small></label>
-        <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.inn || '')}</b><small>UTC</small></div>
+      <div class="actual">
+        <div class="ah">Orari effettivi UTC</div>
+        <div class="times4">
+          <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--"><small class="d" id="dOut"></small></label>
+          <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--"><small class="d" id="dOff"></small></label>
+          <label class="t"><span>ON</span><input id="on" value="${esc(f.on || '')}" placeholder="--:--"><small class="d" id="dOn"></small></label>
+          <label class="t"><span>IN</span><input id="inn" value="${esc(f.inn)}" placeholder="--:--"><small class="d" id="dIn"></small></label>
+        </div>
       </div>
       <div class="blocks">
-        <div><span>Blocco schedulato</span><b id="schedBlock">${f.sched ? hm(((toMin(f.sched.inn) - toMin(f.sched.out)) + 1440) % 1440) : '—'}</b></div>
+        <div><span>Blocco sched.</span><b id="schedBlock">—</b><small class="d"></small></div>
         <label><span>Blocco reale</span><input id="total" value="${hm(f.total)}" placeholder="0:00"><small class="d" id="dBlock"></small></label>
-        <div><span>Tempo di volo</span><b id="airTime">—</b></div>
-        <label><span>Notte <i class="moon-ico" aria-hidden="true">☾</i></span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}></label>
+        <div><span>Tempo di volo</span><b id="airTime">—</b><small class="d"></small></div>
+        <label><span>Notte</span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}><small class="d" id="nightCalc"></small></label>
+        <div><span>Distanza</span><b id="distNM">—</b><small class="d">NM</small></div>
       </div>
-      <p class="hint" id="nightHint" aria-live="polite"></p>
     </section>
 
     <section class="sheet-card">
       <h3>Volo</h3>
+      <div class="ac-row">
+        <span class="cap">Aeromobile</span>
+        <input id="reg" list="regs" class="reg" value="${esc(f.reg)}" placeholder="${esc(f.acHint || 'Marca')}" aria-label="Marca" autocapitalize="characters">
+        <input id="type" list="types" class="type" value="${esc(f.type)}" placeholder="Modello" aria-label="Modello">
+      </div>
       <div class="flight-grid">
         <div class="col">
           <div class="cap">Partenza</div>
           <div class="counter" id="cTO"><div class="lbl">Decolli <button type="button" class="moon" aria-label="Decollo di notte" aria-pressed="false">☾</button></div>
             <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
         </div>
-        <div class="col ac">
-          <div class="cap">Aeromobile</div>
-          <input id="reg" list="regs" class="reg" value="${esc(f.reg)}" placeholder="${esc(f.acHint || 'Marca')}" aria-label="Marca" autocapitalize="characters">
-          <input id="type" list="types" class="type" value="${esc(f.type)}" placeholder="Modello" aria-label="Modello">
-        </div>
         <div class="col">
           <div class="cap">Arrivo</div>
-          <input id="approach" list="apprs" class="appr" value="${esc(f.approach || '')}" placeholder="Avvicinamento" aria-label="Avvicinamento">
           <div class="counter" id="cLDG"><div class="lbl">Atterraggi <button type="button" class="moon" aria-label="Atterraggio di notte" aria-pressed="false">☾</button></div>
             <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
         </div>
       </div>
+      <label class="ri appr-row"><span>Avvicinamento</span>${approachSelect(f.approach)}</label>
       <input type="hidden" id="toDay" value="${f.toDay || ''}"><input type="hidden" id="toNight" value="${f.toNight || ''}">
       <input type="hidden" id="ldgDay" value="${f.ldgDay || ''}"><input type="hidden" id="ldgNight" value="${f.ldgNight || ''}">
     </section>
@@ -523,6 +528,7 @@ function viewEdit(main, id) {
         <label class="ri"><span>Istruttore</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
       </div>
       <p class="hint rows-hint" id="roleHint"></p>
+      ${f.crew ? `<p class="hint rows-hint">Equipaggio nel turno NetLine: ${esc(f.crew)}</p>` : ''}
     </section>
 
     <section class="sheet-card">
@@ -533,7 +539,7 @@ function viewEdit(main, id) {
         <label><span>Carburante usato</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small></label>
         <label><span>Carburante pianificato</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
       </div>
-      <p class="hint rows-hint">Distanza <b id="distNM">—</b> NM, CO₂ <b id="co2">—</b> t</p>
+      <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
     </section>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
@@ -545,25 +551,37 @@ function viewEdit(main, id) {
       <div class="field"><label for="sim">Durata</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
       <div class="field w3"><label for="spic">Istruttore o esaminatore</label><input id="spic" value="${esc(f.picName)}"></div>
     </div></fieldset></div>
-    <section class="sheet-card"><h3>Note</h3><textarea id="remarks" class="note" rows="3" placeholder="Tocca per aggiungere una nota, firme, PICUS…">${esc(f.remarks)}</textarea></section>
+    <section class="sheet-card"><h3>Note e firma</h3>
+      <textarea id="remarks" class="note" rows="2" placeholder="Tocca per aggiungere una nota">${esc(f.remarks)}</textarea>
+      <div class="sig-wrap"><div class="sig-head"><span>Firma</span><button type="button" class="btn small" id="sigClear">Cancella firma</button></div>
+        <canvas id="sig" aria-label="Spazio per la firma: firma con il dito o con il mouse"></canvas>
+        <p class="hint" id="sigHint">${f.signature ? 'Firma salvata. Firma di nuovo sopra per sostituirla.' : 'Firma qui con il dito o con il mouse.'}</p></div>
+    </section>
     <div class="actions"><button class="btn primary" type="submit">${orig?.planned ? 'Conferma con gli orari effettivi' : orig ? 'Salva modifiche' : 'Salva volo'}</button>
       ${orig ? '<button class="btn" type="button" id="dup">Duplica</button><button class="btn danger" type="button" id="del">Elimina</button>' : ''}
       <a class="btn" href="#voli">Annulla</a></div>
     <datalist id="regs">${regs.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
     <datalist id="types">${typesL.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
-    <datalist id="apprs">${['CAT I', 'CAT II', 'CAT IIIA', 'CAT IIIB', 'RNP', 'LNAV/VNAV', 'LNAV', 'VOR', 'NDB', 'LOC', 'Visual', 'Circling'].map(r => `<option>${r}</option>`).join('')}</datalist>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
   </form>`;
 
   const form = $('#ff');
   // campi orario e durata: al tocco selezionano tutto, si scrivono anche senza i due punti
-  const TIME_IDS = ['out', 'off', 'on', 'inn', 'sout', 'sinn'], DUR_IDS = ['total', 'night', 'ifr', 'sim'];
-  for (const id of [...TIME_IDS, ...DUR_IDS]) { const el = $('#' + id); if (el) { el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off'); } }
+  const TIME_IDS = ['std', 'sta', 'out', 'off', 'on', 'inn', 'sout', 'sinn'], DUR_IDS = ['total', 'night', 'ifr', 'sim'];
+  const isTD = el => TIME_IDS.includes(el.id) || DUR_IDS.includes(el.id) || el.id === 'dep' || el.id === 'arr';
+  for (const id of [...TIME_IDS, ...DUR_IDS]) { const el = $('#' + id); if (el) { el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off'); el.dataset.ph = el.placeholder; } }
+  for (const id of ['dep', 'arr']) $('#' + id).dataset.ph = 'ICAO';
+  // al tocco il valore diventa il suggerimento in grigio e il campo si svuota: si scrive subito il nuovo orario.
+  // Se si esce senza scrivere niente, torna il valore di prima.
   form.addEventListener('focusin', e => {
-    const el = e.target; if (!(TIME_IDS.includes(el.id) || DUR_IDS.includes(el.id))) return;
-    setTimeout(() => { try { el.select(); el.setSelectionRange(0, el.value.length); } catch { /* ok */ } }, 0);
+    const el = e.target; if (!isTD(el) || !el.value) return;
+    el.dataset.prev = el.value; el.placeholder = el.value; el.value = '';
   });
-  form.addEventListener('mouseup', e => { if (TIME_IDS.includes(e.target.id) || DUR_IDS.includes(e.target.id)) e.preventDefault(); });
+  form.addEventListener('focusout', e => {
+    const el = e.target; if (!isTD(el)) return;
+    if (el.value === '' && el.dataset.prev) el.value = el.dataset.prev;
+    delete el.dataset.prev; el.placeholder = el.dataset.ph || '';
+  });
   // la normalizzazione avviene prima degli altri calcoli (fase di cattura)
   form.addEventListener('change', e => {
     const el = e.target;
@@ -592,15 +610,13 @@ function viewEdit(main, id) {
   const runNight = async () => {
     await loadAirports();
     calc = nightCalc($('#date').value, $('#out').value.trim(), $('#inn').value.trim(), $('#dep').value.trim().toUpperCase(), $('#arr').value.trim().toUpperCase());
-    const h = $('#nightHint');
-    if (!calc) { h.textContent = ''; return; }
-    const tipo = calc.night === 0 ? 'Volo tutto di giorno' : calc.night >= calc.dur ? 'Volo tutto di notte' : `Notte calcolata ${hm(calc.night)} su ${hm(calc.dur)}`;
-    h.innerHTML = `${tipo}, decollo ${calc.toNight ? 'di notte' : 'di giorno'}, atterraggio ${calc.ldgNight ? 'di notte' : 'di giorno'}.` +
-      (!$('#night').dataset.auto && parseHM($('#night').value) !== calc.night ? ` <button type="button" class="btn small" id="useNight">Usa ${hm(calc.night) || '0:00'}</button>` : '');
+    const h = $('#nightCalc');
+    if (!calc) { h.textContent = ''; setTimeout(() => { try { extras(); } catch { /* non ancora pronto */ } }, 0); return; }
+    h.innerHTML = !$('#night').dataset.auto && parseHM($('#night').value) !== calc.night ? `<button type="button" class="linkbtn" id="useNight" title="Usa la notte calcolata">calcolata ${hm(calc.night) || '0:00'}</button>` : '';
     if ($('#night').dataset.auto) $('#night').value = hm(calc.night);
     const u = $('#useNight'); if (u) u.onclick = () => { $('#night').value = hm(calc.night); $('#night').dataset.auto = '1'; placeTOLDG(); runNight(); };
     if (!orig || $('#night').dataset.auto) placeTOLDG();
-    if (typeof extras === 'function') setTimeout(extras, 0);
+    setTimeout(() => { try { extras(); } catch { /* non ancora pronto */ } }, 0);
   };
   ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', runNight));
   ['toDay', 'toNight', 'ldgDay', 'ldgNight'].forEach(k => $('#' + k).addEventListener('change', placeTOLDG));
@@ -622,7 +638,7 @@ function viewEdit(main, id) {
   const aptLabel = async () => {
     await loadAirports(); IATA ||= await fetch('data/iata.json').then(r => r.json()).catch(() => ({}));
     const rev = c => Object.keys(IATA).find(k => IATA[k] === c) || '';
-    for (const [inp, sub] of [['#dep', '#depSub'], ['#arr', '#arrSub']]) { const c = $(inp).value.trim().toUpperCase(), p = apt(c); $(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(p[2])}` : ''; }
+    for (const [inp, sub] of [['#dep', '#depSub'], ['#arr', '#arrSub']]) { const c = $(inp).value.trim().toUpperCase(), p = apt(c); $(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(cleanAptName(p[2]))}` : ''; }
   };
   const extras = () => {
     const off = toMin($('#off').value), on = toMin($('#on').value);
@@ -632,9 +648,11 @@ function viewEdit(main, id) {
       let d = ((x - y) + 1440) % 1440; if (d > 720) d -= 1440;
       if (taxi) { e.textContent = `taxi ${Math.abs(d)} min`; e.className = 'd'; return; }
       e.textContent = d === 0 ? 'in orario' : `${d > 0 ? '+' : '−'}${Math.abs(d)} min`; e.className = 'd ' + (d > 0 ? 'late' : 'early'); };
-    dl($('#out').value, f.sched?.out, '#dOut'); dl($('#inn').value, f.sched?.inn, '#dIn');
+    const std = $('#std').value, sta = $('#sta').value;
+    dl($('#out').value, std, '#dOut'); dl($('#inn').value, sta, '#dIn');
     dl($('#off').value, $('#out').value, '#dOff', true); dl($('#inn').value, $('#on').value, '#dOn', true);
-    const sb = f.sched ? ((toMin(f.sched.inn) - toMin(f.sched.out)) + 1440) % 1440 : null, rb = parseHM($('#total').value);
+    const sb = toMin(std) != null && toMin(sta) != null ? ((toMin(sta) - toMin(std)) + 1440) % 1440 : null, rb = parseHM($('#total').value);
+    $('#schedBlock').textContent = sb != null ? hm0(sb) : '—';
     $('#dBlock').textContent = sb != null && rb ? (rb === sb ? '' : `${rb > sb ? '+' : '−'}${Math.abs(rb - sb)} min`) : '';
     const fu = parseDec($('#fuelUsed').value), fp = parseDec($('#fuelPlan').value);
     $('#fuelDiff').textContent = fu && fp ? `t, ${fu - fp > 0 ? '+' : '−'}${Math.abs(fu - fp).toFixed(1).replace('.', ',')} sul piano` : 't';
@@ -642,7 +660,7 @@ function viewEdit(main, id) {
     $('#co2').textContent = fu ? (fu * 3.16).toFixed(1).replace('.', ',') : '—';
     drawTO(); drawLDG();
   };
-  ['off', 'on', 'out', 'inn', 'total', 'fuelUsed', 'fuelPlan', 'ifr'].forEach(k => $('#' + k).addEventListener('input', extras));
+  ['std', 'sta', 'off', 'on', 'out', 'inn', 'total', 'fuelUsed', 'fuelPlan', 'ifr', 'night'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 0)));
   ['dep', 'arr'].forEach(k => $('#' + k).addEventListener('change', aptLabel));
   const runNight0 = runNight;
   ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 50)));
@@ -660,6 +678,8 @@ function viewEdit(main, id) {
     if ((r === 'PIC' || r === 'PICUS') && !$('#picName').value) $('#picName').value = 'SELF';
   };
   form.querySelectorAll('input[name=role]').forEach(r => r.onchange = hint); hint();
+  const sig = signaturePad($('#sig'), f.signature, () => { $('#sigHint').textContent = 'Firma pronta: viene salvata con il volo.'; });
+  $('#sigClear').onclick = () => { sig.clear(); $('#sigHint').textContent = 'Firma cancellata.'; };
 
   if (orig) {
     $('#del').onclick = async () => { if (!confirm('Eliminare questa riga dal logbook?')) return; data.flights = data.flights.filter(x => x.id !== orig.id); (data.deleted ||= {})[orig.id] = Date.now(); await save('Riga eliminata'); location.hash = 'voli'; };
@@ -672,42 +692,126 @@ function viewEdit(main, id) {
 
   form.onsubmit = async e => {
     e.preventDefault();
-    const rec = orig ? { ...orig } : { ...EMPTY(), id: nextId() };
-    form.querySelectorAll('.err').forEach(x => x.classList.remove('err'));
-    const bad = el => { el.classList.add('err'); el.focus(); toast('Controlla il campo evidenziato'); return false; };
-    const remarks = $('#remarks').value.trim();
-    if (kind() === 'sim') {
-      const sim = parseHM($('#sim').value);
-      if (!$('#sdate').value) return bad($('#sdate'));
-      if (!sim || isNaN(sim)) return bad($('#sim'));
-      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src, kind: 'sim', date: $('#sdate').value, simType: $('#simType').value.trim(), out: normTime($('#sout').value), inn: normTime($('#sinn').value), sim, picName: $('#spic').value.trim(), remarks });
-    } else {
-      const total = parseHM($('#total').value), night = parseHM($('#night').value), ifr = parseHM($('#ifr').value);
-      if (!$('#date').value) return bad($('#date'));
-      if (!/^[A-Z0-9]{3,4}$/i.test($('#dep').value.trim())) return bad($('#dep'));
-      if (!/^[A-Z0-9]{3,4}$/i.test($('#arr').value.trim())) return bad($('#arr'));
-      if (!total || isNaN(total)) return bad($('#total'));
-      if (isNaN(night) || night > total) return bad($('#night'));
-      if (isNaN(ifr) || ifr > total) return bad($('#ifr'));
-      const role = form.role.value, mp = $('#mpOn').checked;
-      let rem = remarks;
-      if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
-      Object.assign(rec, {
-        kind: 'flight', date: $('#date').value, dep: $('#dep').value.trim().toUpperCase(), arr: $('#arr').value.trim().toUpperCase(),
-        out: normTime($('#out').value), inn: normTime($('#inn').value), off: normTime($('#off').value), on: normTime($('#on').value), reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
-        flightNo: $('#flightNo').value.trim(), picName: $('#picName').value.trim(), total, night, ifr,
-        mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
-        pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
-        instr: $('#instrOn').checked ? total : 0, toDay: num($('#toDay').value), toNight: num($('#toNight').value),
-        ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem,
-        pax: num($('#pax').value), payload: parseDec($('#payload').value), fuelPlan: parseDec($('#fuelPlan').value), fuelUsed: parseDec($('#fuelUsed').value),
-        approach: $('#approach').value.trim(), nm: calc ? calc.nm : (rec.nm || 0)
-      });
+    try {
+      const rec = orig ? { ...orig } : { ...EMPTY(), id: nextId() };
+      form.querySelectorAll('.err').forEach(x => x.classList.remove('err'));
+      const bad = (el, msg) => { el.classList.add('err'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => el.focus({ preventScroll: true }), 300); toast(msg || 'Controlla il campo evidenziato'); return false; };
+      const remarks = $('#remarks').value.trim();
+      if (kind() === 'sim') {
+        const sim = parseHM($('#sim').value);
+        if (!$('#sdate').value) return bad($('#sdate'), 'Manca la data della sessione');
+        if (!sim || isNaN(sim)) return bad($('#sim'), 'Manca la durata della sessione');
+        Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src, kind: 'sim', date: $('#sdate').value, simType: $('#simType').value.trim(), out: normTime($('#sout').value), inn: normTime($('#sinn').value), sim, picName: $('#spic').value.trim(), remarks });
+      } else {
+        for (const k of ['std', 'sta', 'out', 'off', 'on', 'inn']) {
+          const el = $('#' + k); el.value = normTime(el.value);
+          if (el.value && toMin(el.value) == null) return bad(el, `Orario ${k.toUpperCase()} non valido: scrivi per esempio 1857`);
+        }
+        if (!$('#date').value) return bad($('#date'), 'Manca la data');
+        if (!/^[A-Z0-9]{3,4}$/i.test($('#dep').value.trim())) return bad($('#dep'), 'Manca il codice ICAO di partenza');
+        if (!/^[A-Z0-9]{3,4}$/i.test($('#arr').value.trim())) return bad($('#arr'), "Manca il codice ICAO d'arrivo");
+        if (!$('#out').value) return bad($('#out'), "Manca l'orario OUT");
+        if (!$('#inn').value) return bad($('#inn'), "Manca l'orario IN");
+        let total = parseHM($('#total').value);
+        if (!total || isNaN(total)) total = ((toMin($('#inn').value) - toMin($('#out').value)) + 1440) % 1440;
+        if (!total) return bad($('#total'), 'Il blocco reale è zero: controlla OUT e IN');
+        let night = parseHM($('#night').value), ifr = parseHM($('#ifr').value);
+        if (isNaN(night)) night = calc ? calc.night : 0;
+        if (isNaN(ifr)) ifr = total;
+        night = Math.min(night, total); ifr = Math.min(ifr, total);
+        const role = form.role.value, mp = $('#mpOn').checked;
+        let rem = remarks;
+        if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
+        const std = $('#std').value, sta = $('#sta').value;
+        Object.assign(rec, {
+          kind: 'flight', date: $('#date').value, dep: $('#dep').value.trim().toUpperCase(), arr: $('#arr').value.trim().toUpperCase(),
+          out: $('#out').value, inn: $('#inn').value, off: $('#off').value, on: $('#on').value, reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
+          flightNo: $('#flightNo').value.trim(), picName: $('#picName').value.trim(), total, night, ifr,
+          mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
+          pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
+          instr: $('#instrOn').checked ? total : 0, toDay: num($('#toDay').value), toNight: num($('#toNight').value),
+          ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem,
+          pax: num($('#pax').value), payload: parseDec($('#payload').value), fuelPlan: parseDec($('#fuelPlan').value), fuelUsed: parseDec($('#fuelUsed').value),
+          approach: $('#approach').value, nm: calc ? calc.nm : (rec.nm || 0)
+        });
+        if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
+      }
+      const sv = sig.value(); if (sv) rec.signature = sv; else delete rec.signature;
+      rec.mt = Date.now(); delete rec.planned; delete rec.change; rec.seen = true;
+      const i = data.flights.findIndex(x => x.id === rec.id);
+      if (i >= 0) data.flights[i] = rec; else data.flights.push(rec);
+      await save(orig ? 'Volo salvato' : 'Volo aggiunto');
+      updateBadge();
+      viewFlights.st = { year: '', type: '', q: '', all: false }; viewFlights.hl = rec.id;
+      location.hash = 'voli';
+    } catch (err) {
+      console.error(err); toast('Salvataggio non riuscito: ' + err.message);
     }
-    rec.mt = Date.now(); delete rec.planned; delete rec.change; rec.seen = true;
-    if (orig) data.flights[data.flights.findIndex(x => x.id === orig.id)] = rec; else data.flights.push(rec);
-    await save(orig ? 'Modifiche salvate' : 'Volo salvato');
-    location.hash = 'voli';
+  };
+}
+
+// ---------- scheda volo: avvicinamenti, nomi aeroporto, firma ----------
+const APPROACHES = [
+  ['PA, precisione', ['CAT I', 'CAT II', 'CAT 3A', 'CAT 3B', 'CAT 3C', 'ILS PRM', 'GLS', 'GBAS', 'PAR']],
+  ['APV, con guida verticale', ['LNAV/VNAV', 'LPV', 'RNP-AR']],
+  ['NPA, non di precisione', ['LOC', 'LOC/DME', 'LDA', 'VOR', 'VOR/DME', 'NDB', 'NDB/DME', 'LNAV', 'SRA']],
+  ['A vista', ['Visual', 'Circling']]
+];
+const APPR_ALIAS = { 'CAT IIIA': 'CAT 3A', 'CAT IIIB': 'CAT 3B', 'CAT IIIC': 'CAT 3C', VISUAL: 'Visual' };
+function approachSelect(v) {
+  v = APPR_ALIAS[String(v || '').toUpperCase()] || v || '';
+  const all = APPROACHES.flatMap(g => g[1]);
+  return `<select id="approach" aria-label="Avvicinamento"><option value="">—</option>${v && !all.includes(v) ? `<option selected>${esc(v)}</option>` : ''}${APPROACHES.map(([g, list]) => `<optgroup label="${g}">${list.map(a => `<option ${a === v ? 'selected' : ''}>${a}</option>`).join('')}</optgroup>`).join('')}</select>`;
+}
+// "Rome–Fiumicino Leonardo da Vinci International Airport" -> "Rome–Fiumicino Leonardo da Vinci"
+function cleanAptName(n) {
+  return String(n || '')
+    .replace(/^(Aeroporto Internazionale|Aéroport international|Aeroporto|Aeropuerto|Aéroport)\s+(di |de |d'|del |della )?/i, '')
+    .replace(/\s*\b(International|Intl\.?)?\s*(Airport|Aerodrome|Airfield|Flughafen)\b/gi, '')
+    .replace(/\s*[-–,]\s*$/, '').replace(/\s{2,}/g, ' ').trim();
+}
+// riquadro per la firma con il dito o con il mouse; la firma salvata è un PNG piccolo
+function signaturePad(cv, initial, onDraw) {
+  const ctx = cv.getContext('2d');
+  let drawn = false, drawing = false, dirty = false, last = null;
+  const box = () => cv.getBoundingClientRect();
+  const fit = () => {
+    const r = box(), dpr = devicePixelRatio || 1;
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2.2; ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.strokeStyle = ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#111';
+  };
+  fit();
+  if (initial) {
+    const im = new Image();
+    im.onload = () => { const r = box(), k = Math.min(r.width / im.width, r.height / im.height); ctx.drawImage(im, (r.width - im.width * k) / 2, (r.height - im.height * k) / 2, im.width * k, im.height * k); drawn = true; };
+    im.src = initial;
+  }
+  const pt = e => { const r = box(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener('pointerdown', e => {
+    if (!dirty && drawn) { const r = box(); ctx.clearRect(0, 0, r.width, r.height); drawn = false; }
+    cv.setPointerCapture(e.pointerId); drawing = true; dirty = true; last = pt(e);
+    ctx.beginPath(); ctx.arc(last[0], last[1], 1.1, 0, Math.PI * 2); ctx.fill(); drawn = true;
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drawing) return; const p = pt(e);
+    ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p;
+  });
+  const end = () => { if (drawing) onDraw?.(); drawing = false; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  return {
+    clear() { const r = box(); ctx.clearRect(0, 0, r.width, r.height); drawn = false; dirty = true; },
+    value() {
+      if (!dirty) return initial || null;
+      if (!drawn) return null;
+      const out = document.createElement('canvas'); out.width = 360; out.height = 120;
+      const o = out.getContext('2d'); o.drawImage(cv, 0, 0, out.width, out.height);
+      // sempre inchiostro scuro, anche se la firma è stata fatta col tema scuro
+      const d = o.getImageData(0, 0, out.width, out.height);
+      for (let i = 0; i < d.data.length; i += 4) { d.data[i] = d.data[i + 1] = d.data[i + 2] = 20; }
+      o.putImageData(d, 0, 0);
+      return out.toDataURL('image/png');
+    }
   };
 }
 
@@ -733,7 +837,7 @@ function easaPageHTML(p, rowsPerPage, totalPages) {
   const n = v => v || '';
   const body = p.rows.map(f => f.kind === 'sim'
     ? `<tr><td>${dmy(f.date)}</td><td></td><td></td><td></td><td></td><td colspan="2">FSTD</td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.picName)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.simType)}</td><td>${hm(f.sim)}</td><td class="rem">${esc(f.remarks)}</td></tr>`
-    : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}</td></tr>`).join('')
+    : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`).join('')
     + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(25)}</tr>`).join('');
   const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td><td>${hm(t.spSe)}</td><td>${hm(t.spMe)}</td><td>${hm(t.mp)}</td><td>${hm(t.total)}</td><td></td><td>${n(t.toDay)}</td><td>${n(t.toNight)}</td><td>${n(t.ldgDay)}</td><td>${n(t.ldgNight)}</td><td>${hm(t.pic)}</td><td>${hm(t.sic)}</td><td>${hm(t.dual)}</td><td>${hm(t.instr)}</td><td>${hm(t.night)}</td><td>${hm(t.ifr)}</td><td></td><td>${hm(t.sim)}</td>${sig}</tr>`;
   const sig = `<td rowspan="3" class="sig">I, ${esc(data.pilot || '')}, certify that the entries in this log are true.<br><br>Pilot's signature ______________</td>`;
@@ -944,7 +1048,7 @@ async function importNetline(buf) {
       total, mp: total, ifr: total, pic: iAmCaptain ? total : 0, sic: iAmCaptain ? 0 : total, picName: iAmCaptain ? 'SELF' : (cockpit[0]?.code || ''),
       night: nc ? nc.night : 0, nm: nc ? nc.nm : 0,
       toDay: to && !(nc?.toNight) ? 1 : 0, toNight: to && nc?.toNight ? 1 : 0, ldgDay: ld && !(nc?.ldgNight) ? 1 : 0, ldgNight: ld && nc?.ldgNight ? 1 : 0,
-      remarks: cockpit.length ? `Equipaggio: ${cockpit.map(c => c.code).join(' ')}` : ''
+      remarks: '', crew: cockpit.map(c => c.code).join(' ')
     };
     const ex = byKey.get(k);
     if (ex && !ex.planned) { untouched++; continue; }       // già nel logbook con gli effettivi: non si tocca

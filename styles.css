@@ -392,3 +392,55 @@ textarea.note { display: block; width: 100%; border: 0; background: transparent;
 textarea.note:focus { outline: none; }
 form.sheet .actions { position: sticky; bottom: 0; background: var(--paper); padding: 10px 0; z-index: 2; }
 @media (max-width: 760px) { .ri { padding: 11px 12px; } .ri .seg label { padding: 5px 7px; font-size: 12px; } }
+
+/* ---------- Scheda volo 2.5 ---------- */
+/* i pulsanti radio nascosti non devono allargare la pagina sul telefono */
+.seg label { position: relative; }
+.seg input { left: 0; top: 0; width: 1px; height: 1px; margin: 0; }
+.apt-sub b { display: inline; margin-right: 4px; }
+.apt-sub { min-height: 30px; }
+.sch { display: inline-flex; align-items: baseline; gap: 6px; margin-top: 4px; padding: 3px 10px; border-radius: 6px; background: color-mix(in srgb, var(--sheet) 85%, transparent); border: 1px solid var(--rule-soft); }
+.sch span { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.sch input { width: 62px; text-align: center; border: 0; background: transparent; font-family: var(--font); font-size: 18px; color: var(--ink-2); padding: 0; }
+.sch input:focus { outline: none; color: var(--ink); }
+.actual { margin-top: 12px; background: color-mix(in srgb, var(--sheet) 92%, transparent); border: 1px solid var(--rule-soft); border-radius: 10px; padding: 6px 4px 4px; }
+.actual .ah { text-align: center; font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.times4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.times4 .t { display: flex; flex-direction: column; align-items: center; padding: 4px 2px 6px; gap: 1px; }
+.times4 .t:nth-child(2) { border-right: 1px solid var(--rule); }
+.times4 span { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.times4 input { width: 100%; max-width: 96px; text-align: center; font-family: var(--font); font-size: 24px; font-weight: 700; border: 0; border-bottom: 1px dashed var(--rule); background: transparent; color: var(--ink); padding: 2px 0; }
+.times4 input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+.times4 input::placeholder, .blocks input::placeholder { color: var(--rule); font-weight: 400; }
+.times4 .d { font-size: 11px; color: var(--muted); min-height: 14px; }
+.blocks { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.blocks b, .blocks input { font-size: 21px; }
+.blocks .d { min-height: 14px; }
+.linkbtn { border: 0; background: none; color: var(--accent); font-size: 11px; text-decoration: underline; padding: 0; cursor: pointer; }
+/* aeromobile in una riga compatta */
+.ac-row { display: flex; align-items: baseline; justify-content: center; gap: 12px; padding: 12px 14px 0; flex-wrap: wrap; }
+.ac-row .cap { font-size: 11px; }
+.ac-row .reg { font-family: var(--font); font-size: 20px; font-weight: 700; text-align: center; border: 0; border-bottom: 1px dashed var(--rule); background: transparent; width: 9em; text-transform: uppercase; color: var(--ink); padding: 2px 0; }
+.ac-row .type { font-family: var(--font); font-size: 15px; text-align: center; border: 0; border-bottom: 1px dashed var(--rule); background: transparent; color: var(--muted); width: 8em; padding: 2px 0; }
+.ac-row input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+.flight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.appr-row { border-top: 1px solid var(--rule-soft); }
+.appr-row select { border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: 15px; padding: 7px 10px; min-width: 9em; }
+/* firma */
+.sig-wrap { padding: 4px 18px 14px; border-top: 1px solid var(--rule-soft); }
+.sig-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; color: var(--ink-2); }
+#sig { display: block; width: 100%; height: 150px; border: 1px dashed var(--rule); border-radius: 8px; background: var(--paper); touch-action: none; cursor: crosshair; }
+.sig-wrap .hint { margin: 6px 0 0; }
+.easa .sig-img { display: block; height: 4.5mm; max-width: 100%; }
+table.data tr.hl td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+@media (max-width: 760px) {
+  .icao { font-size: 32px; }
+  .sch input { font-size: 16px; width: 54px; }
+  .times4 input { font-size: 20px; }
+  .blocks { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 10px; }
+  .blocks b, .blocks input { font-size: 18px; }
+  .blocks span { font-size: 10px; }
+  .ac-row .reg { font-size: 18px; width: 7.5em; }
+  .sig-wrap { padding: 4px 12px 12px; }
+  #fq { width: 100%; }
+}

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.8.1';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -35,7 +35,7 @@ const TYPE_ORDER = ['Do328-110', 'P180 Avanti 1', 'P180 Avanti 2', 'B747-400', '
 const AVANTI1 = new Set(['I-FXRB', 'I-FXRC', 'I-FXRD', 'I-FXRE']);
 const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 'B787-9', B738: 'B737-800', B38M: 'B737-8' };
 // correzioni dei codici aeroporto indicate da Luca (applicate una volta, poi sincronizzate)
-const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH' };
+const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH', EGRP: 'EGPH' };
 function normalizeTypes(d) {
   let n = 0;
   // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
@@ -147,11 +147,11 @@ async function writeBackup() {
     const hist = await dirHandle.getDirectoryHandle('storico', { create: true });
     await writeFile(hist, `logbook-${today()}.json`, text);
     backupOk = true; lastBackup = new Date();
-  } catch (e) { backupOk = false; console.error(e); toast('Backup non riuscito: ' + e.message); }
+  } catch (e) { backupOk = false; console.error(e); toast('Backup failed: ' + e.message); }
   renderBackupState();
 }
 async function chooseFolder() {
-  if (!fsSupported) { toast('Il backup su cartella funziona in Chrome. Usa Esporta nel frattempo.'); return; }
+  if (!fsSupported) { toast('Folder backup requires Chrome. Use Export in the meantime.'); return; }
   try {
     const h = await window.showDirectoryPicker({ id: 'logbook-backup', mode: 'readwrite', startIn: 'documents' });
     dirHandle = h; await idb.set('dir', h);
@@ -161,23 +161,23 @@ async function chooseFolder() {
     if (existing && existing.flights) {
       const useIt = !data || !data.flights.length ||
         (existing.updated && data.updated && existing.updated > data.updated &&
-         confirm(`Nella cartella c'è un logbook più recente (${existing.flights.length} righe, salvato ${new Date(existing.updated).toLocaleString('it-IT')}). Lo carico al posto di quello nell'app?`));
-      if (useIt) { data = existing; await idb.set('data', data); toast('Logbook caricato dalla cartella'); route(); }
+         confirm(`The folder contains a newer logbook (${existing.flights.length} entries, saved ${new Date(existing.updated).toLocaleString('en-GB')}). Load it instead of the one in the app?`));
+      if (useIt) { data = existing; await idb.set('data', data); toast('Logbook loaded from folder'); route(); }
     }
     await writeBackup();
-    if (backupOk) toast(`Backup attivo nella cartella "${h.name}"`);
-  } catch (e) { if (e.name !== 'AbortError') toast('Cartella non disponibile: ' + e.message); }
+    if (backupOk) toast(`Backup active in folder "${h.name}"`);
+  } catch (e) { if (e.name !== 'AbortError') toast('Folder not available: ' + e.message); }
 }
 async function reconnectFolder() {
   if (!dirHandle) return chooseFolder();
-  if ((await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted') { await writeBackup(); toast('Backup riattivato'); }
+  if ((await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted') { await writeBackup(); toast('Backup re-enabled'); }
 }
 function renderBackupState() {
   const el = $('#backupState'); if (!el) return;
-  if (!fsSupported) { el.innerHTML = 'Backup su cartella non disponibile in questo browser.<br>Apri l\'app con Chrome.'; return; }
-  if (!dirHandle) { el.innerHTML = 'Nessuna cartella di backup.<br><button class="btn small" id="bkChoose">Choose folder</button>'; $('#bkChoose').onclick = chooseFolder; return; }
-  if (!backupOk) { el.innerHTML = `Backup in pausa: Chrome chiede di confermare l'accesso a <b>${esc(dirHandle.name)}</b>.<br><button class="btn small" id="bkRe">Resume backup</button>`; $('#bkRe').onclick = reconnectFolder; return; }
-  el.innerHTML = `Backup in <b>${esc(dirHandle.name)}</b><br>salvato alle ${lastBackup.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+  if (!fsSupported) { el.innerHTML = 'Folder backup not available in this browser.<br>Open the app in Chrome.'; return; }
+  if (!dirHandle) { el.innerHTML = 'No backup folder.<br><button class="btn small" id="bkChoose">Choose folder</button>'; $('#bkChoose').onclick = chooseFolder; return; }
+  if (!backupOk) { el.innerHTML = `Backup paused: Chrome needs you to confirm access to <b>${esc(dirHandle.name)}</b>.<br><button class="btn small" id="bkRe">Resume backup</button>`; $('#bkRe').onclick = reconnectFolder; return; }
+  el.innerHTML = `Backup in <b>${esc(dirHandle.name)}</b><br>saved at ${lastBackup.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 // ---------- geografia: aeroporti, distanze, notte ----------
@@ -228,7 +228,7 @@ function nightCalc(date, out, inn, dep, arr) {
   for (let m = 0; m < dur; m++) { const p = gcPoint(A, B, (m + .5) / dur); if (sunElev(t0 + (m + .5) * 60000, p[0], p[1]) < -6) n++; }
   return { night: n, dur, toNight: sunElev(t0, A[0], A[1]) < -6, ldgNight: sunElev(t0 + dur * 60000, B[0], B[1]) < -6, nm: Math.round(gcNM(A, B)) };
 }
-const fmtN = n => Math.round(n).toLocaleString('it-IT');
+const fmtN = n => Math.round(n).toLocaleString('en-GB');
 const parseDec = v => { const n = parseFloat(String(v || '').replace(',', '.')); return n > 0 ? n : 0; };
 
 // ---------- calcoli ----------
@@ -247,9 +247,9 @@ const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap()
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
-  const js = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('file ' + src + ' non disponibile')); document.head.append(s); });
+  const js = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('file ' + src + ' not available')); document.head.append(s); });
   return mapLoading ||= js('lib/d3-array.min.js').then(() => js('lib/d3-geo.min.js')).then(() => js('lib/topojson-client.min.js')).then(() => js('map.js'))
-    .catch(e => { mapLoading = null; $('#main').innerHTML = `<h1>Mappa</h1><p class="lede">${esc(e.message)}. Apri l'app una volta con la connessione attiva.</p>`; throw e; });
+    .catch(e => { mapLoading = null; $('#main').innerHTML = `<h1>Map</h1><p class="lede">${esc(e.message)}. Open the app once while online.</p>`; throw e; });
 }
 function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
@@ -265,8 +265,8 @@ function route() {
 window.addEventListener('hashchange', route);
 
 function emptyState() {
-  return `<h1>Logbook</h1><p class="lede">L'app è vuota.</p>
-  <div class="empty"><p>Importa il file <b>logbook.json</b> con lo storico, oppure apri la cartella di backup se l'hai già usata su questo Mac.</p>
+  return `<h1>Logbook</h1><p class="lede">The logbook is empty.</p>
+  <div class="empty"><p>Import your <b>logbook.json</b> file, or open the backup folder if you have already used it on this Mac.</p>
   <a class="btn primary" href="#dati">Go to Data · Backup</a></div>`;
 }
 
@@ -286,7 +286,7 @@ function stripHTML(t) {
 }
 function splitBar(t, max, cls = 'hbar') {
   const w = v => max ? (100 * v / max).toFixed(2) + '%' : '0';
-  return `<div class="${cls}" role="img" aria-label="PIC ${hm0(t.pic)}, copilota ${hm0(t.sic)}, dual ${hm0(t.dual)}"><i class="c-pic" style="width:${w(t.pic)}"></i><i class="c-sic" style="width:${w(t.sic)}"></i><i class="c-dual" style="width:${w(t.dual)}"></i></div>`;
+  return `<div class="${cls}" role="img" aria-label="PIC ${hm0(t.pic)}, SIC ${hm0(t.sic)}, dual ${hm0(t.dual)}"><i class="c-pic" style="width:${w(t.pic)}"></i><i class="c-sic" style="width:${w(t.sic)}"></i><i class="c-dual" style="width:${w(t.dual)}"></i></div>`;
 }
 function gauge(v, limit) {
   const p = Math.min(100, 100 * v / limit);
@@ -295,9 +295,9 @@ function gauge(v, limit) {
 function viewSummary(main) {
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const sel = viewSummary.period || 'all';
-  let list = data.flights, withOpen = true, label = 'dal 2007, riporto precedente incluso';
-  if (sel === '12m') { list = flightsIn(addDays(today(), -365)); withOpen = false; label = 'negli ultimi 12 mesi'; }
-  else if (/^\d{4}$/.test(sel)) { list = flightsIn(sel + '-01-01', sel + '-12-31'); withOpen = false; label = 'nel ' + sel; }
+  let list = data.flights, withOpen = true, label = 'since 2007, including hours brought forward';
+  if (sel === '12m') { list = flightsIn(addDays(today(), -365)); withOpen = false; label = 'in the last 12 months'; }
+  else if (/^\d{4}$/.test(sel)) { list = flightsIn(sel + '-01-01', sel + '-12-31'); withOpen = false; label = 'in ' + sel; }
   const t = sum(list, withOpen);
   const fn = t.pic + t.sic + t.dual;
   const pct = v => fn ? Math.round(100 * v / fn) + '%' : '';
@@ -317,7 +317,7 @@ function viewSummary(main) {
   const flYears = new Set(list.filter(f => f.kind === 'flight').map(f => f.date.slice(0, 4))).size || 1;
   const m12nm = m12.nm;
   // per tipo
-  const byType = {}; for (const f of list) if (f.kind === 'flight') (byType[f.type || '—'] ||= []).push(f);
+  const byType = {}; for (const f of list) if (f.kind === 'flight' && !f.planned) (byType[f.type || '—'] ||= []).push(f);
   const tl = Object.entries(byType).map(([k, v]) => [k, sum(v), v[v.length - 1].date]).sort((a, b) => typeRank(a[0]) - typeRank(b[0]) || a[2].localeCompare(b[2]));
   const tmax = Math.max(...tl.map(x => x[1].total), 1);
   const trows = tl.map(([k, s, ld]) => `<tr><td class="l"><b>${esc(k)}</b></td><td class="barcell">${splitBar(s, tmax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${dmy(ld)}</td></tr>`).join('');
@@ -330,13 +330,13 @@ function viewSummary(main) {
   const byYear = {}; for (const f of data.flights) (byYear[f.date.slice(0, 4)] ||= []).push(f);
   const yl = Object.keys(byYear).sort().reverse().map(yr => [yr, sum(byYear[yr])]);
   const ymax = Math.max(...yl.map(x => x[1].total), 1);
-  const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Apri i mesi del ${yr}"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
+  const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Show ${yr} month by month"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Summary</h1>
     <label class="row filters" style="margin:0">Period
     <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
   ${plannedBanner()}
-  <p class="lede">${t.legs} tratte e ${t.sims} sessioni al simulatore ${label}. Media per tratta ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
+  <p class="lede">${fmtN(t.legs)} sectors and ${t.sims} simulator sessions ${label}. Average sector ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
     <div class="tot">${hm0(t.total)}<small>total time</small></div>
     <div class="split">${splitBar(t, fn, 'bar')}
@@ -349,27 +349,27 @@ function viewSummary(main) {
   ${stripHTML(t)}
   <h2>Distance · PAX · Fuel</h2>
   <div class="recency">
-    <div><b>${fmtN(t.nm)} NM</b><span>${sel === 'all' ? 'percorse in carriera' : 'percorse nel periodo'}, in linea d'aria</span></div>
-    <div><b>${fmtN(t.nm / flYears)} NM</b><span>media annuale${flYears > 1 ? ` su ${flYears} anni` : ''}</span></div>
-    <div><b>${fmtN(m12nm)} NM</b><span>ultimi 12 mesi</span></div>
-    <div><b>${t.legs ? fmtN(t.nm / t.legs) : 0} NM</b><span>distanza media per tratta</span></div>
-    ${t.paxLegs ? `<div><b>${fmtN(t.pax)}</b><span>passeggeri trasportati, su ${t.paxLegs} tratte con il dato</span></div>` : ''}
-    ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>carburante usato, su ${t.fuelLegs} tratte con il dato</span></div>` : ''}
+    <div><b>${fmtN(t.nm)} NM</b><span>${sel === 'all' ? 'career distance' : 'distance in period'}, great circle</span></div>
+    <div><b>${fmtN(t.nm / flYears)} NM</b><span>yearly average${flYears > 1 ? ` over ${flYears} years` : ''}</span></div>
+    <div><b>${fmtN(m12nm)} NM</b><span>last 12 months</span></div>
+    <div><b>${t.legs ? fmtN(t.nm / t.legs) : 0} NM</b><span>average sector distance</span></div>
+    ${t.paxLegs ? `<div><b>${fmtN(t.pax)}</b><span>passengers carried, from ${t.paxLegs} sectors with data</span></div>` : ''}
+    ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>fuel burned, from ${t.fuelLegs} sectors with data</span></div>` : ''}
   </div>
   <h2>FTL limits · Recency</h2>
   <div class="recency">
-    <div><b>${hm0(d28.total)}</b><span>ultimi 28 giorni, limite 100 h</span>${gauge(d28.total, 6000)}</div>
-    <div><b>${hm0(y.total)}</b><span>anno ${td.slice(0, 4)}, limite 900 h</span>${gauge(y.total, 54000)}</div>
-    <div><b>${hm0(m12.total)}</b><span>ultimi 12 mesi, limite 1000 h</span>${gauge(m12.total, 60000)}</div>
-    <div><b>${d90.toDay + d90.toNight} / ${d90.ldgDay + d90.ldgNight}</b><span>decolli e atterraggi negli ultimi 90 giorni</span></div>
-    <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} negli ultimi 90 giorni${ok90 ? '' : ': meno di 3, serve recency'}</span></div>
-    <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>ultimo volo${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
+    <div><b>${hm0(d28.total)}</b><span>last 28 days, limit 100 h</span>${gauge(d28.total, 6000)}</div>
+    <div><b>${hm0(y.total)}</b><span>calendar year ${td.slice(0, 4)}, limit 900 h</span>${gauge(y.total, 54000)}</div>
+    <div><b>${hm0(m12.total)}</b><span>last 12 months, limit 1000 h</span>${gauge(m12.total, 60000)}</div>
+    <div><b>${d90.toDay + d90.toNight} / ${d90.ldgDay + d90.ldgNight}</b><span>takeoffs / landings, last 90 days</span></div>
+    <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} takeoffs / landings, last 90 days${ok90 ? '' : ': fewer than 3, recency required'}</span></div>
+    <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>last flight${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
   </div>
   <h2>By family</h2>
   <table class="data"><thead><tr><th class="l">Family</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${frows}</tbody></table>
   <h2>By aircraft type</h2>
   <table class="data"><thead><tr><th class="l">Type</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${trows}</tbody></table>
-  ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per tipo e per anno.</p>` : ''}
+  ${withOpen ? `<p class="hint">Hours brought forward before 2007 (${hm(data.opening.total)}) are included in the totals but not in the tables by type and year.</p>` : ''}
   <h2>By year</h2>
   <table class="data"><thead><tr><th class="l">Year</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Night</th><th>LDG</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
@@ -379,24 +379,24 @@ function viewSummary(main) {
   yt.onclick = open; yt.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } };
 }
 
-const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+const MESI = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 function showYear(yr) {
   const rows = MESI.map((m, i) => { const mm = String(i + 1).padStart(2, '0'); return [m, mm, sum(data.flights.filter(f => f.date.startsWith(`${yr}-${mm}`)))]; });
   const tot = sum(data.flights.filter(f => f.date.startsWith(yr)));
   const max = Math.max(...rows.map(r => r[2].total), 1);
   const body = rows.map(([m, , s]) => s.legs || s.sims
     ? `<tr><td class="l"><b>${m}</b></td><td class="barcell">${splitBar(s, max)}</td><td>${s.legs || ''}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.dual)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`
-    : `<tr class="idle"><td class="l">${m}</td><td class="barcell"></td><td colspan="10" class="l hint">nessun volo</td></tr>`).join('');
+    : `<tr class="idle"><td class="l">${m}</td><td class="barcell"></td><td colspan="10" class="l hint">no flights</td></tr>`).join('');
   const act = rows.filter(r => r[2].total);
   const best = act.length ? act.reduce((a, b) => b[2].total > a[2].total ? b : a) : null;
   let dlg = $('#yearDlg');
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'yearDlg'; document.body.append(dlg); dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); }
-  dlg.innerHTML = `<div class="dlg-head"><div><h2>${yr}, mese per mese</h2>
-      <p class="lede">${tot.legs} tratte, ${hm0(tot.total)} di volo, media per tratta ${avg(tot)}, ${fmtN(tot.nm)} NM${act.length ? `, ${hm0(Math.round(tot.total / act.length))} al mese nei mesi con voli` : ''}${best ? `. Il mese più pieno è ${best[0].toLowerCase()} con ${hm0(best[2].total)}` : ''}.</p></div>
+  dlg.innerHTML = `<div class="dlg-head"><div><h2>${yr} by month</h2>
+      <p class="lede">${tot.legs} sectors, ${hm0(tot.total)} flight time, average sector ${avg(tot)}, ${fmtN(tot.nm)} NM${act.length ? `, ${hm0(Math.round(tot.total / act.length))} per active month` : ''}${best ? `. Busiest month: ${best[0]} with ${hm0(best[2].total)}` : ''}.</p></div>
       <button class="btn" id="dlgClose" aria-label="Close">Close</button></div>
     <table class="data"><thead><tr><th class="l">Month</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Dual</th><th>Night</th><th>LDG</th><th>NM</th><th>Sim</th></tr></thead>
     <tbody>${body}<tr class="sum"><td class="l">Totale ${yr}</td><td></td><td>${tot.legs}</td><td>${hm0(tot.total)}</td><td>${avg(tot)}</td><td>${hm(tot.pic)}</td><td>${hm(tot.sic)}</td><td>${hm(tot.dual)}</td><td>${hm(tot.night)}</td><td>${tot.ldgDay + tot.ldgNight || ''}</td><td>${tot.nm ? fmtN(tot.nm) : ''}</td><td>${hm(tot.sim)}</td></tr></tbody></table>
-    <p class="row" style="margin-top:14px"><button class="btn" id="dlgVoli">Vedi i voli del ${yr}</button></p>`;
+    <p class="row" style="margin-top:14px"><button class="btn" id="dlgVoli">Show ${yr} flights</button></p>`;
   $('#dlgClose').onclick = () => dlg.close();
   $('#dlgVoli').onclick = () => { dlg.close(); viewFlights.st = { year: yr, type: '', q: '', all: false }; location.hash = 'voli'; if (location.hash === '#voli') route(); };
   dlg.showModal();
@@ -406,10 +406,10 @@ function showYear(yr) {
 function viewFlights(main) {
   const st = viewFlights.st ||= { year: '', type: '', q: '', all: false };
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
-  const types = [...new Set(data.flights.map(f => f.kind === 'sim' ? 'Simulatore' : f.type).filter(Boolean))].sort();
+  const types = [...new Set(data.flights.map(f => f.kind === 'sim' ? 'Simulator' : f.type).filter(Boolean))].sort();
   const q = st.q.toLowerCase();
   let list = data.flights.filter(f => (!st.year || f.date.startsWith(st.year)) &&
-    (!st.type || (st.type === 'Simulatore' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
+    (!st.type || (st.type === 'Simulator' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
     (!q || [f.dep, f.arr, f.reg, f.picName, f.remarks, f.simType, f.flightNo].join(' ').toLowerCase().includes(q)));
   const t = sum(list);
   list = list.slice().reverse();
@@ -423,17 +423,17 @@ function viewFlights(main) {
   const nPlan = data.flights.filter(f => f.planned).length, nDot = data.flights.filter(f => f.planned && !f.seen).length;
   main.innerHTML = `<h1>Flights</h1>
   ${plannedBanner()}
-  <p class="lede">${t.legs} tratte, ${hm0(t.total)} di volo${t.sims ? `, ${t.sims} sessioni al simulatore (${hm0(t.sim)})` : ''}.</p>
+  <p class="lede">${fmtN(t.legs)} sectors, ${hm0(t.total)} flight time${t.sims ? `, ${t.sims} simulator sessions (${hm0(t.sim)})` : ''}.</p>
   <div class="row filters">
-    <select id="fy" aria-label="Anno"><option value="">All years</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
-    <select id="ft" aria-label="Tipo"><option value="">All types</option>${nPlan ? `<option value="__planned">Planned from NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Unseen (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
+    <select id="fy" aria-label="Year"><option value="">All years</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
+    <select id="ft" aria-label="Type"><option value="">All types</option>${nPlan ? `<option value="__planned">Planned from NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Unseen (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
     ${nDot ? '<button class="btn" id="seenAll">Mark all as seen</button>' : ''}
     <input id="fq" type="search" placeholder="Search airport, reg, PIC, remarks" size="36" value="${esc(st.q)}">
     <a class="btn primary" href="#nuovo">New flight</a>
   </div>
   <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Date</th><th class="l">DEP</th><th>OUT</th><th class="l">ARR</th><th>IN</th><th class="l">Type</th><th class="l">Reg</th><th>Total</th><th>Function</th><th class="o">Night</th><th class="o">T/O</th><th class="o">LDG</th><th class="l">PIC name</th><th class="l o">Remarks</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="14" class="l">Nessun volo con questi filtri.</td></tr>'}</tbody></table></div>
-  ${!st.all && list.length > 300 ? `<p><button class="btn" id="more">Mostra tutte le ${list.length} righe</button></p>` : ''}`;
+  <tbody>${rows || '<tr><td colspan="14" class="l">No flights match these filters.</td></tr>'}</tbody></table></div>
+  ${!st.all && list.length > 300 ? `<p><button class="btn" id="more">Show all ${list.length} entries</button></p>` : ''}`;
   $('#fy').value = st.year; $('#ft').value = st.type;
   $('#fy').onchange = e => { st.year = e.target.value; viewFlights(main); };
   $('#ft').onchange = e => { st.type = e.target.value; viewFlights(main); };
@@ -464,7 +464,7 @@ function viewEdit(main, id) {
   const lockBtn = cls => `<button type="button" class="lock keep ${cls}" aria-pressed="${locked}" aria-label="Lock flight" title="Grey: editable · Orange: locked">${LOCK_SVG}</button>`;
 
   main.innerHTML = `
-  ${orig?.planned ? `<div class="plan-note"><b>NetLine${orig.flightNo ? ` · ${esc(orig.flightNo)}` : ''}</b>: STD ${esc(orig.sched?.out || orig.out)} · STA ${esc(orig.sched?.inn || orig.inn)} UTC dal turno. Scrivi OUT, OFF, ON e IN effettivi: il volo entra nei totali appena inserisci gli orari reali.${orig.change ? `<br>Roster change: ${esc(orig.change)}` : ''}</div>` : ''}
+  ${orig?.planned ? `<div class="plan-note"><b>NetLine${orig.flightNo ? ` · ${esc(orig.flightNo)}` : ''}</b>: STD ${esc(orig.sched?.out || orig.out)} · STA ${esc(orig.sched?.inn || orig.inn)} UTC from the roster. Enter actual OUT, OFF, ON and IN: the flight counts in the totals as soon as actual times are entered.${orig.change ? `<br>Roster change: ${esc(orig.change.replace(/^orario cambiato da (.*) a (.*)$/, 'times changed from $1 to $2'))}` : ''}</div>` : ''}
   <form class="flight sheet" id="ff" novalidate>
     <div class="sheet-bar">
       <div class="seg keep" role="radiogroup" aria-label="Entry type">
@@ -583,7 +583,7 @@ function viewEdit(main, id) {
       <textarea id="remarks" class="note" rows="2" placeholder="Tap to add remarks">${esc(f.remarks)}</textarea>
       <div class="sig-wrap"><div class="sig-head"><span>Signature</span><button type="button" class="btn small" id="sigClear">Clear signature</button></div>
         <canvas id="sig" aria-label="Signature box: sign with your finger or the mouse"></canvas>
-        <p class="hint" id="sigHint">${f.signature ? 'Firma salvata: firma di nuovo sopra per sostituirla.' : 'Firma qui con il dito o con il mouse.'}</p></div>
+        <p class="hint" id="sigHint">${f.signature ? 'Signature saved: sign again to replace it.' : 'Sign here with your finger or the mouse.'}</p></div>
     </section>
     <div class="actions">
       <a class="btn primary keep" href="#voli">Done</a>
@@ -824,7 +824,7 @@ function viewEdit(main, id) {
   const flush = () => {
     if (!timer) return; clearTimeout(timer); timer = null;
     const r = collect();
-    if (r.err) { if (created) toast(`Ultima modifica non salvata: ${r.err}`); else toast(`Volo non salvato: ${r.err}`); return; }
+    if (r.err) { if (created) toast(`Last change not saved: ${r.err}`); else toast(`Flight not saved: ${r.err}`); return; }
     const i = data.flights.findIndex(x => x.id === recId); if (i >= 0) data.flights[i] = r.rec; else data.flights.push(r.rec);
     save(); updateBadge();
   };
@@ -844,7 +844,7 @@ function viewEdit(main, id) {
     if (!locked) {
       locked = true; confirmed = true;
       const r = await commit();
-      if (r.err) { locked = false; toast(`Non posso bloccare: ${r.err}`); r.el?.scrollIntoView({ block: 'center' }); applyLock(); return; }
+      if (r.err) { locked = false; toast(`Cannot lock: ${r.err}`); r.el?.scrollIntoView({ block: 'center' }); applyLock(); return; }
       toast('Flight locked');
     } else {
       locked = false; await commit(); toast('Flight unlocked');
@@ -931,15 +931,15 @@ function drawWorld(cv, A, B) {
 // ---------- scheda volo: avvicinamenti, nomi aeroporto, firma ----------
 const APPROACHES = [
   ['PA, precisione', ['CAT I', 'CAT II', 'CAT 3A', 'CAT 3B', 'CAT 3C', 'ILS PRM', 'GLS', 'GBAS', 'PAR']],
-  ['APV, con guida verticale', ['LNAV/VNAV', 'LPV', 'RNP-AR']],
-  ['NPA, non di precisione', ['LOC', 'LOC/DME', 'LDA', 'VOR', 'VOR/DME', 'NDB', 'NDB/DME', 'LNAV', 'SRA']],
+  ['APV, with vertical guidance', ['LNAV/VNAV', 'LPV', 'RNP-AR']],
+  ['NPA, non-precision', ['LOC', 'LOC/DME', 'LDA', 'VOR', 'VOR/DME', 'NDB', 'NDB/DME', 'LNAV', 'SRA']],
   ['A vista', ['Visual', 'Circling']]
 ];
 const APPR_ALIAS = { 'CAT IIIA': 'CAT 3A', 'CAT IIIB': 'CAT 3B', 'CAT IIIC': 'CAT 3C', VISUAL: 'Visual' };
 function approachSelect(v) {
   v = APPR_ALIAS[String(v || '').toUpperCase()] || v || '';
   const all = APPROACHES.flatMap(g => g[1]);
-  return `<select id="approach" aria-label="Avvicinamento"><option value="">—</option>${v && !all.includes(v) ? `<option selected>${esc(v)}</option>` : ''}${APPROACHES.map(([g, list]) => `<optgroup label="${g}">${list.map(a => `<option ${a === v ? 'selected' : ''}>${a}</option>`).join('')}</optgroup>`).join('')}</select>`;
+  return `<select id="approach" aria-label="Approach"><option value="">—</option>${v && !all.includes(v) ? `<option selected>${esc(v)}</option>` : ''}${APPROACHES.map(([g, list]) => `<optgroup label="${g}">${list.map(a => `<option ${a === v ? 'selected' : ''}>${a}</option>`).join('')}</optgroup>`).join('')}</select>`;
 }
 // "Rome–Fiumicino Leonardo da Vinci International Airport" -> "Rome–Fiumicino Leonardo da Vinci"
 function cleanAptName(n) {
@@ -1028,12 +1028,12 @@ function viewPrint(main) {
   const pages = easaPages(st.rpp);
   const sel = pages.filter(p => (!st.from || p.lastd >= st.from) && (!st.to || p.first <= st.to));
   const lastN = pages.slice(-Math.max(1, Math.min(st.last, pages.length)));
-  const range = ps => ps.length ? `pagine ${ps[0].n}–${ps.at(-1).n}, dal ${dmy(ps[0].first)} al ${dmy(ps.at(-1).lastd)}` : '';
+  const range = ps => ps.length ? `pages ${ps[0].n}–${ps.at(-1).n}, ${dmy(ps[0].first)} to ${dmy(ps.at(-1).lastd)}` : '';
   const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length)).join(''); setTimeout(() => window.print(), 50); };
   main.innerHTML = `<h1>EASA logbook print</h1>
-  <p class="lede">Formato logbook EASA (AMC1 FCL.050), ${pages.length} pagine da ${st.rpp} righe. Nel dialogo di stampa scegli "Salva come PDF".</p>
+  <p class="lede">EASA logbook format (AMC1 FCL.050), ${pages.length} pages of ${st.rpp} lines. In the print dialog choose "Save as PDF".</p>
   <div class="panel"><h2>Last pages</h2>
-    <p>Quella che di solito chiede un'azienda: le pagine più recenti, con i riporti e il totale aggiornato.</p>
+    <p>What an operator usually asks for: the most recent pages, with totals brought forward and up to date.</p>
     <div class="row"><label>Last <input type="number" id="lastN" min="1" max="${pages.length}" value="${st.last}" style="width:64px" class="btn"> pages</label>
       <button class="btn primary" id="doLast">Print last ${lastN.length} pages</button>
       <span class="hint">${range(lastN)}</span></div></div>
@@ -1042,10 +1042,10 @@ function viewPrint(main) {
       <label>From <input type="date" id="pf" value="${st.from}"></label>
       <label>To <input type="date" id="pt" value="${st.to}"></label>
       <button class="btn" id="doPrint">Print ${st.from || st.to ? 'period' : 'whole logbook'} (${sel.length} pages)</button></div>
-    <p class="hint" style="margin-top:8px">Le pagine mantengono la numerazione e i riporti del logbook completo.</p></div>
+    <p class="hint" style="margin-top:8px">Pages keep the numbering and totals brought forward of the full logbook.</p></div>
   <div class="row filters"><label>Lines per page <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
   <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length)).join('')}</div>
-  <p class="hint">Anteprima dell'ultima pagina.</p>`;
+  <p class="hint">Preview of the last page.</p>`;
   $('#rpp').onchange = e => { st.rpp = +e.target.value; viewPrint(main); };
   $('#pf').onchange = e => { st.from = e.target.value; viewPrint(main); };
   $('#pt').onchange = e => { st.to = e.target.value; viewPrint(main); };
@@ -1090,7 +1090,7 @@ function flightLogRecord(x, regType) {
 }
 // file "sync" della cartella FlightLog Sync: completa i voli passati con pax, carburante, payload, avvicinamento e distanza
 async function enrichFromFlightLog(rows) {
-  if (!data) throw new Error('importa prima il logbook');
+  if (!data) throw new Error('import the logbook first');
   const td = today(); let filled = 0, notFound = 0;
   const idx = new Map(data.flights.filter(f => f.kind === 'flight').map(f => [`${f.date}|${f.dep}|${f.out}`, f]));
   for (const x of rows) {
@@ -1103,7 +1103,7 @@ async function enrichFromFlightLog(rows) {
     for (const [k, v] of Object.entries(add)) if (v && !f[k]) { f[k] = v; ch = true; }
     if (ch) { f.mt = Date.now(); filled++; }
   }
-  await save(`Completate ${filled} tratte con i dati di FlightLog${notFound ? `, ${notFound} non trovate` : ''}`);
+  await save(`${filled} sectors completed with FlightLog data${notFound ? `, ${notFound} not found` : ''}`);
   route();
 }
 async function importFile(file) {
@@ -1113,13 +1113,13 @@ async function importFile(file) {
   if (/\.json$/i.test(file.name) || /^[{[]/.test(text.trim())) {
     const d = JSON.parse(text);
     if (Array.isArray(d) && d[0] && 'sessiontype' in d[0]) return enrichFromFlightLog(d);
-    if (!d.flights || !Array.isArray(d.flights)) throw new Error('il file non contiene un logbook');
-    if (data && data.flights.length && !confirm(`Sostituire il logbook attuale (${data.flights.length} righe) con quello del file (${d.flights.length} righe)?`)) return;
-    normalizeTypes(d); d.forcePush = true; data = d; await save(`Importate ${d.flights.length} righe`); route(); return;
+    if (!d.flights || !Array.isArray(d.flights)) throw new Error('the file does not contain a logbook');
+    if (data && data.flights.length && !confirm(`Replace the current logbook (${data.flights.length} entries) with the one in the file (${d.flights.length} entries)?`)) return;
+    normalizeTypes(d); d.forcePush = true; data = d; await save(`${d.flights.length} entries imported`); route(); return;
   }
   // CSV FlightLog: aggiunge solo le righe nuove
   const rows = parseCSV(text);
-  if (!rows.length || !('Date' in rows[0]) || !('Registration' in rows[0])) throw new Error('non sembra un export CSV di FlightLog');
+  if (!rows.length || !('Date' in rows[0]) || !('Registration' in rows[0])) throw new Error('this does not look like a FlightLog CSV export');
   if (!data) data = { version: 1, pilot: '', opening: Object.fromEntries(SUM_KEYS.map(k => [k, 0])), flights: [] };
   const regType = { ...KNOWN_AIRCRAFT }; for (const f of data.flights) if (f.reg && f.type) regType[f.reg] = f.type;
   const key = f => `${f.date}|${f.kind === 'sim' ? 'SIM' : f.dep}|${f.out}`;
@@ -1131,8 +1131,8 @@ async function importFile(file) {
     f.id = nextId(); f.mt = Date.now(); data.flights.push(f); have.add(key(f)); added++;
     if (f.kind === 'flight' && !f.type) untyped++;
   }
-  await save(added ? `Aggiunte ${added} righe da FlightLog` : 'Nessuna riga nuova nel CSV');
-  if (untyped) toast(`${untyped} voli senza modello: completali da Voli`);
+  await save(added ? `${added} entries added from FlightLog` : 'No new entries in the CSV');
+  if (untyped) toast(`${untyped} flights without aircraft type: complete them in Flights`);
   route();
 }
 function download(name, text, type) {
@@ -1147,10 +1147,10 @@ function exportCSV() {
   download(`logbook-${today()}.csv`, lines.join('\n'), 'text/csv');
 }
 const THEMES = [
-  ['', 'Automatico', 'Neutro di giorno, Cockpit con il Mac in modalità scura', ['#f4f5f7', '#0f766e', '#9aa5b4', '#0b0e12', '#e15bd8']],
-  ['neutro', 'Neutro', 'Chiaro e sobrio, PIC in verde petrolio', ['#ffffff', '#1d232c', '#0f766e', '#9aa5b4', '#d97706']],
-  ['carta', 'Carta', 'Come un logbook cartaceo, PIC in bordeaux', ['#fffefb', '#22262b', '#8c1c2b', '#8f9aa6', '#c08a1e']],
-  ['cockpit', 'Cockpit', 'Scuro, colori dei display Boeing', ['#0b0e12', '#141a21', '#e15bd8', '#3fc1d3', '#f2a900']]
+  ['', 'Automatic', 'Neutral by day, Cockpit when the device is in dark mode', ['#f4f5f7', '#0f766e', '#9aa5b4', '#0b0e12', '#e15bd8']],
+  ['neutro', 'Neutral', 'Light and clean, PIC in teal', ['#ffffff', '#1d232c', '#0f766e', '#9aa5b4', '#d97706']],
+  ['carta', 'Paper', 'Like a paper logbook, PIC in burgundy', ['#fffefb', '#22262b', '#8c1c2b', '#8f9aa6', '#c08a1e']],
+  ['cockpit', 'Cockpit', 'Dark, Boeing display colours', ['#0b0e12', '#141a21', '#e15bd8', '#3fc1d3', '#f2a900']]
 ];
 function applyTheme(t) {
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
@@ -1160,31 +1160,31 @@ function viewData(main) {
   const n = data?.flights.length || 0;
   const cur = document.documentElement.dataset.theme || '';
   main.innerHTML = `<h1>Data · Backup</h1>
-  <p class="lede">${n ? `${n} righe nel logbook${data.updated ? `, ultima modifica ${new Date(data.updated).toLocaleString('it-IT')}` : ''}.` : 'Il logbook è vuoto.'}</p>
+  <p class="lede">${n ? `${fmtN(n)} entries in the logbook${data.updated ? `, last modified ${new Date(data.updated).toLocaleString('en-GB')}` : ''}.` : 'The logbook is empty.'}</p>
   ${drivePanelHTML()}
   <div class="panel"><h2>Theme</h2>
-    <div class="theme-pick" role="radiogroup" aria-label="Colori">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
+    <div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
   <div class="panel"><h2>Backup folder</h2>
-    <p>L'app salva <b>logbook.json</b> nella cartella a ogni modifica, più una copia giornaliera nella sottocartella <b>storico</b>. Scegli iCloud Drive › Logbook per averla anche nel cloud.</p>
+    <p>The app saves <b>logbook.json</b> to the folder on every change, plus a daily copy in the <b>storico</b> subfolder. Choose iCloud Drive › Logbook to keep it in the cloud as well.</p>
     <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Change folder' : 'Choose folder'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
-    ${fsSupported ? '' : '<p class="hint">Questo browser non permette di scrivere in una cartella: apri l\'app con Chrome.</p>'}</div>
+    ${fsSupported ? '' : '<p class="hint">This browser cannot write to a folder: open the app in Chrome.</p>'}</div>
   <div class="panel"><h2>Import</h2>
-    <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario). Un <b>PDF Individual duty plan di NetLine</b> aggiunge i voli nuovi con gli orari schedulati, da completare con gli effettivi; i voli già nel logbook non vengono toccati. Il file <b>sync</b> della cartella FlightLog Sync completa i voli passati con passeggeri, carburante, payload, avvicinamento e distanza, senza toccare il resto.</p>
+    <p><b>logbook.json</b> replaces the whole logbook. A <b>FlightLog CSV export</b> adds only flights not yet in the logbook (same date, departure and time). A <b>NetLine Individual duty plan PDF</b> updates planned flights with scheduled times: new flights are added, changed ones updated and cancelled ones removed; flights with actual times or locked are never touched. The <b>sync</b> file from the FlightLog Sync folder completes past flights with PAX, fuel, payload, approach and distance without changing anything else.</p>
     <div class="row"><input type="file" id="dFile"></div></div>
   <div class="panel"><h2>Export</h2>
-    <p>Una copia da conservare o da aprire in un foglio di calcolo.</p>
+    <p>A copy to keep or to open in a spreadsheet.</p>
     <div class="row"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>Download logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>Download CSV</button></div></div>
   ${n ? `<div class="panel"><h2>Pilot name · Brought forward</h2>
-    <div class="row"><label>Nome sul logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Save name</button></div>
-    <p class="hint">Riporto ante 2007: ${hm0(data.opening?.total)} totali, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} copilota, ${hm0(data.opening?.sim)} simulatore.</p></div>` : ''}`;
+    <div class="row"><label>Name in logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Save name</button></div>
+    <p class="hint">Brought forward before 2007: ${hm0(data.opening?.total)} total, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} SIC, ${hm0(data.opening?.sim)} FSTD.</p></div>` : ''}`;
   main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
   bindDrivePanel(main);
   $('#dChoose').onclick = chooseFolder;
-  $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Importazione non riuscita: ' + err.message); } e.target.value = ''; };
+  $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Import failed: ' + err.message); } e.target.value = ''; };
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');
     $('#dCsv').onclick = exportCSV;
-    $('#dPilotSave').onclick = async () => { data.pilot = $('#dPilot').value.trim(); data.metaMt = Date.now(); await save('Nome salvato'); };
+    $('#dPilotSave').onclick = async () => { data.pilot = $('#dPilot').value.trim(); data.metaMt = Date.now(); await save('Name saved'); };
   }
 }
 
@@ -1195,8 +1195,15 @@ function viewData(main) {
 // (fuori dai totali) con il pallino finché non si apre il volo. Se un volo ancora programmato cambia nel turno, si aggiorna e riprende il pallino.
 let IATA = null;
 async function importNetline(buf) {
-  if (!data) throw new Error('importa prima il logbook');
-  toast('Leggo il PDF NetLine…');
+  if (!data) throw new Error('import the logbook first');
+  toast('Reading NetLine PDF…');
+  // Safari (iPad) non sa ancora scorrere un ReadableStream con for await: lo aggiungo prima di caricare pdf.js
+  if (typeof ReadableStream !== 'undefined' && !ReadableStream.prototype[Symbol.asyncIterator]) {
+    ReadableStream.prototype[Symbol.asyncIterator] = async function* () {
+      const reader = this.getReader();
+      try { for (;;) { const { done, value } = await reader.read(); if (done) return; yield value; } } finally { reader.releaseLock(); }
+    };
+  }
   const pdfjs = await import(new URL('lib/netline/pdf.min.mjs', location.href).href);
   pdfjs.GlobalWorkerOptions.workerSrc = new URL('lib/netline/pdf.worker.min.mjs', location.href).href;
   const { parsePdf } = await import(new URL('lib/netline/parser.js', location.href).href);
@@ -1207,7 +1214,7 @@ async function importNetline(buf) {
   const icao = c => IATA[c] || c;
   const legs = [];
   for (const d of roster.days || []) for (const l of d.legs || []) if (l.kind === 'flight') legs.push({ d, l });
-  if (!legs.length) throw new Error('nel PDF non ho trovato voli: è un Individual duty plan di NetLine?');
+  if (!legs.length) throw new Error('no flights found in the PDF: is it a NetLine Individual duty plan?');
   const hhmm = t => t ? `${t.slice(0, 2)}:${t.slice(2)}` : '';
   const key = f => `${f.date}|${f.dep}|${f.arr}`;
   const byKey = new Map(); for (const f of data.flights) if (f.kind === 'flight') byKey.set(key(f), f);
@@ -1233,7 +1240,7 @@ async function importNetline(buf) {
     if (ex && !ex.planned) { untouched++; continue; }       // già nel logbook con gli effettivi: non si tocca
     if (ex && ex.planned) {
       if (ex.sched?.out !== out || ex.sched?.inn !== inn) {
-        ex.change = `orario cambiato da ${ex.sched?.out}–${ex.sched?.inn} a ${out}–${inn}`;
+        ex.change = `times changed from ${ex.sched?.out}–${ex.sched?.inn} to ${out}–${inn}`;
         Object.assign(ex, fields, { seen: false, mt: Date.now() }); updated++;
       }
       continue;
@@ -1251,7 +1258,7 @@ async function importNetline(buf) {
       data.flights = data.flights.filter(f => !goneIds.includes(f.id)); gone = goneIds.length;
     }
   }
-  const parts = [`${added} voli nuovi`, updated && `${updated} cambiati`, gone && `${gone} tolti perché non più nel turno`, untouched && `${untouched} già nel logbook non toccati`].filter(Boolean);
+  const parts = [`${added} added`, updated && `${updated} changed`, gone && `${gone} removed (no longer in roster)`, untouched && `${untouched} already flown, unchanged`].filter(Boolean);
   await save('NetLine: ' + parts.join(', '));
   updateBadge(); route();
 }
@@ -1262,7 +1269,7 @@ function plannedLate() {
 function plannedBanner() {
   const late = plannedLate();
   if (!late.length) return '';
-  return `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 volo già fatto ha' : `${late.length} voli già fatti hanno`} ancora gli orari schedulati.</b> Inserisci gli orari effettivi per farli entrare nei totali.
+  return `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 past flight still has' : `${late.length} past flights still have`} scheduled times only.</b> Enter actual times to include them in the totals.
     <button class="btn small" data-plan-go>Show</button></div>`;
 }
 function bindPlannedBanner(main) { const b = main.querySelector('[data-plan-go]'); if (b) b.onclick = () => { viewFlights.st = { year: '', type: '__planned', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; }
@@ -1271,7 +1278,7 @@ function updateBadge() {
   const n = data.flights.filter(f => f.planned && !f.seen).length;
   let b = a.querySelector('.badge'); if (!n) { b?.remove(); return; }
   if (!b) { b = document.createElement('span'); b.className = 'badge'; a.append(b); }
-  b.textContent = n; b.title = `${n} voli da vedere`;
+  b.textContent = n; b.title = `${n} unseen flights`;
 }
 
 // ---------- Google Drive: un unico logbook per Mac, iPhone e iPad ----------
@@ -1286,24 +1293,24 @@ const gdTokenOk = () => GD.token && Date.now() < GD.exp - 60000;
 
 let gisLoading = null;
 function gisLoad() {
-  return gisLoading ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.onload = res; s.onerror = () => { gisLoading = null; rej(new Error('Google non raggiungibile, controlla la connessione')); }; document.head.append(s); });
+  return gisLoading ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.onload = res; s.onerror = () => { gisLoading = null; rej(new Error('Google unreachable, check the connection')); }; document.head.append(s); });
 }
 async function gdToken(interactive) {
   if (gdTokenOk()) return GD.token;
-  if (!interactive) throw Object.assign(new Error('accesso a Google da rinnovare'), { auth: true });
+  if (!interactive) throw Object.assign(new Error('Google sign-in needs renewing'), { auth: true });
   await gisLoad();
   return new Promise((res, rej) => {
     const tc = google.accounts.oauth2.initTokenClient({
       client_id: gdClientId(), scope: GD_SCOPE,
       callback: r => { if (r.error) return rej(new Error(r.error_description || r.error)); GD.token = r.access_token; GD.exp = Date.now() + r.expires_in * 1000; ss.set('gdTok', GD.token); ss.set('gdExp', GD.exp); res(GD.token); },
-      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'accesso annullato' : e.type === 'popup_failed_to_open' ? 'il browser ha bloccato la finestra di Google' : (e.message || e.type)))
+      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'sign-in cancelled' : e.type === 'popup_failed_to_open' ? 'the browser blocked the Google window' : (e.message || e.type)))
     });
     tc.requestAccessToken({ prompt: ls.get('gdOn') === '1' ? '' : 'consent' });
   });
 }
 async function gdFetch(url, opt = {}) {
   const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + GD.token } });
-  if (r.status === 401) { GD.token = null; ss.set('gdTok', null); throw Object.assign(new Error('accesso a Google scaduto'), { auth: true }); }
+  if (r.status === 401) { GD.token = null; ss.set('gdTok', null); throw Object.assign(new Error('Google sign-in expired'), { auth: true }); }
   if (!r.ok) throw new Error(`Google Drive ${r.status}: ${(await r.text()).slice(0, 140)}`);
   return r;
 }
@@ -1369,7 +1376,7 @@ async function syncNow(interactive) {
     GD.state = 'ok'; GD.msg = ''; ls.set('gdLast', new Date().toISOString());
   } catch (e) {
     GD.state = e.auth ? 'login' : 'err'; GD.msg = e.message;
-    if (interactive) toast('Sincronizzazione non riuscita: ' + e.message);
+    if (interactive) toast('Sync failed: ' + e.message);
   } finally { GD.busy = false; renderSyncState(); if (location.hash === '#dati') route(); }
 }
 let syncTimer;
@@ -1394,30 +1401,30 @@ function renderSyncState() {
   if (!gdClientId()) { el.innerHTML = ''; el.hidden = true; return; }
   el.hidden = false;
   const last = ls.get('gdLast');
-  const when = last ? new Date(last).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
-  if (!gdConnected()) el.innerHTML = `Google Drive non collegato.<br><button class="btn small" id="sySync">Connect Google Drive</button>`;
-  else if (GD.state === 'sync') el.innerHTML = 'Google Drive: sincronizzo…';
+  const when = last ? new Date(last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+  if (!gdConnected()) el.innerHTML = `Google Drive not connected.<br><button class="btn small" id="sySync">Connect Google Drive</button>`;
+  else if (GD.state === 'sync') el.innerHTML = 'Google Drive: syncing…';
   else if (GD.state === 'err') el.innerHTML = `Google Drive: ${esc(GD.msg)}<br><button class="btn small" id="sySync">Retry</button>`;
-  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: ultima sincronizzazione alle ${when}` : ''}.<br><button class="btn small" id="sySync">Sync</button>`;
-  else el.innerHTML = `Google Drive sincronizzato${when ? ` alle ${when}` : ''}`;
+  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: last sync ${when}` : ''}.<br><button class="btn small" id="sySync">Sync</button>`;
+  else el.innerHTML = `Google Drive synced${when ? ` at ${when}` : ''}`;
   const b = $('#sySync'); if (b) b.onclick = () => syncNow(true);
 }
 function drivePanelHTML() {
   const cid = gdClientId(), last = ls.get('gdLast');
   return `<div class="panel"><h2>Google Drive</h2>
-    <p>Collega il tuo Google Drive per usare lo stesso logbook sul Mac, sull'iPhone e sull'iPad. Il file è <b>Logbook/logbook.json</b> nel tuo Drive e si aggiorna da solo a ogni modifica.</p>
+    <p>Connect Google Drive to use the same logbook on Mac and iPad. The file is <b>Logbook/logbook.json</b> in your Drive and updates automatically on every change.</p>
     ${cid ? `<div class="row">
         <button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>
         ${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}
-        <span class="hint">${gdConnected() ? (last ? `Ultima sincronizzazione ${new Date(last).toLocaleString('it-IT')}` : 'Non ancora sincronizzato') : ''}${GD.state === 'err' ? `. Errore: ${esc(GD.msg)}` : ''}</span></div>`
-      : `<p class="hint">Serve prima l'ID client di Google (si crea una volta nella Google Cloud Console). Incollalo qui:</p>
-      <div class="row"><input id="gdCid" class="btn" style="flex:1;min-width:260px;text-align:left" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Salva</button></div>`}
+        <span class="hint">${gdConnected() ? (last ? `Last sync ${new Date(last).toLocaleString('en-GB')}` : 'Not synced yet') : ''}${GD.state === 'err' ? `. Error: ${esc(GD.msg)}` : ''}</span></div>`
+      : `<p class="hint">A Google OAuth client ID is required first (created once in the Google Cloud Console). Paste it here:</p>
+      <div class="row"><input id="gdCid" class="btn" style="flex:1;min-width:260px;text-align:left" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div>`}
   </div>`;
 }
 function bindDrivePanel(main) {
   const s = main.querySelector('#gdSync'); if (s) s.onclick = () => syncNow(true);
-  const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Scollegare Google Drive da questo dispositivo? I dati restano sia qui sia su Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
-  const c = main.querySelector('#gdCidSave'); if (c) c.onclick = () => { const v = main.querySelector('#gdCid').value.trim(); if (!/\.apps\.googleusercontent\.com$/.test(v)) return toast('Non sembra un ID client di Google'); ls.set('gdClient', v); renderSyncState(); route(); };
+  const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Disconnect Google Drive from this device? Data stays both here and on Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
+  const c = main.querySelector('#gdCidSave'); if (c) c.onclick = () => { const v = main.querySelector('#gdCid').value.trim(); if (!/\.apps\.googleusercontent\.com$/.test(v)) return toast('This does not look like a Google client ID'); ls.set('gdClient', v); renderSyncState(); route(); };
 }
 function driveStartup() {
   renderSyncState();
@@ -1428,8 +1435,8 @@ function driveStartup() {
 
 // ---------- avvio ----------
 (async () => {
-  try { data = await idb.get('data') || null; } catch (e) { toast('Archivio locale non disponibile: ' + e.message); }
-  if (data && normalizeTypes(data)) await save('Nomi di aerei e simulatori aggiornati');
+  try { data = await idb.get('data') || null; } catch (e) { toast('Local storage not available: ' + e.message); }
+  if (data && normalizeTypes(data)) await save('Aircraft and simulator names updated');
   try {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }
@@ -1443,7 +1450,7 @@ function driveStartup() {
     navigator.serviceWorker.register('sw.js').then(reg => {
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
-        nw?.addEventListener('statechange', () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) toast('App aggiornata: ricarica la pagina per la nuova versione'); });
+        nw?.addEventListener('statechange', () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) toast('App updated: reload the page for the new version'); });
       });
     }).catch(() => {});
   }

@@ -19,11 +19,11 @@ async function mapData() {
   return MAP;
 }
 const apOf = code => MAP.airports[code] || MAP.airports[AP_ALIAS[code]];
-const regionName = (() => { try { const d = new Intl.DisplayNames(['it'], { type: 'region' }); return cc => { try { return d.of(cc); } catch { return cc; } }; } catch { return cc => cc; } })();
+const regionName = (() => { try { const d = new Intl.DisplayNames(['en'], { type: 'region' }); return cc => { try { return d.of(cc); } catch { return cc; } }; } catch { return cc => cc; } })();
 
 async function viewMap(main) {
-  main.innerHTML = '<h1>Map</h1><p class="lede">Carico la mappa…</p>';
-  try { await mapData(); } catch (e) { main.innerHTML = `<h1>Map</h1><p class="lede">Non riesco a caricare i dati della mappa: ${esc(e.message)}. Aprila una volta con la connessione attiva, poi funziona anche offline.</p>`; return; }
+  main.innerHTML = '<h1>Map</h1><p class="lede">Loading map…</p>';
+  try { await mapData(); } catch (e) { main.innerHTML = `<h1>Map</h1><p class="lede">Map data could not be loaded: ${esc(e.message)}. Open it once while online, then it also works offline.</p>`; return; }
   const st = viewMap.st ||= { period: 'all', fam: '', mode: 'flat', rot: [-12, 0, 0], k: 1 };
   st.mode = 'flat';
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
@@ -57,14 +57,14 @@ async function viewMap(main) {
   for (const r of routes.values()) r.main = Object.entries(r.fam).sort((a, b) => b[1] - a[1])[0][0];
   const topAp = [...aps.values()].sort((a, b) => b.n - a.n);
   const topRt = [...routes.values()].sort((a, b) => b.n - a.n);
-  const fmt = n => Math.round(n).toLocaleString('it-IT');
+  const fmt = n => Math.round(n).toLocaleString('en-GB');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Map</h1>
     <div class="row filters" style="margin:0">
       <select id="mPer" aria-label="Period"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
       <select id="mFam" aria-label="Family"><option value="">All families</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select>
     </div></div>
-  <p class="lede">${list.length} sectors on ${routes.size} routes. Trascina per spostare la mappa, due dita, rotella o + / − per lo zoom; tocca un aeroporto per vederlo, tocca di nuovo per i suoi voli.</p>
+  <p class="lede">${list.length} sectors on ${routes.size} routes. Drag to pan, pinch, scroll or + / − to zoom; tap an airport to identify it, tap again for its flights.</p>
   <div class="recency">
     <div><b>${aps.size}</b><span>airports</span></div>
     <div><b>${countries.size}</b><span>countries</span></div>
@@ -74,7 +74,7 @@ async function viewMap(main) {
   </div>
   <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Flight map"></canvas><div class="map-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button></div><div class="map-tip" id="mapTip" hidden></div>
     <div class="map-legend">${fams.filter(f => !st.fam || f === st.fam).map(f => `<span><i style="background:var(${FAM_VAR[f] || '--muted'})"></i>${esc(f)}</span>`).join('')}</div></div>
-  ${unknown.size ? `<p class="hint">Codici non trovati, quindi non in mappa: ${[...unknown].map(([c, n]) => `<a href="#voli" data-q="${esc(c)}">${esc(c)}</a> (${n})`).join(', ')}. Correggili nei voli se sono errori di battitura.</p>` : ''}
+  ${unknown.size ? `<p class="hint">Unknown codes, not shown on the map: ${[...unknown].map(([c, n]) => `<a href="#voli" data-q="${esc(c)}">${esc(c)}</a> (${n})`).join(', ')}. Correct them in Flights if they are typos.</p>` : ''}
   <div class="two">
     <div><h2>Top airports</h2><table class="data"><thead><tr><th class="l">ICAO</th><th class="l">Airport</th><th class="l">Country</th><th>Movements</th></tr></thead>
       <tbody>${topAp.slice(0, 12).map(a => `<tr class="click" data-q="${a.code}"><td class="l"><b>${a.code}</b></td><td class="l">${esc(a.name)}</td><td class="l">${esc(regionName(a.cc))}</td><td>${a.n}</td></tr>`).join('')}</tbody></table></div>

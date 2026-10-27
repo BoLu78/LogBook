@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.5';
+const APP_VERSION = '2.9.6';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -334,6 +334,36 @@ function gauge(v, limit) {
   const p = Math.min(100, 100 * v / limit);
   return `<div class="gauge ${p >= 100 ? 'over' : p >= 80 ? 'hi' : ''}"><i style="width:${p.toFixed(1)}%"></i></div>`;
 }
+const km = nm => `${fmtN(nm * 1.852)} km`;
+// gioco: quanto lontano sarei arrivato andando dritto verso lo spazio (distanze medie o minime, arrotondate)
+const SPACE = [
+  ['GEO', 35786, 'geostationary orbit'], ['Moon', 384400, 'the Moon'], ['JWST', 1500000, 'the James Webb telescope'],
+  ['Mars', 54600000, 'Mars at its closest'], ['Sun', 149600000, 'the Sun'], ['Jupiter', 588000000, 'Jupiter at its closest']
+];
+function spaceTrip(kmTot, career) {
+  const passed = SPACE.filter(p => kmTot >= p[1]), next = SPACE.find(p => kmTot < p[1]);
+  const moons = kmTot / 384400, laps = kmTot / 40075;
+  const lo = Math.log10(8000), hi = Math.log10(SPACE.at(-1)[1] * 1.4), X = v => ((Math.log10(Math.max(v, 8000)) - lo) / (hi - lo) * 100).toFixed(2);
+  const fmtBig = v => v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)} million km` : `${fmtN(v)} km`;
+  let line;
+  if (!passed.length) line = `Straight up from Earth you would be ${Math.max(1, Math.round(kmTot / 35786 * 100))}% of the way to geostationary orbit.`;
+  else {
+    const last = passed.at(-1);
+    line = moons >= 1 ? `Straight up from Earth you would have passed the Moon${moons >= 2 ? ` ${Math.floor(moons)} times (${Math.floor(moons / 2)} round trips)` : ''}`
+      : `Straight up from Earth you would be past ${last[2]}`;
+    if (last[0] !== 'Moon' && moons >= 1) line += ` and ${last[2]}`;
+    line += next ? `. Next stop ${next[2]}: ${Math.max(1, Math.round(kmTot / next[1] * 100))}% of the way.` : '.';
+  }
+  return `<div class="space">
+    <div class="space-head"><b>${career ? 'Career' : 'Period'} trip into space</b><span>${fmtBig(kmTot)} · ${fmtN(laps)} × around the Earth</span></div>
+    <div class="space-track" role="img" aria-label="${esc(line)}">
+      <i class="sp-earth" style="left:0%"></i>
+      <i class="sp-fill" style="width:${X(kmTot)}%"></i>
+      ${SPACE.map(p => `<span class="sp-pt ${kmTot >= p[1] ? 'on' : ''}" style="left:${X(p[1])}%"><em></em><small>${p[0]}</small></span>`).join('')}
+      <span class="sp-me" style="left:${X(kmTot)}%" title="${esc(fmtBig(kmTot))}">✈</span>
+    </div>
+    <p>${esc(line)}</p></div>`;
+}
 function viewSummary(main) {
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const sel = viewSummary.period || 'all';
@@ -375,7 +405,7 @@ function viewSummary(main) {
   const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Show ${yr} month by month"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Summary</h1>
-    <div class="row" style="margin:0;gap:10px;align-items:center"><button type="button" class="btn" data-act="roster">Import roster</button><button type="button" class="btn" data-act="next">Next leg →</button>
+    <div class="row" style="margin:0;gap:10px;align-items:center"><button type="button" class="btn" data-act="roster">Import roster</button>
     <label class="row filters" style="margin:0">Period
     <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div></div>
   ${plannedBanner()}
@@ -392,13 +422,14 @@ function viewSummary(main) {
   ${stripHTML(t)}
   <h2>Distance · PAX · Fuel</h2>
   <div class="recency">
-    <div><b>${fmtN(t.nm)} NM</b><span>${sel === 'all' ? 'career distance' : 'distance in period'}, great circle</span></div>
-    <div><b>${fmtN(t.nm / flYears)} NM</b><span>yearly average${flYears > 1 ? ` over ${flYears} years` : ''}</span></div>
-    <div><b>${fmtN(m12nm)} NM</b><span>last 12 months</span></div>
-    <div><b>${t.legs ? fmtN(t.nm / t.legs) : 0} NM</b><span>average sector distance</span></div>
+    <div><b>${km(t.nm)}</b><small class="nm">${fmtN(t.nm)} NM</small><span>${sel === 'all' ? 'career distance' : 'distance in period'}</span></div>
+    <div><b>${km(t.nm / flYears)}</b><small class="nm">${fmtN(t.nm / flYears)} NM</small><span>yearly average${flYears > 1 ? ` over ${flYears} years` : ''}</span></div>
+    <div><b>${km(m12nm)}</b><small class="nm">${fmtN(m12nm)} NM</small><span>last 12 months</span></div>
+    <div><b>${km(t.legs ? t.nm / t.legs : 0)}</b><small class="nm">${t.legs ? fmtN(t.nm / t.legs) : 0} NM</small><span>average sector distance</span></div>
     ${t.paxLegs ? `<div><b>${fmtN(t.pax)}</b><span>passengers carried, from ${t.paxLegs} sectors with data</span></div>` : ''}
     ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>fuel burned, from ${t.fuelLegs} sectors with data</span></div>` : ''}
   </div>
+  ${t.nm ? spaceTrip(t.nm * 1.852, sel === 'all') : ''}
   <h2>FTL limits · Recency</h2>
   <div class="recency">
     <div><b>${hm0(d28.total)}</b><span>last 28 days, limit 100 h</span>${gauge(d28.total, 6000)}</div>

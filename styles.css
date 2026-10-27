@@ -647,3 +647,21 @@ form.sheet .actions { align-items: center; }
 form.sheet .actions #del { margin-left: auto; }
 .field small.hint { display: block; margin-top: 4px; font-size: 12px; } .hint.warn { color: var(--amber); }
 #simReg { text-transform: uppercase; }
+
+/* ---------- 2.9.6: km con NM sotto, viaggio nello spazio ---------- */
+.recency small.nm { display: block; font-size: 12.5px; color: var(--muted); font-family: var(--font); margin: 2px 0 4px; }
+.space { background: var(--sheet); border: 1px solid var(--rule); border-top: 0; padding: 16px 22px 14px; margin-top: -1px; }
+.space-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.space-head b { font-size: 15px; color: var(--ink); }
+.space-head span { font-size: 13px; color: var(--muted); font-family: var(--font); }
+.space-track { position: relative; height: 52px; margin: 16px 10px 4px; }
+.space-track::before { content: ''; position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 2px; background: var(--rule-soft); }
+.sp-fill { position: absolute; left: 0; top: 14px; height: 4px; border-radius: 2px; background: var(--accent); }
+.sp-earth { position: absolute; top: 8px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #6cb6ff, #1d5fb8); }
+.sp-pt { position: absolute; top: 9px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.sp-pt em { width: 12px; height: 12px; border-radius: 50%; background: var(--sheet); border: 2px solid var(--rule); box-sizing: border-box; }
+.sp-pt.on em { background: var(--accent); border-color: var(--accent); }
+.sp-pt small { margin-top: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sp-pt.on small { color: var(--ink-2); font-weight: 700; }
+.sp-me { position: absolute; top: -10px; transform: translateX(-50%) rotate(-30deg); font-size: 18px; color: var(--accent); line-height: 1; }
+.space p { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }

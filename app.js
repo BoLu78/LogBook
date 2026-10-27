@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.4';
+const APP_VERSION = '2.9.5';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -36,8 +36,40 @@ const AVANTI1 = new Set(['I-FXRB', 'I-FXRC', 'I-FXRD', 'I-FXRE']);
 const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 'B787-9', B738: 'B737-800', B38M: 'B737-8' };
 // correzioni dei codici aeroporto indicate da Luca (applicate una volta, poi sincronizzate)
 const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH', EGRP: 'EGPH' };
+// doppioni: stessa tratta (data, partenza, arrivo, OUT) registrata due volte, o un volo pianificato già volato.
+// Tiene la riga più completa (bloccata, con gli effettivi), le aggiunge i campi che mancano, e cancella le altre anche sugli altri dispositivi.
+function dedupe(d) {
+  if (!d?.flights) return 0;
+  const filled = f => Object.entries(f).filter(([k, v]) => v && !['id', 'mt', 'src', 'seen'].includes(k)).length;
+  const score = f => (f.locked ? 1000 : 0) + (f.planned ? 0 : 500) + filled(f);
+  const groups = new Map();
+  for (const f of d.flights) {
+    const k = f.kind === 'sim' ? `S|${f.date}|${f.out}|${f.sim}` : f.planned ? null : `F|${f.date}|${f.dep}|${f.arr}|${f.out}`;
+    if (k) (groups.get(k) || groups.set(k, []).get(k)).push(f);
+  }
+  // pianificati già volati: stessa data, partenza e arrivo di una tratta con gli effettivi
+  const flown = new Map(); for (const f of d.flights) if (f.kind === 'flight' && !f.planned) flown.set(`${f.date}|${f.dep}|${f.arr}`, f);
+  for (const f of d.flights) if (f.planned) { const a = flown.get(`${f.date}|${f.dep}|${f.arr}`); if (a && Math.abs(((toMin(a.out) - toMin(f.sched?.out || f.out)) + 2160) % 1440 - 720) <= 240) { const k = `F|${a.date}|${a.dep}|${a.arr}|${a.out}`; groups.get(k).push(f); } }
+  const gone = new Set(), now = Date.now();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => score(b) - score(a));
+    const keep = list[0];
+    for (const o of list.slice(1)) {
+      for (const [k, v] of Object.entries(o)) if (v && !keep[k] && !['id', 'planned', 'mt', 'change', 'seen'].includes(k)) keep[k] = v;
+      if (o.flightNo && !keep.flightNo) keep.flightNo = o.flightNo;
+      if (o.sched && !keep.sched) keep.sched = o.sched;
+      gone.add(o.id);
+    }
+    keep.mt = now;
+  }
+  if (!gone.size) return 0;
+  const del = (d.deleted ||= {}); for (const id of gone) del[id] = now;
+  d.flights = d.flights.filter(f => !gone.has(f.id));
+  return gone.size;
+}
 function normalizeTypes(d) {
-  let n = 0;
+  let n = dedupe(d);
   for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; f.mt = Date.now(); n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
   // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
@@ -1225,6 +1257,14 @@ async function importFile(file) {
   for (const x of rows) {
     const f = flightLogRecord(x, regType);
     if (!f.date) continue;
+    const pl = f.kind === 'flight' && data.flights.find(e => e.planned && e.date === f.date && e.dep === f.dep && e.arr === f.arr);
+    if (pl) {   // volo del roster ora volato: diventa la tratta con gli effettivi, stesso id
+      const sched = pl.sched || { out: pl.out, inn: pl.inn };
+      Object.assign(pl, f, { id: pl.id, flightNo: f.flightNo || pl.flightNo, crew: pl.crew, mt: Date.now() });
+      pl.sched = (x.SchedOut && x.SchedIn) ? { out: x.SchedOut, inn: x.SchedIn } : sched;
+      delete pl.planned; delete pl.change; have.add(key(pl)); completed++;
+      continue;
+    }
     if (have.has(key(f))) {
       const ex = data.flights.find(e => key(e) === key(f));
       if (ex && ex.kind === 'flight' && fillGaps(ex, { sched: { out: x.SchedOut || '', inn: x.SchedIn || '' }, off: x.Off || '', on: x.On || '', pax: num(x.Pax), payload: parseDec(x.Payload), fuelUsed: parseDec(x.Fuel), fuelPlan: parseDec(x['Fuel Prev']), approach: x.Approaches || '', nm: num(x.Distance) })) completed++;
@@ -1572,7 +1612,7 @@ function driveStartup() {
 // ---------- avvio ----------
 (async () => {
   try { data = await idb.get('data') || null; } catch (e) { toast('Local storage not available: ' + e.message); }
-  if (data && normalizeTypes(data)) await save('Aircraft and simulator names updated');
+  if (data && normalizeTypes(data)) await save('Logbook updated');
   try {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }

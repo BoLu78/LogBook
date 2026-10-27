@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.2';
+const APP_VERSION = '3.0.3';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1183,18 +1183,34 @@ function viewPrint(main) {
   const lastN = pages.slice(-Math.max(1, Math.min(st.last, pages.length)));
   const range = ps => ps.length ? `pages ${ps[0].n}–${ps.at(-1).n}, ${dmy(ps[0].first)} to ${dmy(ps.at(-1).lastd)}` : '';
   const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length)).join(''); setTimeout(() => window.print(), 50); };
+  // PDF A4 orizzontale: su iPad è l'unico modo sicuro, Safari ignora l'orientamento della stampa
+  const pdf = async (ps, btn) => {
+    if (!ps.length) return;
+    const old = btn.textContent; btn.disabled = true; btn.textContent = 'Creating PDF…';
+    try {
+      const blob = await easaPdf(ps, st.rpp, pages.length);
+      const name = `Logbook_EASA_${ps[0].n}-${ps.at(-1).n}.pdf`, url = URL.createObjectURL(blob);
+      const file = new File([blob], name, { type: 'application/pdf' });
+      const bar = $('#pdfReady'); bar.hidden = false;
+      bar.innerHTML = `<b>PDF ready</b> · ${ps.length} page${ps.length > 1 ? 's' : ''} A4 landscape <a class="btn primary" href="${url}" target="_blank" rel="noopener">Open PDF</a> <a class="btn" href="${url}" download="${name}">Download</a>${navigator.canShare?.({ files: [file] }) ? ' <button class="btn" type="button" id="pdfShare">Share / Print</button>' : ''}`;
+      $('#pdfShare')?.addEventListener('click', () => navigator.share({ files: [file], title: name }).catch(() => {}));
+      bar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch (e) { toast('PDF not created: ' + e.message); }
+    btn.disabled = false; btn.textContent = old;
+  };
   main.innerHTML = `<h1>EASA logbook print</h1>
-  <p class="lede">EASA logbook format (AMC1 FCL.050), ${pages.length} pages of ${st.rpp} lines. In the print dialog choose "Save as PDF".</p>
+  <p class="lede">EASA logbook format (AMC1 FCL.050), ${pages.length} pages of ${st.rpp} lines. The PDF is always A4 landscape, ready to print or send.</p>
+  <div class="pdf-ready" id="pdfReady" hidden></div>
   <div class="panel"><h2>Last pages</h2>
     <p>What an operator usually asks for: the most recent pages, with totals brought forward and up to date.</p>
     <div class="row"><label>Last <input type="number" id="lastN" min="1" max="${pages.length}" value="${st.last}" style="width:64px" class="btn"> pages</label>
-      <button class="btn primary" id="doLast">Print last ${lastN.length} pages</button>
+      <button class="btn primary" id="doLast">PDF last ${lastN.length} pages</button><button class="btn" id="doLastPr" title="Browser print (Mac)">Print</button>
       <span class="hint">${range(lastN)}</span></div></div>
   <div class="panel"><h2>By period</h2>
     <div class="row filters" style="margin:0">
       <label>From <input type="date" id="pf" value="${st.from}"></label>
       <label>To <input type="date" id="pt" value="${st.to}"></label>
-      <button class="btn" id="doPrint">Print ${st.from || st.to ? 'period' : 'whole logbook'} (${sel.length} pages)</button></div>
+      <button class="btn primary" id="doPrint">PDF ${st.from || st.to ? 'period' : 'whole logbook'} (${sel.length} pages)</button><button class="btn" id="doPrintPr" title="Browser print (Mac)">Print</button></div>
     <p class="hint" style="margin-top:8px">Pages keep the numbering and totals brought forward of the full logbook.</p></div>
   <div class="row filters"><label>Lines per page <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
   <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length)).join('')}</div>
@@ -1203,10 +1219,12 @@ function viewPrint(main) {
   $('#pf').onchange = e => { st.from = e.target.value; viewPrint(main); };
   $('#pt').onchange = e => { st.to = e.target.value; viewPrint(main); };
   $('#lastN').onchange = e => { st.last = Math.max(1, Math.min(pages.length, parseInt(e.target.value, 10) || 1)); try { localStorage.setItem('lastPages', st.last); } catch { /* ok */ } viewPrint(main); };
-  $('#doLast').onclick = () => print(lastN);
-  $('#doPrint').onclick = () => print(sel);
+  $('#doLast').onclick = e => pdf(lastN, e.currentTarget);
+  $('#doPrint').onclick = e => pdf(sel, e.currentTarget);
+  $('#doLastPr').onclick = () => print(lastN);
+  $('#doPrintPr').onclick = () => print(sel);
 }
-window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
+window.addEventListener('hashchange', () => { const pa = $('#printArea'); if (pa) pa.innerHTML = ''; });
 
 // ---------- Dati, import, export ----------
 function parseCSV(text) {

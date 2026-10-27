@@ -724,3 +724,7 @@ table.ftl-t tr.past { opacity: .72; }
 .nd-body { justify-items: start; }
 /* 3.0.2: tutto in maiuscolo */
 form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type=checkbox]), form.sheet textarea, form.sheet select, table.data td, .nd-body { text-transform: uppercase; }
+.pdf-ready { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: color-mix(in srgb, var(--ok) 10%, var(--sheet)); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 10px; padding: 10px 14px; margin: 0 0 16px; }
+.pdf-ready[hidden] { display: none; }
+/* stampa dal browser: se il foglio è verticale la tabella si restringe invece di tagliarsi */
+@media print and (orientation: portrait) { .easa-page { zoom: .7; } }

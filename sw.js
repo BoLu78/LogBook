@@ -1,4 +1,4 @@
-const CACHE = 'logbook-2.9.0';
+const CACHE = 'logbook-2.9.1';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'stats.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'fonts/b612-400.woff2', 'fonts/b612-700.woff2', 'fonts/b612-mono-400.woff2', 'map.js', 'lib/d3-array.min.js', 'lib/d3-geo.min.js', 'lib/topojson-client.min.js', 'data/airports.json', 'data/countries-50m.json', 'data/land-110m.json', 'data/iata.json', 'data/worlddots.json', 'lib/netline/parser.js', 'lib/netline/pdf.min.mjs', 'lib/netline/pdf.worker.min.mjs'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

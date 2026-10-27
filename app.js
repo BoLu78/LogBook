@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '2.9.1';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -598,7 +598,10 @@ function viewEdit(main, id) {
         <p class="hint">Appears in the remarks of the EASA logbook print.</p></div>
     </details>
     <div class="actions">
-      <button class="btn primary keep" type="button" id="nextLeg">Next leg <span aria-hidden="true">→</span></button>
+      <div class="leg-nav keep">
+        <button class="btn keep" type="button" id="prevLeg"><span aria-hidden="true">←</span> Previous leg</button>
+        <button class="btn primary keep" type="button" id="nextLeg">Next leg <span aria-hidden="true">→</span></button>
+      </div>
       <button class="btn danger" type="button" id="del">Delete</button>
     </div>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
@@ -883,9 +886,27 @@ function viewEdit(main, id) {
     data.flights = data.flights.filter(x => x.id !== recId); (data.deleted ||= {})[recId] = Date.now();
     await save('Entry deleted'); created = false; location.hash = 'voli';
   };
+  // navigazione tra le tratte registrate, in ordine cronologico
+  const legKey = x => x.date + ' ' + (x.out || '') + ' ' + x.id;
+  const legs = () => data.flights.filter(x => x.kind === 'flight' || x.id === recId).sort((a, b) => legKey(a).localeCompare(legKey(b)));
+  const neighbour = dir => {
+    const cur = data.flights.find(x => x.id === recId) || { ...f, id: recId, date: g('date').value || f.date, out: g('out').value };
+    const L = legs().filter(x => x.id !== recId), k = legKey(cur);
+    return dir > 0 ? L.find(x => legKey(x) > k) : L.filter(x => legKey(x) < k).at(-1);
+  };
+  const navBtns = () => {
+    const p = neighbour(-1), n = neighbour(1);
+    g('prevLeg').disabled = !p; g('prevLeg').title = p ? `${dmy(p.date)} ${p.dep}–${p.arr}` : 'No earlier leg';
+    g('nextLeg').innerHTML = n ? 'Next leg <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
+    g('nextLeg').title = n ? `${dmy(n.date)} ${n.dep}–${n.arr}` : 'Create a new leg from this arrival';
+  };
+  navBtns();
+  g('prevLeg').onclick = () => { flush(); const p = neighbour(-1); if (p) location.hash = 'modifica/' + p.id; };
   g('nextLeg').onclick = () => {
-    if (!created && !locked) { const r = collect(); if (r.err) { toast(`Complete this leg first: ${r.err}`); r.el?.focus(); return; } }
-    flush(); nextLeg(data.flights.find(x => x.id === recId) || f);
+    flush(); const n = neighbour(1);
+    if (n) { location.hash = 'modifica/' + n.id; return; }
+    if (!created) { const r = collect(); if (r.err) { toast(`Complete this leg first: ${r.err}`); r.el?.focus(); return; } }
+    nextLeg(data.flights.find(x => x.id === recId) || f);
   };
 }
 

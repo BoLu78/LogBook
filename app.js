@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.3.2';
+const APP_VERSION = '2.4.0';
 const APP_DATE = '26/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -463,8 +463,6 @@ function viewEdit(main, id) {
     <section class="sheet-head">
       <div class="chips">
         <label class="chip"><input id="date" type="date" value="${esc(f.date)}" required aria-label="Data"></label>
-        <span class="chip" id="chipIfr">IFR</span>
-        <span class="chip" id="chipRole">${role === 'SIC' ? 'COPILOTA' : role}</span>
         ${orig?.planned ? '<span class="chip warn">PROGRAMMATO</span>' : ''}
       </div>
       <div class="route">
@@ -475,15 +473,15 @@ function viewEdit(main, id) {
       </div>
       <div class="times">
         <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.out || '')}</b><small>UTC</small></div>
-        <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--" inputmode="numeric"></label>
-        <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--" inputmode="numeric"></label>
-        <label class="t"><span>ON</span><input id="on" value="${esc(f.on || '')}" placeholder="--:--" inputmode="numeric"></label>
-        <label class="t"><span>IN</span><input id="inn" value="${esc(f.inn)}" placeholder="--:--" inputmode="numeric"></label>
+        <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOut"></small></label>
+        <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOff"></small></label>
+        <label class="t"><span>ON</span><input id="on" value="${esc(f.on || '')}" placeholder="--:--" inputmode="numeric"><small class="d" id="dOn"></small></label>
+        <label class="t"><span>IN</span><input id="inn" value="${esc(f.inn)}" placeholder="--:--" inputmode="numeric"><small class="d" id="dIn"></small></label>
         <div class="t sched"><span>SCHED</span><b>${esc(f.sched?.inn || '')}</b><small>UTC</small></div>
       </div>
       <div class="blocks">
         <div><span>Blocco schedulato</span><b id="schedBlock">${f.sched ? hm(((toMin(f.sched.inn) - toMin(f.sched.out)) + 1440) % 1440) : '—'}</b></div>
-        <label><span>Blocco reale</span><input id="total" value="${hm(f.total)}" placeholder="0:00"></label>
+        <label><span>Blocco reale</span><input id="total" value="${hm(f.total)}" placeholder="0:00"><small class="d" id="dBlock"></small></label>
         <div><span>Tempo di volo</span><b id="airTime">—</b></div>
         <label><span>Notte <i class="moon-ico" aria-hidden="true">☾</i></span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}></label>
       </div>
@@ -512,15 +510,19 @@ function viewEdit(main, id) {
       </div>
       <input type="hidden" id="toDay" value="${f.toDay || ''}"><input type="hidden" id="toNight" value="${f.toNight || ''}">
       <input type="hidden" id="ldgDay" value="${f.ldgDay || ''}"><input type="hidden" id="ldgNight" value="${f.ldgNight || ''}">
-      <div class="func">
-        <div class="seg" role="radiogroup" aria-label="Funzione">
-          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r === 'SIC' ? 'Copilota' : r}</span></label>`).join('')}</div>
-        <label class="pic"><span>Nome del PIC</span><input id="picName" value="${esc(f.picName)}"></label>
-        <label class="small"><span>IFR</span><input id="ifr" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
-        <label class="chk"><input type="checkbox" id="mpOn" ${mpOn ? 'checked' : ''}> Multi pilot</label>
-        <label class="chk"><input type="checkbox" id="instrOn" ${f.instr ? 'checked' : ''}> Istruttore</label>
+    </section>
+
+    <section class="sheet-card">
+      <h3>Funzione</h3>
+      <div class="rows">
+        <div class="ri"><span>Funzione</span><div class="seg" role="radiogroup" aria-label="Funzione">
+          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r === 'SIC' ? 'Copilota' : r}</span></label>`).join('')}</div></div>
+        <label class="ri"><span>Nome del PIC</span><input id="picName" value="${esc(f.picName)}"></label>
+        <label class="ri"><span>IFR</span><input id="ifr" class="short" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
+        <label class="ri"><span>Multi pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
+        <label class="ri"><span>Istruttore</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
       </div>
-      <p class="hint" id="roleHint"></p>
+      <p class="hint rows-hint" id="roleHint"></p>
     </section>
 
     <section class="sheet-card">
@@ -528,11 +530,10 @@ function viewEdit(main, id) {
       <div class="tiles">
         <label><span>Payload</span><input id="payload" inputmode="decimal" value="${f.payload || ''}" placeholder="0"><small>t</small></label>
         <label><span>Pax</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
-        <label><span>Carburante usato</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small>t</small></label>
+        <label><span>Carburante usato</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small></label>
         <label><span>Carburante pianificato</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
-        <div><span>Distanza</span><b id="distNM">—</b><small>NM</small></div>
-        <div><span>CO₂</span><b id="co2">—</b><small>t</small></div>
       </div>
+      <p class="hint rows-hint">Distanza <b id="distNM">—</b> NM, CO₂ <b id="co2">—</b> t</p>
     </section>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
@@ -544,7 +545,7 @@ function viewEdit(main, id) {
       <div class="field"><label for="sim">Durata</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
       <div class="field w3"><label for="spic">Istruttore o esaminatore</label><input id="spic" value="${esc(f.picName)}"></div>
     </div></fieldset></div>
-    <fieldset><div class="grid"><div class="field w6"><label for="remarks">Note e firme</label><textarea id="remarks" rows="2">${esc(f.remarks)}</textarea></div></div></fieldset>
+    <section class="sheet-card"><h3>Note</h3><textarea id="remarks" class="note" rows="3" placeholder="Tocca per aggiungere una nota, firme, PICUS…">${esc(f.remarks)}</textarea></section>
     <div class="actions"><button class="btn primary" type="submit">${orig?.planned ? 'Conferma con gli orari effettivi' : orig ? 'Salva modifiche' : 'Salva volo'}</button>
       ${orig ? '<button class="btn" type="button" id="dup">Duplica</button><button class="btn danger" type="button" id="del">Elimina</button>' : ''}
       <a class="btn" href="#voli">Annulla</a></div>
@@ -594,7 +595,7 @@ function viewEdit(main, id) {
     const h = $('#nightHint');
     if (!calc) { h.textContent = ''; return; }
     const tipo = calc.night === 0 ? 'Volo tutto di giorno' : calc.night >= calc.dur ? 'Volo tutto di notte' : `Notte calcolata ${hm(calc.night)} su ${hm(calc.dur)}`;
-    h.innerHTML = `${tipo}: decollo ${calc.toNight ? 'di notte' : 'di giorno'}, atterraggio ${calc.ldgNight ? 'di notte' : 'di giorno'}. Distanza ${fmtN(calc.nm)} NM.` +
+    h.innerHTML = `${tipo}, decollo ${calc.toNight ? 'di notte' : 'di giorno'}, atterraggio ${calc.ldgNight ? 'di notte' : 'di giorno'}.` +
       (!$('#night').dataset.auto && parseHM($('#night').value) !== calc.night ? ` <button type="button" class="btn small" id="useNight">Usa ${hm(calc.night) || '0:00'}</button>` : '');
     if ($('#night').dataset.auto) $('#night').value = hm(calc.night);
     const u = $('#useNight'); if (u) u.onclick = () => { $('#night').value = hm(calc.night); $('#night').dataset.auto = '1'; placeTOLDG(); runNight(); };
@@ -627,16 +628,25 @@ function viewEdit(main, id) {
     const off = toMin($('#off').value), on = toMin($('#on').value);
     $('#airTime').textContent = off != null && on != null ? hm(((on - off) + 1440) % 1440) || '0:00' : '—';
     $('#distNM').textContent = calc ? fmtN(calc.nm) : (f.nm ? fmtN(f.nm) : '—');
-    const fu = parseDec($('#fuelUsed').value); $('#co2').textContent = fu ? (fu * 3.16).toFixed(1).replace('.', ',') : '—';
-    $('#chipIfr').hidden = !parseHM($('#ifr').value);
+    const dl = (a, b, el, taxi) => { const x = toMin(a), y = toMin(b), e = $(el); if (x == null || y == null) { e.textContent = ''; e.className = 'd'; return; }
+      let d = ((x - y) + 1440) % 1440; if (d > 720) d -= 1440;
+      if (taxi) { e.textContent = `taxi ${Math.abs(d)} min`; e.className = 'd'; return; }
+      e.textContent = d === 0 ? 'in orario' : `${d > 0 ? '+' : '−'}${Math.abs(d)} min`; e.className = 'd ' + (d > 0 ? 'late' : 'early'); };
+    dl($('#out').value, f.sched?.out, '#dOut'); dl($('#inn').value, f.sched?.inn, '#dIn');
+    dl($('#off').value, $('#out').value, '#dOff', true); dl($('#inn').value, $('#on').value, '#dOn', true);
+    const sb = f.sched ? ((toMin(f.sched.inn) - toMin(f.sched.out)) + 1440) % 1440 : null, rb = parseHM($('#total').value);
+    $('#dBlock').textContent = sb != null && rb ? (rb === sb ? '' : `${rb > sb ? '+' : '−'}${Math.abs(rb - sb)} min`) : '';
+    const fu = parseDec($('#fuelUsed').value), fp = parseDec($('#fuelPlan').value);
+    $('#fuelDiff').textContent = fu && fp ? `t, ${fu - fp > 0 ? '+' : '−'}${Math.abs(fu - fp).toFixed(1).replace('.', ',')} sul piano` : 't';
+    $('#fuelDiff').className = fu && fp ? (fu > fp ? 'late' : 'early') : '';
+    $('#co2').textContent = fu ? (fu * 3.16).toFixed(1).replace('.', ',') : '—';
     drawTO(); drawLDG();
   };
-  ['off', 'on', 'fuelUsed', 'ifr'].forEach(k => $('#' + k).addEventListener('input', extras));
+  ['off', 'on', 'out', 'inn', 'total', 'fuelUsed', 'fuelPlan', 'ifr'].forEach(k => $('#' + k).addEventListener('input', extras));
   ['dep', 'arr'].forEach(k => $('#' + k).addEventListener('change', aptLabel));
   const runNight0 = runNight;
   ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 50)));
   aptLabel(); setTimeout(extras, 80); void runNight0;
-  form.querySelectorAll('input[name=role]').forEach(r => r.addEventListener('change', () => { $('#chipRole').textContent = r.value === 'SIC' ? 'COPILOTA' : r.value; }));
   $('#simType').addEventListener('change', () => { const v = $('#simType').value.trim(); if (SIM_DEVICES[v]) { const r = $('#remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; $('#simType').value = SIM_DEVICES[v]; } });
   const autoSim = () => { const o = toMin($('#sout').value), i = toMin($('#sinn').value); if (o != null && i != null) $('#sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));

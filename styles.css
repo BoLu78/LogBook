@@ -368,3 +368,27 @@ form.sheet > fieldset:first-child { margin-bottom: 12px; }
   .flight-grid .col.ac { grid-column: 1 / -1; order: -1; }
   .counter .ctl button { width: 34px; height: 34px; }
 }
+
+/* Scheda volo, versione più pulita */
+.times .d, .blocks .d { font-size: 11px; color: var(--muted); min-height: 14px; }
+.d.late, small.late { color: var(--red); font-weight: 600; }
+.d.early, small.early { color: var(--ok); font-weight: 600; }
+.sheet-head .hint { font-size: 12px; }
+.rows { display: flex; flex-direction: column; }
+.ri { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule-soft); font-size: 15px; }
+.ri:last-child { border-bottom: 0; }
+.ri > span { color: var(--ink-2); }
+.ri input:not([type=checkbox]) { border: 0; background: transparent; text-align: right; font-family: var(--font); font-size: 16px; font-weight: 700; color: var(--ink); width: 55%; padding: 4px 0; }
+.ri input.short { width: 80px; }
+.ri input:focus { outline: none; border-bottom: 2px solid var(--accent); }
+.ri .seg label { padding: 5px 10px; font-size: 13px; }
+.rows-hint { padding: 0 18px 12px; margin: 0; }
+input.sw { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 14px; background: var(--rule); position: relative; cursor: pointer; transition: background .15s; flex: none; }
+input.sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s; }
+input.sw:checked { background: var(--accent); }
+input.sw:checked::after { left: 21px; }
+@media (prefers-reduced-motion: reduce) { input.sw, input.sw::after { transition: none; } }
+textarea.note { display: block; width: 100%; border: 0; background: transparent; padding: 14px 18px; font: inherit; color: var(--ink); resize: vertical; }
+textarea.note:focus { outline: none; }
+form.sheet .actions { position: sticky; bottom: 0; background: var(--paper); padding: 10px 0; z-index: 2; }
+@media (max-width: 760px) { .ri { padding: 11px 12px; } .ri .seg label { padding: 5px 7px; font-size: 12px; } }

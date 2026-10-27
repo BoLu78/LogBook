@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -38,6 +38,9 @@ const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 
 const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH' };
 function normalizeTypes(d) {
   let n = 0;
+  // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
+  const byNorm = new Map(Object.keys(KNOWN_AIRCRAFT).map(r => [r.replace(/[^A-Z0-9]/g, ''), r]));
+  for (const f of d?.flights || []) if (f.kind === 'flight' && f.reg && !KNOWN_AIRCRAFT[f.reg]) { const r = byNorm.get(f.reg.toUpperCase().replace(/[^A-Z0-9]/g, '')); if (r && r !== f.reg) { f.reg = r; if (!f.type) f.type = KNOWN_AIRCRAFT[r]; f.mt = Date.now(); n++; } }
   for (const f of d?.flights || []) if (f.src === 'netline' && /^Equipaggio: /.test(f.remarks || '')) { f.crew = f.remarks.replace(/^Equipaggio: /, ''); f.remarks = ''; f.mt = Date.now(); n++; }
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
@@ -411,9 +414,9 @@ function viewFlights(main) {
   const shown = st.all ? list : list.slice(0, 300);
   const rows = shown.map(f => {
     const r = roleOf(f);
-    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td></td><td>${hm(f.sim)}</td><td></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
-    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Unseen"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.change || f.flightNo || '')}</td></tr>`;
-    return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td>${hm(f.night)}</td><td>${(f.toDay + f.toNight) || ''}</td><td>${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
+    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td></td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
+    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Unseen"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.change || f.flightNo || '')}</div></td></tr>`;
+    return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td class="o">${hm(f.night)}</td><td class="o">${(f.toDay + f.toNight) || ''}</td><td class="o">${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
   }).join('');
   const nPlan = data.flights.filter(f => f.planned).length, nDot = data.flights.filter(f => f.planned && !f.seen).length;
   main.innerHTML = `<h1>Flights</h1>
@@ -426,7 +429,7 @@ function viewFlights(main) {
     <input id="fq" type="search" placeholder="Search airport, reg, PIC, remarks" size="36" value="${esc(st.q)}">
     <a class="btn primary" href="#nuovo">New flight</a>
   </div>
-  <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Date</th><th class="l">DEP</th><th>OUT</th><th class="l">ARR</th><th>IN</th><th class="l">Type</th><th class="l">Reg</th><th>Total</th><th>Function</th><th>Night</th><th>T/O</th><th>LDG</th><th class="l">PIC name</th><th class="l">Remarks</th></tr></thead>
+  <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Date</th><th class="l">DEP</th><th>OUT</th><th class="l">ARR</th><th>IN</th><th class="l">Type</th><th class="l">Reg</th><th>Total</th><th>Function</th><th class="o">Night</th><th class="o">T/O</th><th class="o">LDG</th><th class="l">PIC name</th><th class="l o">Remarks</th></tr></thead>
   <tbody>${rows || '<tr><td colspan="14" class="l">Nessun volo con questi filtri.</td></tr>'}</tbody></table></div>
   ${!st.all && list.length > 300 ? `<p><button class="btn" id="more">Mostra tutte le ${list.length} righe</button></p>` : ''}`;
   $('#fy').value = st.year; $('#ft').value = st.type;
@@ -508,15 +511,17 @@ function viewEdit(main, id) {
       <h3>Flight</h3>
       <div class="ac-row">
         <span class="cap">Aircraft</span>
-        <select id="regSel" aria-label="Registration">${regOptions(f.reg)}</select>
-        <span class="ac-type" id="acType">${esc(f.type || (f.acHint ? f.acHint + ' (roster)' : ''))}</span>
-        <button type="button" class="tagbtn" id="newRegBtn">+ New reg</button>
-        <input type="hidden" id="reg" value="${esc(f.reg)}"><input type="hidden" id="type" value="${esc(f.type)}">
+        <div class="reg-box">
+          <input id="reg" class="reg" value="${esc(f.reg)}" placeholder="REG" aria-label="Registration" autocapitalize="characters" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="regList">
+          <ul class="reg-list" id="regList" role="listbox" hidden></ul>
+        </div>
+        <span class="ac-type" id="acType">${esc(f.type)}</span>
+        <input type="hidden" id="type" value="${esc(f.type)}">
       </div>
       <div class="ac-new" id="acNew" hidden>
-        <input id="newReg" placeholder="Registration" autocapitalize="characters" aria-label="New registration">
+        <span class="nf">Not found: <b id="nfReg"></b>. Aircraft type?</span>
         <select id="newType" aria-label="Aircraft type">${[...new Set([...TYPE_ORDER, ...data.flights.map(x => x.type)].filter(Boolean))].map(t => `<option>${esc(t)}</option>`).join('')}</select>
-        <button type="button" class="btn small primary" id="addReg">Add</button><button type="button" class="btn small" id="cancelReg">Cancel</button>
+        <button type="button" class="btn small primary" id="addReg">Add aircraft</button>
       </div>
       <div class="flight-grid">
         <div class="col">
@@ -682,20 +687,49 @@ function viewEdit(main, id) {
   const ro = new ResizeObserver(() => drawWorld(g('worldbg'), apt(g('dep').value.trim().toUpperCase()), apt(g('arr').value.trim().toUpperCase())));
   ro.observe(form.querySelector('.sheet-head'));
 
-  // ---------- marca: elenco con il tipo, o nuova marca
-  const setReg = r => {
-    const t = regTypeOf(r); g('reg').value = r; g('type').value = t || g('type').value;
-    g('acType').textContent = r ? (t || g('type').value) : (f.acHint ? f.acHint + ' (roster)' : '');
+  // ---------- marca: si scrive, l'app suggerisce le marche note e compila il tipo; marca nuova -> chiede il tipo
+  const fleet = knownRegs();
+  const regInp = g('reg'), list = g('regList');
+  let hi = -1, shown = [];
+  const setType = t => { g('type').value = t || ''; g('acType').textContent = t || ''; };
+  const pick = r => { regInp.value = r; setType(fleet.get(r)); closeList(); g('acNew').hidden = true; schedule(); };
+  const closeList = () => { list.hidden = true; regInp.setAttribute('aria-expanded', 'false'); hi = -1; };
+  const showList = () => {
+    const q = normReg(regInp.value);
+    shown = !q ? [] : [...fleet.keys()].map(r => [r, normReg(r)]).filter(([, n]) => n.includes(q))
+      .sort((a, b) => (b[1].startsWith(q) - a[1].startsWith(q)) || a[1].length - b[1].length || a[0].localeCompare(b[0])).slice(0, 7).map(x => x[0]);
+    list.innerHTML = shown.map((r, i) => `<li role="option" id="ro${i}" data-r="${esc(r)}" class="${i === hi ? 'on' : ''}"><b>${esc(r)}</b><span>${esc(fleet.get(r) || '')}</span></li>`).join('')
+      + (q.length >= 3 && !shown.length ? `<li class="nf-li" data-new="1">Not found · add "${esc(regInp.value.trim().toUpperCase())}"</li>` : '');
+    list.hidden = !list.innerHTML; regInp.setAttribute('aria-expanded', String(!list.hidden));
   };
-  g('regSel').onchange = () => { if (g('regSel').value === '__new') { g('acNew').hidden = false; g('newReg').focus(); g('regSel').value = g('reg').value; return; } setReg(g('regSel').value); };
-  g('newRegBtn').onclick = () => { if (locked) return; g('acNew').hidden = false; g('newReg').focus(); };
-  g('cancelReg').onclick = () => { g('acNew').hidden = true; };
+  const resolve = () => {
+    const v = regInp.value.trim().toUpperCase(); regInp.value = v;
+    if (!v) { setType(''); g('acNew').hidden = true; return; }
+    const exact = [...fleet.keys()].find(r => normReg(r) === normReg(v));
+    if (exact) { regInp.value = exact; setType(fleet.get(exact)); g('acNew').hidden = true; return; }
+    const fv = formatReg(v, fleet); regInp.value = fv;
+    setType(''); g('nfReg').textContent = fv; g('acNew').hidden = false;
+    const guess = guessType(v); if (guess) g('newType').value = guess;
+  };
+  regInp.addEventListener('input', () => { hi = -1; showList(); });
+  regInp.addEventListener('focus', () => { if (regInp.value) showList(); });
+  regInp.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, Math.min(shown.length - 1, hi + (e.key === 'ArrowDown' ? 1 : -1))); showList(); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (hi >= 0 && shown[hi]) pick(shown[hi]); else { closeList(); resolve(); } }
+    else if (e.key === 'Escape') closeList();
+  });
+  list.addEventListener('pointerdown', e => {
+    e.preventDefault(); const li = e.target.closest('li'); if (!li) return;
+    if (li.dataset.new) { closeList(); resolve(); g('newType').focus(); } else pick(li.dataset.r);
+  });
+  regInp.addEventListener('blur', () => setTimeout(() => { closeList(); resolve(); }, 120));
   g('addReg').onclick = async () => {
-    const r = g('newReg').value.trim().toUpperCase(), t = g('newType').value;
-    if (!/^[A-Z0-9-]{3,10}$/.test(r)) { toast('Scrivi la marca, per esempio EI-RZI'); return; }
-    (data.aircraft ||= {})[r] = t; data.metaMt = Date.now();
-    g('regSel').innerHTML = regOptions(r); setReg(r); g('acNew').hidden = true; g('newReg').value = '';
-    await save(`${r} aggiunta come ${t}`); schedule();
+    const r = regInp.value.trim().toUpperCase(), t = g('newType').value;
+    if (!/^[A-Z0-9-]{3,10}$/.test(r)) { toast('Registration not valid, e.g. EI-RZI'); return; }
+    (data.aircraft ||= {})[r] = t; data.metaMt = Date.now(); fleet.set(r, t);
+    setType(t); g('acNew').hidden = true;
+    await save(`${r} added as ${t}`); schedule();
   };
 
   // ---------- funzione
@@ -712,7 +746,7 @@ function viewEdit(main, id) {
   g('sigClear').onclick = () => { if (locked) return; sig.clear(); g('sigHint').textContent = 'Firma cancellata.'; schedule(); };
   if (!orig && viewEdit.dup) {
     const d = viewEdit.dup; viewEdit.dup = null;
-    g('regSel').innerHTML = regOptions(d.reg); setReg(d.reg || '');
+    g('reg').value = d.reg || ''; g('type').value = d.type || ''; g('acType').textContent = d.type || '';
     for (const k of ['picName', 'flightNo']) g(k).value = d[k] || '';
     g('dep').value = d.arr; form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
   }
@@ -834,17 +868,27 @@ function regTypeOf(r) {
   if (!r) return '';
   return data.aircraft?.[r] || data.flights.findLast(x => x.reg === r && x.type)?.type || KNOWN_AIRCRAFT[r] || '';
 }
-function regOptions(sel) {
-  const lastUse = {}, typeOf = {};
-  for (const [r, t] of Object.entries(KNOWN_AIRCRAFT)) { typeOf[r] = t; lastUse[r] ||= ''; }
-  for (const x of data.flights) if (x.kind === 'flight' && x.reg) { if (x.type) typeOf[x.reg] = x.type; if (!x.planned && (lastUse[x.reg] || '') < x.date) lastUse[x.reg] = x.date; else lastUse[x.reg] ||= ''; }
-  for (const [r, t] of Object.entries(data.aircraft || {})) { typeOf[r] = t; lastUse[r] ||= '9999'; }
-  if (sel && !typeOf[sel]) typeOf[sel] = '';
-  const groups = {};
-  for (const r of Object.keys(typeOf)) (groups[typeOf[r] || 'Other'] ||= []).push(r);
-  const gLast = t => groups[t].reduce((m, r) => (lastUse[r] || '') > m ? lastUse[r] : m, '');
-  const order = Object.keys(groups).sort((a, b) => gLast(b).localeCompare(gLast(a)) || typeRank(a) - typeRank(b));
-  return `<option value="">— Registration —</option>` + order.map(t => `<optgroup label="${esc(t)}">${groups[t].sort((a, b) => (lastUse[b] || '').localeCompare(lastUse[a] || '') || a.localeCompare(b)).map(r => `<option value="${esc(r)}" ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')}</optgroup>`).join('') + `<option value="__new">+ New registration…</option>`;
+// tutte le marche conosciute con il loro tipo: flotta FlightLog, storico del logbook, marche aggiunte a mano
+function knownRegs() {
+  const m = new Map(Object.entries(KNOWN_AIRCRAFT));
+  for (const x of data.flights) if (x.kind === 'flight' && x.reg && x.type) m.set(x.reg, x.type);
+  for (const [r, t] of Object.entries(data.aircraft || {})) m.set(r, t);
+  return m;
+}
+const normReg = r => String(r || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// EIRZY -> EI-RZY, con il trattino dove ce l'hanno le marche della stessa serie
+function formatReg(v, fleet) {
+  if (v.includes('-')) return v;
+  const n = normReg(v); let best = null, len = 0;
+  for (const k of fleet.keys()) { const kn = normReg(k); let i = 0; while (i < kn.length && kn[i] === n[i]) i++; if (i > len && i >= 2 && k.includes('-')) { len = i; best = k; } }
+  if (!best) return v;
+  const at = best.indexOf('-'); return at > 0 && at < n.length ? n.slice(0, at) + '-' + n.slice(at) : v;
+}
+// tipo probabile per una marca nuova, dalla stessa serie (EI-RZx -> B737-8)
+function guessType(r) {
+  const n = normReg(r), m = knownRegs(); let best = '', len = 0;
+  for (const [k, t] of m) { const kn = normReg(k); let i = 0; while (i < kn.length && kn[i] === n[i]) i++; if (i > len && i >= 3) { len = i; best = t; } }
+  return best;
 }
 // "UTC+1" all'ora e alla data del volo, dal fuso dell'aeroporto
 function utcLabel(tz, date, time) {

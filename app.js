@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.0.2';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -72,6 +72,8 @@ function normalizeTypes(d) {
   let n = dedupe(d);
   for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; f.mt = Date.now(); n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
+  // una volta sola: tutto il testo in maiuscolo (nomi, note, numeri di volo, simulatori, esaminatori)
+  if (d && !d.upperDone) { const now = Date.now(); for (const f of d.flights || []) { let ch = false; for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'crew']) if (typeof f[k] === 'string' && f[k] !== f[k].toUpperCase()) { f[k] = f[k].toUpperCase(); ch = true; } if (f.check?.name && f.check.name !== f.check.name.toUpperCase()) { f.check.name = f.check.name.toUpperCase(); ch = true; } if (ch) f.mt = now; } d.upperDone = 1; n++; }
   // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
   if (d && !d.lockAllDone) { const now = Date.now(); for (const f of d.flights || []) if (!f.planned && !f.locked) { f.locked = true; f.mt = now; } d.lockAllDone = 1; n++; }
   // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
@@ -675,7 +677,7 @@ function viewEdit(main, id) {
     </details>
     <div class="actions">
       <div class="leg-nav keep">
-        <button class="btn keep" type="button" id="prevLeg"><span aria-hidden="true">←</span> Previous leg</button>
+        <button class="btn keep" type="button" id="prevLeg"><span aria-hidden="true">←</span> Previous</button>
         <button class="btn primary keep" type="button" id="nextLeg">Next leg <span aria-hidden="true">→</span></button>
       </div>
       <button class="btn danger" type="button" id="del">Delete</button>
@@ -908,6 +910,7 @@ function viewEdit(main, id) {
       if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
       if (confirmed) { delete rec.planned; delete rec.change; } else rec.planned = true;
     }
+    for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'simReg']) if (typeof rec[k] === 'string') rec[k] = rec[k].toUpperCase();
     const sv = sig.value(); if (sv) rec.signature = sv; else delete rec.signature;
     const ck = { type: g('chkType').value, name: g('chkName').value.trim().toUpperCase(), lic: g('chkLic').value.trim(), sig: chk ? chk.value() : f.check?.sig || null };
     if (ck.type || ck.name || ck.lic || ck.sig) { if (!ck.sig) delete ck.sig; rec.check = ck; } else delete rec.check;
@@ -976,7 +979,7 @@ function viewEdit(main, id) {
   };
   // navigazione tra le tratte registrate, in ordine cronologico
   const legKey = x => x.date + ' ' + (x.out || '') + ' ' + x.id;
-  const legs = () => data.flights.filter(x => x.kind === 'flight' || x.id === recId).sort((a, b) => legKey(a).localeCompare(legKey(b)));
+  const legs = () => data.flights.slice().sort((a, b) => legKey(a).localeCompare(legKey(b)));
   const neighbour = dir => {
     const cur = data.flights.find(x => x.id === recId) || { ...f, id: recId, date: g('date').value || f.date, out: g('out').value };
     const L = legs().filter(x => x.id !== recId), k = legKey(cur);
@@ -984,9 +987,10 @@ function viewEdit(main, id) {
   };
   const navBtns = () => {
     const p = neighbour(-1), n = neighbour(1);
-    g('prevLeg').disabled = !p; g('prevLeg').title = p ? `${dmy(p.date)} ${p.dep}–${p.arr}` : 'No earlier leg';
-    g('nextLeg').innerHTML = n ? 'Next leg <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
-    g('nextLeg').title = n ? `${dmy(n.date)} ${n.dep}–${n.arr}` : 'Create a new leg from this arrival';
+    const what = x => x.kind === 'sim' ? `SIM ${x.simReg || x.simType || ''}`.trim() : `${x.dep}–${x.arr}`;
+    g('prevLeg').disabled = !p; g('prevLeg').title = p ? `${dmy(p.date)} ${what(p)}` : 'No earlier entry';
+    g('nextLeg').innerHTML = n ? 'Next <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
+    g('nextLeg').title = n ? `${dmy(n.date)} ${what(n)}` : 'Create a new leg from this arrival';
   };
   navBtns();
   g('prevLeg').onclick = () => { flush(); const p = neighbour(-1); if (p) location.hash = 'modifica/' + p.id; };
@@ -1552,7 +1556,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

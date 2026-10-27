@@ -722,3 +722,5 @@ table.ftl-t tr.past { opacity: .72; }
 @media (max-width: 1100px) { .ftl-gs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .nd { grid-template-columns: 1fr; gap: 4px; } }
 .nd-body { justify-items: start; }
+/* 3.0.2: tutto in maiuscolo */
+form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type=checkbox]), form.sheet textarea, form.sheet select, table.data td, .nd-body { text-transform: uppercase; }

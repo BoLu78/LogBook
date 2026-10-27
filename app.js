@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '2.8.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -255,6 +255,8 @@ function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Data · Backup' }[view] || 'Logbook';
+  closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
   views[view](main, arg);
@@ -1233,7 +1235,7 @@ async function importNetline(buf) {
       if (ex.sched?.out !== out || ex.sched?.inn !== inn) {
         ex.change = `orario cambiato da ${ex.sched?.out}–${ex.sched?.inn} a ${out}–${inn}`;
         Object.assign(ex, fields, { seen: false, mt: Date.now() }); updated++;
-      } else if (ex.change === 'non più nel turno') { delete ex.change; ex.seen = false; ex.mt = Date.now(); updated++; }
+      }
       continue;
     }
     const rec = { ...EMPTY(), ...fields, id: nextId(), kind: 'flight', type: '', reg: '', src: 'netline', planned: true, seen: false, mt: Date.now() };
@@ -1241,8 +1243,15 @@ async function importNetline(buf) {
   }
   // voli ancora programmati nel periodo del PDF che nel turno nuovo non ci sono più
   const p0 = roster.meta?.periodStart, p1 = roster.meta?.periodEnd;
-  if (p0 && p1) for (const f of data.flights) if (f.planned && f.date >= p0 && f.date <= p1 && !seenKeys.has(key(f)) && f.change !== 'non più nel turno') { f.change = 'non più nel turno'; f.seen = false; f.mt = Date.now(); gone++; }
-  const parts = [`${added} voli nuovi`, updated && `${updated} cambiati`, gone && `${gone} non più nel turno`, untouched && `${untouched} già nel logbook non toccati`].filter(Boolean);
+  // vengono tolti: se non sono più nel turno non si fanno. I voli confermati o bloccati non si toccano mai.
+  if (p0 && p1) {
+    const goneIds = data.flights.filter(f => f.kind === 'flight' && f.planned && !f.locked && f.date >= p0 && f.date <= p1 && !seenKeys.has(key(f))).map(f => f.id);
+    if (goneIds.length) {
+      const del = (data.deleted ||= {}); for (const id of goneIds) del[id] = Date.now();
+      data.flights = data.flights.filter(f => !goneIds.includes(f.id)); gone = goneIds.length;
+    }
+  }
+  const parts = [`${added} voli nuovi`, updated && `${updated} cambiati`, gone && `${gone} tolti perché non più nel turno`, untouched && `${untouched} già nel logbook non toccati`].filter(Boolean);
   await save('NetLine: ' + parts.join(', '));
   updateBadge(); route();
 }
@@ -1365,7 +1374,21 @@ async function syncNow(interactive) {
 }
 let syncTimer;
 function scheduleSync() { if (gdConnected() && gdTokenOk()) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
+// ---------- menu a scomparsa (iPad e telefono) ----------
+function openMenu() { document.body.classList.add('menu-open'); $('#scrim').hidden = false; $('#menuBtn')?.setAttribute('aria-expanded', 'true'); $('#sideNav a')?.focus(); }
+function closeMenu() { if (!document.body.classList.contains('menu-open')) return; document.body.classList.remove('menu-open'); $('#scrim').hidden = true; $('#menuBtn')?.setAttribute('aria-expanded', 'false'); }
+document.addEventListener('DOMContentLoaded', () => {});
+(() => {
+  const mb = document.getElementById('menuBtn'); if (!mb) return;
+  mb.onclick = () => document.body.classList.contains('menu-open') ? closeMenu() : openMenu();
+  document.getElementById('scrim').onclick = closeMenu;
+  document.getElementById('sideNav').addEventListener('click', e => { if (e.target.closest('a')) closeMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  document.getElementById('tbSync').onclick = () => { if (gdClientId()) syncNow(true); else location.hash = 'dati'; };
+})();
 function renderSyncState() {
+  const tb = $('#tbSync');
+  if (tb) { const ok = gdConnected() && GD.state !== 'err' && GD.state !== 'login' && gdTokenOk(); tb.classList.toggle('ok', ok); tb.classList.toggle('busy', GD.state === 'sync'); tb.classList.toggle('warn', gdConnected() && !ok && GD.state !== 'sync'); tb.title = ok ? `Google Drive synced${ls.get('gdLast') ? ' ' + new Date(ls.get('gdLast')).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : gdConnected() ? 'Tap to sync with Google Drive' : 'Google Drive not connected'; }
   let el = $('#syncState');
   if (!el) { el = document.createElement('div'); el.id = 'syncState'; el.className = 'sync-state'; $('#backupState').before(el); }
   if (!gdClientId()) { el.innerHTML = ''; el.hidden = true; return; }

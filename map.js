@@ -64,7 +64,7 @@ async function viewMap(main) {
       <select id="mPer" aria-label="Period"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
       <select id="mFam" aria-label="Family"><option value="">All families</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select>
     </div></div>
-  <p class="lede">${list.length} sectors on ${routes.size} routes. Trascina per spostare la mappa, rotella o trackpad per lo zoom, doppio clic per tornare all'inizio.</p>
+  <p class="lede">${list.length} sectors on ${routes.size} routes. Trascina per spostare la mappa, due dita, rotella o + / − per lo zoom; tocca un aeroporto per vederlo, tocca di nuovo per i suoi voli.</p>
   <div class="recency">
     <div><b>${aps.size}</b><span>airports</span></div>
     <div><b>${countries.size}</b><span>countries</span></div>
@@ -72,7 +72,7 @@ async function viewMap(main) {
     <div><b>${longest ? `${esc(longest.f.dep)}–${esc(longest.f.arr)}` : '—'}</b><span>${longest ? `longest sector, ${fmt(longest.d)} NM on ${dmy(longest.f.date)}` : ''}</span></div>
     <div><b>${topAp[0] ? esc(topAp[0].code) : '—'}</b><span>${topAp[0] ? `most visited airport, ${topAp[0].n} movements` : ''}</span></div>
   </div>
-  <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Mappa dei voli"></canvas><div class="map-tip" id="mapTip" hidden></div>
+  <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Flight map"></canvas><div class="map-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button></div><div class="map-tip" id="mapTip" hidden></div>
     <div class="map-legend">${fams.filter(f => !st.fam || f === st.fam).map(f => `<span><i style="background:var(${FAM_VAR[f] || '--muted'})"></i>${esc(f)}</span>`).join('')}</div></div>
   ${unknown.size ? `<p class="hint">Codici non trovati, quindi non in mappa: ${[...unknown].map(([c, n]) => `<a href="#voli" data-q="${esc(c)}">${esc(c)}</a> (${n})`).join(', ')}. Correggili nei voli se sono errori di battitura.</p>` : ''}
   <div class="two">
@@ -149,30 +149,50 @@ async function viewMap(main) {
   const redraw = () => { fast = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); clearTimeout(fullTimer); fullTimer = setTimeout(() => { fast = false; raf = requestAnimationFrame(draw); }, 180); };
   draw();
 
-  // ---------- interazione ----------
-  let drag = null;
-  cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, rot: st.rot.slice(), panY: st.panY || 0 }; tip.hidden = true; };
+  // ---------- interazione: trascina per spostare, due dita o rotella per lo zoom, pulsanti + / − ----------
+  const pts = new Map(); let drag = null, pinch = null;
+  const zoomTo = k => { st.k = Math.max(1, Math.min(14, k)); if (st.k === 1) st.panY = 0; redraw(); };
+  const nearest = (x, y, max = 400) => { let best = null, bd = max; for (const a of apArr) if (a.xy) { const d = (a.xy[0] - x) ** 2 + (a.xy[1] - y) ** 2; if (d < bd) { bd = d; best = a; } } return best; };
+  const showTip = (a, x, y) => { tip.hidden = false; tip.innerHTML = `<b>${a.code}</b> ${esc(a.name)}<br>${esc(regionName(a.cc))}, ${a.n} movements`; tip.style.left = Math.max(4, Math.min(W - 224, x + 14)) + 'px'; tip.style.top = (y + 14) + 'px'; cv.dataset.q = a.code; };
+  cv.onpointerdown = e => {
+    cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2) { const [p, q] = [...pts.values()]; pinch = { d: Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, k: st.k }; drag = null; tip.hidden = true; }
+    else if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, rot: st.rot.slice(), panY: st.panY || 0, moved: false };
+  };
   cv.onpointermove = e => {
+    if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinch && pts.size === 2) { const [p, q] = [...pts.values()]; zoomTo(pinch.k * Math.hypot(p[0] - q[0], p[1] - q[1]) / pinch.d); return; }
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (st.mode === 'globe') { const f = 75 / ((H / 2) * st.k); st.rot = [drag.rot[0] + dx * f, Math.max(-85, Math.min(85, drag.rot[1] - dy * f)), 0]; }
-      else { st.rot = [drag.rot[0] + dx * (180 / (W * st.k)), 0, 0]; st.panY = drag.panY - dy; }
-      redraw(); return;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (drag.moved) { tip.hidden = true; st.rot = [drag.rot[0] + dx * (180 / (W * st.k)), 0, 0]; st.panY = st.k > 1 ? drag.panY - dy : 0; redraw(); }
+      return;
     }
+    if (e.pointerType !== 'mouse') return;
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, a = nearest(x, y, 100);
+    if (a) { showTip(a, x, y); cv.style.cursor = 'pointer'; } else { tip.hidden = true; cv.style.cursor = 'grab'; delete cv.dataset.q; }
+  };
+  const up = e => {
+    pts.delete(e.pointerId);
+    if (pinch) { if (pts.size < 2) pinch = null; drag = null; return; }
+    const tap = drag && !drag.moved; drag = null;
+    if (!tap) return;
     const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-    let best = null, bd = 100;
-    for (const a of apArr) if (a.xy) { const d = (a.xy[0] - x) ** 2 + (a.xy[1] - y) ** 2; if (d < bd) { bd = d; best = a; } }
-    if (best) { tip.hidden = false; tip.innerHTML = `<b>${best.code}</b> ${esc(best.name)}<br>${esc(regionName(best.cc))}, ${best.n} movements`; tip.style.left = Math.min(W - 220, x + 14) + 'px'; tip.style.top = (y + 14) + 'px'; cv.style.cursor = 'pointer'; cv.dataset.q = best.code; }
-    else { tip.hidden = true; cv.style.cursor = 'grab'; delete cv.dataset.q; }
+    if (e.pointerType === 'mouse') { if (cv.dataset.q) { viewFlights.st = { year: '', type: '', q: cv.dataset.q, all: false }; location.hash = 'voli'; } return; }
+    // al tocco: primo tocco mostra l'aeroporto, secondo tocco sullo stesso apre i voli
+    const a = nearest(x, y);
+    if (!a) { tip.hidden = true; delete cv.dataset.q; return; }
+    if (!tip.hidden && cv.dataset.q === a.code) { viewFlights.st = { year: '', type: '', q: a.code, all: false }; location.hash = 'voli'; return; }
+    showTip(a, x, y);
   };
-  cv.onpointerup = e => {
-    const moved = drag && (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4);
-    drag = null;
-    if (!moved && cv.dataset.q) { viewFlights.st = { year: '', type: '', q: cv.dataset.q, all: false }; location.hash = 'voli'; }
-  };
-  cv.onpointerleave = () => { tip.hidden = true; };
-  cv.addEventListener('wheel', e => { e.preventDefault(); st.k = Math.max(1, Math.min(14, st.k * Math.exp(-e.deltaY * .0015))); redraw(); }, { passive: false });
+  cv.onpointerup = up; cv.onpointercancel = up;
+  cv.onpointerleave = e => { if (e.pointerType === 'mouse') tip.hidden = true; };
+  cv.addEventListener('wheel', e => { e.preventDefault(); zoomTo(st.k * Math.exp(-e.deltaY * .0015)); }, { passive: false });
   cv.ondblclick = () => { st.rot = [-12, 0, 0]; st.k = 1; st.panY = 0; redraw(); };
+  wrap.querySelector('.map-zoom').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.z === 'in') zoomTo(st.k * 1.6); else if (b.dataset.z === 'out') zoomTo(st.k / 1.6); else { st.rot = [-12, 0, 0]; st.k = 1; st.panY = 0; redraw(); }
+  };
   const ro = new ResizeObserver(() => redraw()); ro.observe(wrap);
   window.addEventListener('hashchange', () => ro.disconnect(), { once: true });
 }

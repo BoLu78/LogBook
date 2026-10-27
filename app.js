@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.7';
+const APP_VERSION = '2.9.8';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -337,8 +337,8 @@ function gauge(v, limit) {
 const km = nm => `${fmtN(nm * 1.852)} km`;
 // gioco: quanto lontano sarei arrivato andando dritto verso lo spazio (distanze medie o minime, arrotondate)
 const SPACE = [
-  ['GEO', 35786, 'geostationary orbit'], ['Moon', 384400, 'the Moon'], ['JWST', 1500000, 'the James Webb telescope'],
-  ['Mars', 54600000, 'Mars at its closest'], ['Sun', 149600000, 'the Sun'], ['Jupiter', 588000000, 'Jupiter at its closest']
+  ['Satellites', 35786, 'the satellites', '🛰️'], ['Moon', 384400, 'the Moon', '🌙'],
+  ['Mars', 54600000, 'Mars', '🔴'], ['Sun', 149600000, 'the Sun', '☀️'], ['Jupiter', 588000000, 'Jupiter', '🪐']
 ];
 function spaceTrip(kmTot, career) {
   const passed = SPACE.filter(p => kmTot >= p[1]), next = SPACE.find(p => kmTot < p[1]);
@@ -346,20 +346,20 @@ function spaceTrip(kmTot, career) {
   const lo = Math.log10(8000), hi = Math.log10(SPACE.at(-1)[1] * 1.4), X = v => ((Math.log10(Math.max(v, 8000)) - lo) / (hi - lo) * 100).toFixed(2);
   const fmtBig = v => v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)} million km` : `${fmtN(v)} km`;
   let line;
-  if (!passed.length) line = `Straight up from Earth you would be ${Math.max(1, Math.round(kmTot / 35786 * 100))}% of the way to geostationary orbit.`;
+  if (!passed.length) line = `Straight up from Earth you would be ${Math.max(1, Math.round(kmTot / 35786 * 100))}% of the way to the satellites.`;
   else {
     const last = passed.at(-1);
     line = moons >= 1 ? `Straight up from Earth you would have passed the Moon${moons >= 2 ? ` ${Math.floor(moons)} times (${Math.floor(moons / 2)} round trips)` : ''}`
       : `Straight up from Earth you would be past ${last[2]}`;
-    if (last[0] !== 'Moon' && moons >= 1) line += ` and ${last[2]}`;
+    if (last[0] !== 'Moon' && moons >= 1 && last[0] !== 'Satellites') line += ` and ${last[2]}`;
     line += next ? `. Next stop ${next[2]}: ${Math.max(1, Math.round(kmTot / next[1] * 100))}% of the way.` : '.';
   }
   return `<div class="space">
     <div class="space-head"><b>${career ? 'Career' : 'Period'} trip into space</b><span>${fmtBig(kmTot)} · ${fmtN(laps)} × around the Earth</span></div>
     <div class="space-track" role="img" aria-label="${esc(line)}">
-      <i class="sp-earth" style="left:0%"></i>
+      <span class="sp-pt on sp-home" style="left:0%"><em>🌍</em><small>Earth</small></span>
       <i class="sp-fill" style="width:${X(kmTot)}%"></i>
-      ${SPACE.map(p => `<span class="sp-pt ${kmTot >= p[1] ? 'on' : ''}" style="left:${X(p[1])}%"><em></em><small>${p[0]}</small></span>`).join('')}
+      ${SPACE.map(p => `<span class="sp-pt ${kmTot >= p[1] ? 'on' : ''}" style="left:${X(p[1])}%"><em>${p[3]}</em><small>${p[0]}</small></span>`).join('')}
       <span class="sp-me" style="left:${X(kmTot)}%" title="${esc(fmtBig(kmTot))}">✈</span>
     </div>
     <p>${esc(line)}</p></div>`;

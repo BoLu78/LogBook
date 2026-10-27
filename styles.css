@@ -666,3 +666,10 @@ form.sheet .actions #del { margin-left: auto; }
 .sp-me { position: absolute; top: -10px; transform: translateX(-50%) rotate(-30deg); font-size: 18px; color: var(--accent); line-height: 1; }
 .space p { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
 .stat-tiles small.nm { display: block; font-size: 12px; color: var(--muted); font-family: var(--font); }
+.sp-pt em { width: auto; height: auto; border: 0; background: none !important; font-style: normal; font-size: 20px; line-height: 1; filter: grayscale(1); opacity: .45; }
+.sp-pt { top: 4px; }
+.sp-pt.on em { filter: none; opacity: 1; }
+.sp-pt small { font-size: 12px; }
+.space-track { height: 58px; margin-left: 18px; margin-right: 22px; }
+.space-track::before, .sp-fill { top: 14px; }
+.sp-me { top: -14px; }

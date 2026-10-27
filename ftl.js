@@ -238,7 +238,7 @@ function nextDaysHTML() {
       const ci = r.ci ? `<div class="nd-ci">${r.pickup ? `Pick-up ${r.pickup.slice(0, 2)}:${r.pickup.slice(2)} · ` : ''}${esc(r.ci.label || 'C/I')} <b>${r.ci.t.slice(0, 2)}:${r.ci.t.slice(2)}</b> UTC ${esc(icaoOf(r.ci.ap))}${duty ? ` <small>${hhmmLocal(duty.start, tzOf(duty.ap))} LT</small>` : ''}</div>` : '';
       const legs = r.legs.map(l => `<div class="nd-leg ${l.k}">${l.k === 'flight' ? `<b>${esc(l.n ? 'NO' + l.n : '')}</b>` : l.k === 'transport' ? '<span class="nd-tag dh">DH</span>' : `<span class="nd-tag sb">${esc(l.c || 'SIM')}</span>`} ${esc(icaoOf(l.dep))}${l.arr ? ' → ' + esc(icaoOf(l.arr)) : ''} <span class="nd-t">${l.out.slice(0, 2)}:${l.out.slice(2)}–${l.inn.slice(0, 2)}:${l.inn.slice(2)}</span></div>`).join('');
       const fdp = duty?.fdp != null ? `<div class="nd-fdp ${lvl(duty.fdp, duty.maxFdp)}">FDP ${durHM(duty.fdp)} / max ${durHM(duty.maxFdp)} · ${duty.sectors} sector${duty.sectors > 1 ? 's' : ''}${duty.flags.length ? ' · ' + duty.flags.join(', ') : ''}</div>` : '';
-      body = ci + legs + fdp + (r.hotel ? `<div class="nd-hotel">🛏 ${esc(String(typeof r.hotel === 'string' ? r.hotel : r.hotel.name || '').split(',')[0])}</div>` : '');
+      body = ci + legs + fdp;
     }
     return `<div class="nd ${date === td ? 'today' : ''}"><div class="nd-day">${dayName(date)}</div><div class="nd-body">${body || '—'}</div></div>`;
   }).join('');

@@ -22,9 +22,10 @@ const apOf = code => MAP.airports[code] || MAP.airports[AP_ALIAS[code]];
 const regionName = (() => { try { const d = new Intl.DisplayNames(['it'], { type: 'region' }); return cc => { try { return d.of(cc); } catch { return cc; } }; } catch { return cc => cc; } })();
 
 async function viewMap(main) {
-  main.innerHTML = '<h1>Mappa</h1><p class="lede">Carico la mappa…</p>';
-  try { await mapData(); } catch (e) { main.innerHTML = `<h1>Mappa</h1><p class="lede">Non riesco a caricare i dati della mappa: ${esc(e.message)}. Aprila una volta con la connessione attiva, poi funziona anche offline.</p>`; return; }
-  const st = viewMap.st ||= { period: 'all', fam: '', mode: 'globe', rot: [-12, -42, 0], k: 1 };
+  main.innerHTML = '<h1>Map</h1><p class="lede">Carico la mappa…</p>';
+  try { await mapData(); } catch (e) { main.innerHTML = `<h1>Map</h1><p class="lede">Non riesco a caricare i dati della mappa: ${esc(e.message)}. Aprila una volta con la connessione attiva, poi funziona anche offline.</p>`; return; }
+  const st = viewMap.st ||= { period: 'all', fam: '', mode: 'flat', rot: [-12, 0, 0], k: 1 };
+  st.mode = 'flat';
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const fams = [...new Set(data.flights.filter(f => f.kind === 'flight').map(f => familyOf(f.type)))].sort((a, b) => Object.keys(FAM_VAR).indexOf(a) - Object.keys(FAM_VAR).indexOf(b));
 
@@ -58,29 +59,26 @@ async function viewMap(main) {
   const topRt = [...routes.values()].sort((a, b) => b.n - a.n);
   const fmt = n => Math.round(n).toLocaleString('it-IT');
 
-  main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Mappa</h1>
+  main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Map</h1>
     <div class="row filters" style="margin:0">
-      <select id="mPer" aria-label="Periodo"><option value="all">Tutta la carriera</option><option value="12m">Ultimi 12 mesi</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
-      <select id="mFam" aria-label="Famiglia"><option value="">Tutte le famiglie</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select>
-      <div class="seg" role="radiogroup" aria-label="Vista">
-        <label><input type="radio" name="mMode" value="globe" ${st.mode === 'globe' ? 'checked' : ''}><span>Globo</span></label>
-        <label><input type="radio" name="mMode" value="flat" ${st.mode === 'flat' ? 'checked' : ''}><span>Planisfero</span></label></div>
+      <select id="mPer" aria-label="Period"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
+      <select id="mFam" aria-label="Family"><option value="">All families</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select>
     </div></div>
-  <p class="lede">${list.length} tratte su ${routes.size} rotte diverse. Trascina per girare il mondo, usa la rotella o il trackpad per lo zoom, doppio clic per tornare all'inizio.</p>
+  <p class="lede">${list.length} sectors on ${routes.size} routes. Trascina per spostare la mappa, rotella o trackpad per lo zoom, doppio clic per tornare all'inizio.</p>
   <div class="recency">
-    <div><b>${aps.size}</b><span>aeroporti</span></div>
-    <div><b>${countries.size}</b><span>paesi</span></div>
-    <div><b>${fmt(dist)} NM</b><span>percorse in linea d'aria, ${(dist / (2 * Math.PI * NM)).toFixed(1).replace('.', ',')} giri del mondo</span></div>
-    <div><b>${longest ? `${esc(longest.f.dep)}–${esc(longest.f.arr)}` : '—'}</b><span>${longest ? `tratta più lunga, ${fmt(longest.d)} NM il ${dmy(longest.f.date)}` : ''}</span></div>
-    <div><b>${topAp[0] ? esc(topAp[0].code) : '—'}</b><span>${topAp[0] ? `aeroporto più frequentato, ${topAp[0].n} movimenti` : ''}</span></div>
+    <div><b>${aps.size}</b><span>airports</span></div>
+    <div><b>${countries.size}</b><span>countries</span></div>
+    <div><b>${fmt(dist)} NM</b><span>great-circle distance, ${(dist / (2 * Math.PI * NM)).toFixed(1)} × around the world</span></div>
+    <div><b>${longest ? `${esc(longest.f.dep)}–${esc(longest.f.arr)}` : '—'}</b><span>${longest ? `longest sector, ${fmt(longest.d)} NM on ${dmy(longest.f.date)}` : ''}</span></div>
+    <div><b>${topAp[0] ? esc(topAp[0].code) : '—'}</b><span>${topAp[0] ? `most visited airport, ${topAp[0].n} movements` : ''}</span></div>
   </div>
   <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Mappa dei voli"></canvas><div class="map-tip" id="mapTip" hidden></div>
     <div class="map-legend">${fams.filter(f => !st.fam || f === st.fam).map(f => `<span><i style="background:var(${FAM_VAR[f] || '--muted'})"></i>${esc(f)}</span>`).join('')}</div></div>
   ${unknown.size ? `<p class="hint">Codici non trovati, quindi non in mappa: ${[...unknown].map(([c, n]) => `<a href="#voli" data-q="${esc(c)}">${esc(c)}</a> (${n})`).join(', ')}. Correggili nei voli se sono errori di battitura.</p>` : ''}
   <div class="two">
-    <div><h2>Aeroporti più frequentati</h2><table class="data"><thead><tr><th class="l">Codice</th><th class="l">Aeroporto</th><th class="l">Paese</th><th>Movimenti</th></tr></thead>
+    <div><h2>Top airports</h2><table class="data"><thead><tr><th class="l">ICAO</th><th class="l">Airport</th><th class="l">Country</th><th>Movements</th></tr></thead>
       <tbody>${topAp.slice(0, 12).map(a => `<tr class="click" data-q="${a.code}"><td class="l"><b>${a.code}</b></td><td class="l">${esc(a.name)}</td><td class="l">${esc(regionName(a.cc))}</td><td>${a.n}</td></tr>`).join('')}</tbody></table></div>
-    <div><h2>Rotte più volate</h2><table class="data"><thead><tr><th class="l">Rotta</th><th class="l">Famiglia</th><th>Distanza</th><th>Volte</th></tr></thead>
+    <div><h2>Top routes</h2><table class="data"><thead><tr><th class="l">Route</th><th class="l">Family</th><th>Distance</th><th>Sectors</th></tr></thead>
       <tbody>${topRt.slice(0, 12).map(r => `<tr class="click" data-q="${r.ka}"><td class="l"><b>${r.ka} ⇄ ${r.kb}</b></td><td class="l"><i class="dot" style="background:var(${FAM_VAR[r.main] || '--muted'})"></i> ${esc(r.main)}</td><td>${fmt(d3.geoDistance(r.a, r.b) * NM)} NM</td><td>${r.n}</td></tr>`).join('')}</tbody></table></div>
   </div>`;
 
@@ -164,7 +162,7 @@ async function viewMap(main) {
     const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
     let best = null, bd = 100;
     for (const a of apArr) if (a.xy) { const d = (a.xy[0] - x) ** 2 + (a.xy[1] - y) ** 2; if (d < bd) { bd = d; best = a; } }
-    if (best) { tip.hidden = false; tip.innerHTML = `<b>${best.code}</b> ${esc(best.name)}<br>${esc(regionName(best.cc))}, ${best.n} movimenti`; tip.style.left = Math.min(W - 220, x + 14) + 'px'; tip.style.top = (y + 14) + 'px'; cv.style.cursor = 'pointer'; cv.dataset.q = best.code; }
+    if (best) { tip.hidden = false; tip.innerHTML = `<b>${best.code}</b> ${esc(best.name)}<br>${esc(regionName(best.cc))}, ${best.n} movements`; tip.style.left = Math.min(W - 220, x + 14) + 'px'; tip.style.top = (y + 14) + 'px'; cv.style.cursor = 'pointer'; cv.dataset.q = best.code; }
     else { tip.hidden = true; cv.style.cursor = 'grab'; delete cv.dataset.q; }
   };
   cv.onpointerup = e => {
@@ -174,7 +172,7 @@ async function viewMap(main) {
   };
   cv.onpointerleave = () => { tip.hidden = true; };
   cv.addEventListener('wheel', e => { e.preventDefault(); st.k = Math.max(1, Math.min(14, st.k * Math.exp(-e.deltaY * .0015))); redraw(); }, { passive: false });
-  cv.ondblclick = () => { st.rot = [-12, -42, 0]; st.k = 1; st.panY = 0; redraw(); };
+  cv.ondblclick = () => { st.rot = [-12, 0, 0]; st.k = 1; st.panY = 0; redraw(); };
   const ro = new ResizeObserver(() => redraw()); ro.observe(wrap);
   window.addEventListener('hashchange', () => ro.disconnect(), { once: true });
 }

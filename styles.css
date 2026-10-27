@@ -444,3 +444,46 @@ table.data tr.hl td { background: color-mix(in srgb, var(--accent) 16%, transpar
   .sig-wrap { padding: 4px 12px 12px; }
   #fq { width: 100%; }
 }
+
+/* ---------- Scheda volo 2.6 ---------- */
+.sheet-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.save-state { font-size: 12px; color: var(--muted); }
+.save-state.ok { color: var(--ok); } .save-state.warn { color: var(--amber); } .save-state.lockd { color: var(--dual); font-weight: 700; }
+.sheet-head { background-image: none; overflow: hidden; }
+.sheet-head > *:not(.worldbg) { position: relative; z-index: 1; }
+.worldbg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.head-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lock { width: 38px; height: 38px; border-radius: 10px; border: 0; background: transparent; color: var(--rule); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.lock svg { width: 26px; height: 26px; }
+.lock .shackle { transform: translateX(5px) rotate(18deg); transform-origin: 16px 10px; transition: transform .15s; }
+.lock[aria-pressed="true"] { color: #e8892b; }
+.lock[aria-pressed="true"] .shackle { transform: none; }
+.lock:focus-visible { outline: 2px solid var(--accent); }
+.h3-lock { display: flex; align-items: center; justify-content: space-between; }
+.lock.on-dark { color: color-mix(in srgb, var(--on-accent) 55%, transparent); }
+.lock.on-dark[aria-pressed="true"] { color: #ffb15c; }
+@media (prefers-reduced-motion: reduce) { .lock .shackle { transition: none; } }
+.mid svg { display: none; }
+.tz { font-size: 12px; color: var(--muted); font-family: var(--font); min-height: 16px; }
+/* puntualità OUT e IN: verde entro 3 min, arancione fino a 15, rosso oltre */
+.times4 input.p-ok, .d.p-ok { color: var(--ok); }
+.times4 input.p-warn, .d.p-warn { color: #e8892b; }
+.times4 input.p-bad, .d.p-bad { color: var(--red); }
+.d.p-ok, .d.p-warn, .d.p-bad { font-weight: 700; }
+/* aeromobile */
+.ac-row select { border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: 17px; font-weight: 700; padding: 6px 8px; max-width: 12em; }
+.ac-type { font-family: var(--font); color: var(--muted); font-size: 15px; min-width: 4em; }
+.tagbtn { border: 1px dashed var(--accent); color: var(--accent); background: transparent; border-radius: 999px; font-size: 12px; padding: 4px 10px; cursor: pointer; }
+.ac-new { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px 14px 0; }
+.ac-new input, .ac-new select { border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); padding: 6px 8px; font-family: var(--font); }
+.ac-new input { width: 9em; text-transform: uppercase; }
+.sim-grid { padding: 14px; }
+/* volo bloccato */
+form.locked input:disabled, form.locked select:disabled, form.locked textarea:disabled { opacity: 1; color: var(--ink); -webkit-text-fill-color: var(--ink); }
+form.locked .counter .ctl button, form.locked .tagbtn, form.locked #sigClear, form.locked #del { visibility: hidden; }
+form.locked #sig { pointer-events: none; border-style: solid; }
+form.locked .times4 input, form.locked .blocks input, form.locked .sch input { border-bottom-color: transparent; }
+form.locked .times4 input.p-ok { -webkit-text-fill-color: var(--ok); } form.locked .times4 input.p-warn { -webkit-text-fill-color: #e8892b; } form.locked .times4 input.p-bad { -webkit-text-fill-color: var(--red); }
+form.sheet .actions .btn.primary { text-decoration: none; }
+@media (max-width: 760px) { .ac-row { gap: 8px; } .ac-row select { font-size: 15px; } }
+.ac-new[hidden] { display: none; }

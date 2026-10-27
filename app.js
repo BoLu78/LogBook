@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.6.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -172,8 +172,8 @@ async function reconnectFolder() {
 function renderBackupState() {
   const el = $('#backupState'); if (!el) return;
   if (!fsSupported) { el.innerHTML = 'Backup su cartella non disponibile in questo browser.<br>Apri l\'app con Chrome.'; return; }
-  if (!dirHandle) { el.innerHTML = 'Nessuna cartella di backup.<br><button class="btn small" id="bkChoose">Scegli cartella</button>'; $('#bkChoose').onclick = chooseFolder; return; }
-  if (!backupOk) { el.innerHTML = `Backup in pausa: Chrome chiede di confermare l'accesso a <b>${esc(dirHandle.name)}</b>.<br><button class="btn small" id="bkRe">Riattiva backup</button>`; $('#bkRe').onclick = reconnectFolder; return; }
+  if (!dirHandle) { el.innerHTML = 'Nessuna cartella di backup.<br><button class="btn small" id="bkChoose">Choose folder</button>'; $('#bkChoose').onclick = chooseFolder; return; }
+  if (!backupOk) { el.innerHTML = `Backup in pausa: Chrome chiede di confermare l'accesso a <b>${esc(dirHandle.name)}</b>.<br><button class="btn small" id="bkRe">Resume backup</button>`; $('#bkRe').onclick = reconnectFolder; return; }
   el.innerHTML = `Backup in <b>${esc(dirHandle.name)}</b><br>salvato alle ${lastBackup.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
@@ -262,21 +262,21 @@ window.addEventListener('hashchange', route);
 function emptyState() {
   return `<h1>Logbook</h1><p class="lede">L'app è vuota.</p>
   <div class="empty"><p>Importa il file <b>logbook.json</b> con lo storico, oppure apri la cartella di backup se l'hai già usata su questo Mac.</p>
-  <a class="btn primary" href="#dati">Vai a Dati e backup</a></div>`;
+  <a class="btn primary" href="#dati">Go to Data · Backup</a></div>`;
 }
 
 // ---------- Riepilogo ----------
 function stripHTML(t) {
   const c = (h, v, big) => `<div class="c${big ? ' big' : ''}"><div class="ch">${h}</div><div class="cv">${v}</div></div>`;
   const g = (h, cols) => `<div class="grp"><div class="gh">${h}</div><div class="cols">${cols}</div></div>`;
-  return `<div class="strip" role="group" aria-label="Totali">
+  return `<div class="strip" role="group" aria-label="Totals">
     ${g('Single pilot', c('SE', hm0(t.spSe)) + c('ME', hm0(t.spMe)))}
-    ${g('Multi pilot', c('MP', hm0(t.mp)))}
-    ${g('Funzione', c('PIC', hm0(t.pic)) + c('Copilota', hm0(t.sic)) + c('Dual', hm0(t.dual)) + c('Istruttore', hm0(t.instr)))}
-    ${g('Condizioni', c('Notte', hm0(t.night)) + c('IFR', hm0(t.ifr)))}
-    ${g('Decolli', c('Giorno', t.toDay) + c('Notte', t.toNight))}
-    ${g('Atterraggi', c('Giorno', t.ldgDay) + c('Notte', t.ldgNight))}
-    ${g('Simulatore', c('FSTD', hm0(t.sim)))}
+    ${g('Multi-pilot', c('MP', hm0(t.mp)))}
+    ${g('Pilot function', c('PIC', hm0(t.pic)) + c('SIC', hm0(t.sic)) + c('Dual', hm0(t.dual)) + c('Instructor', hm0(t.instr)))}
+    ${g('Operational condition', c('Night', hm0(t.night)) + c('IFR', hm0(t.ifr)))}
+    ${g('Takeoffs', c('Day', t.toDay) + c('Night', t.toNight))}
+    ${g('Landings', c('Day', t.ldgDay) + c('Night', t.ldgNight))}
+    ${g('Simulator', c('FSTD', hm0(t.sim)))}
   </div>`;
 }
 function splitBar(t, max, cls = 'hbar') {
@@ -327,22 +327,22 @@ function viewSummary(main) {
   const ymax = Math.max(...yl.map(x => x[1].total), 1);
   const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Apri i mesi del ${yr}"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
-  main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Riepilogo</h1>
-    <label class="row filters" style="margin:0">Periodo
-    <select id="per"><option value="all">Tutta la carriera</option><option value="12m">Ultimi 12 mesi</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
+  main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Summary</h1>
+    <label class="row filters" style="margin:0">Period
+    <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
   ${plannedBanner()}
   <p class="lede">${t.legs} tratte e ${t.sims} sessioni al simulatore ${label}. Media per tratta ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
-    <div class="tot">${hm0(t.total)}<small>ore di volo</small></div>
+    <div class="tot">${hm0(t.total)}<small>total time</small></div>
     <div class="split">${splitBar(t, fn, 'bar')}
       <div class="legend">
         <span><i class="dot c-pic"></i>PIC <b>${hm0(t.pic)}</b> ${pct(t.pic)}</span>
-        <span><i class="dot c-sic"></i>Copilota <b>${hm0(t.sic)}</b> ${pct(t.sic)}</span>
+        <span><i class="dot c-sic"></i>SIC <b>${hm0(t.sic)}</b> ${pct(t.sic)}</span>
         <span><i class="dot c-dual"></i>Dual <b>${hm0(t.dual)}</b> ${pct(t.dual)}</span>
       </div></div>
   </div>
   ${stripHTML(t)}
-  <h2>Miglia e curiosità</h2>
+  <h2>Distance · PAX · Fuel</h2>
   <div class="recency">
     <div><b>${fmtN(t.nm)} NM</b><span>${sel === 'all' ? 'percorse in carriera' : 'percorse nel periodo'}, in linea d'aria</span></div>
     <div><b>${fmtN(t.nm / flYears)} NM</b><span>media annuale${flYears > 1 ? ` su ${flYears} anni` : ''}</span></div>
@@ -351,7 +351,7 @@ function viewSummary(main) {
     ${t.paxLegs ? `<div><b>${fmtN(t.pax)}</b><span>passeggeri trasportati, su ${t.paxLegs} tratte con il dato</span></div>` : ''}
     ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>carburante usato, su ${t.fuelLegs} tratte con il dato</span></div>` : ''}
   </div>
-  <h2>Limiti e recency</h2>
+  <h2>FTL limits · Recency</h2>
   <div class="recency">
     <div><b>${hm0(d28.total)}</b><span>ultimi 28 giorni, limite 100 h</span>${gauge(d28.total, 6000)}</div>
     <div><b>${hm0(y.total)}</b><span>anno ${td.slice(0, 4)}, limite 900 h</span>${gauge(y.total, 54000)}</div>
@@ -360,13 +360,13 @@ function viewSummary(main) {
     <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} negli ultimi 90 giorni${ok90 ? '' : ': meno di 3, serve recency'}</span></div>
     <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>ultimo volo${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
   </div>
-  <h2>Per famiglia</h2>
-  <table class="data"><thead><tr><th class="l">Famiglia</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${frows}</tbody></table>
-  <h2>Per tipo di aereo</h2>
-  <table class="data"><thead><tr><th class="l">Tipo</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Ultimo volo</th></tr></thead><tbody>${trows}</tbody></table>
+  <h2>By family</h2>
+  <table class="data"><thead><tr><th class="l">Family</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${frows}</tbody></table>
+  <h2>By aircraft type</h2>
+  <table class="data"><thead><tr><th class="l">Type</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${trows}</tbody></table>
   ${withOpen ? `<p class="hint">Il riporto ante 2007 (${hm(data.opening.total)}) entra nei totali ma non nelle tabelle per tipo e per anno.</p>` : ''}
-  <h2>Per anno</h2>
-  <table class="data"><thead><tr><th class="l">Anno</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Notte</th><th>Atterr.</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
+  <h2>By year</h2>
+  <table class="data"><thead><tr><th class="l">Year</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Night</th><th>LDG</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
   bindPlannedBanner(main);
   const yt = main.querySelectorAll('table.data')[2].tBodies[0];
@@ -388,8 +388,8 @@ function showYear(yr) {
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'yearDlg'; document.body.append(dlg); dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); }
   dlg.innerHTML = `<div class="dlg-head"><div><h2>${yr}, mese per mese</h2>
       <p class="lede">${tot.legs} tratte, ${hm0(tot.total)} di volo, media per tratta ${avg(tot)}, ${fmtN(tot.nm)} NM${act.length ? `, ${hm0(Math.round(tot.total / act.length))} al mese nei mesi con voli` : ''}${best ? `. Il mese più pieno è ${best[0].toLowerCase()} con ${hm0(best[2].total)}` : ''}.</p></div>
-      <button class="btn" id="dlgClose" aria-label="Chiudi">Chiudi</button></div>
-    <table class="data"><thead><tr><th class="l">Mese</th><th class="l">PIC, copilota e dual</th><th>Tratte</th><th>Totale</th><th>Media</th><th>PIC</th><th>Copilota</th><th>Dual</th><th>Notte</th><th>Atterr.</th><th>NM</th><th>Sim</th></tr></thead>
+      <button class="btn" id="dlgClose" aria-label="Close">Close</button></div>
+    <table class="data"><thead><tr><th class="l">Month</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Dual</th><th>Night</th><th>LDG</th><th>NM</th><th>Sim</th></tr></thead>
     <tbody>${body}<tr class="sum"><td class="l">Totale ${yr}</td><td></td><td>${tot.legs}</td><td>${hm0(tot.total)}</td><td>${avg(tot)}</td><td>${hm(tot.pic)}</td><td>${hm(tot.sic)}</td><td>${hm(tot.dual)}</td><td>${hm(tot.night)}</td><td>${tot.ldgDay + tot.ldgNight || ''}</td><td>${tot.nm ? fmtN(tot.nm) : ''}</td><td>${hm(tot.sim)}</td></tr></tbody></table>
     <p class="row" style="margin-top:14px"><button class="btn" id="dlgVoli">Vedi i voli del ${yr}</button></p>`;
   $('#dlgClose').onclick = () => dlg.close();
@@ -412,21 +412,21 @@ function viewFlights(main) {
   const rows = shown.map(f => {
     const r = roleOf(f);
     if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td></td><td>${hm(f.sim)}</td><td></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
-    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Da vedere"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'da completare' : 'programmato'}</span></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.change || f.flightNo || '')}</td></tr>`;
+    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Unseen"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td></td><td></td><td></td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.change || f.flightNo || '')}</td></tr>`;
     return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td>${hm(f.night)}</td><td>${(f.toDay + f.toNight) || ''}</td><td>${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem">${esc(f.remarks)}</td></tr>`;
   }).join('');
   const nPlan = data.flights.filter(f => f.planned).length, nDot = data.flights.filter(f => f.planned && !f.seen).length;
-  main.innerHTML = `<h1>Voli</h1>
+  main.innerHTML = `<h1>Flights</h1>
   ${plannedBanner()}
   <p class="lede">${t.legs} tratte, ${hm0(t.total)} di volo${t.sims ? `, ${t.sims} sessioni al simulatore (${hm0(t.sim)})` : ''}.</p>
   <div class="row filters">
-    <select id="fy" aria-label="Anno"><option value="">Tutti gli anni</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
-    <select id="ft" aria-label="Tipo"><option value="">Tutti i tipi</option>${nPlan ? `<option value="__planned">Programmati da NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Con il pallino (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
-    ${nDot ? '<button class="btn" id="seenAll">Segna tutti come visti</button>' : ''}
-    <input id="fq" type="search" placeholder="Cerca aeroporto, marca, comandante, note" size="36" value="${esc(st.q)}">
-    <a class="btn primary" href="#nuovo">Nuovo volo</a>
+    <select id="fy" aria-label="Anno"><option value="">All years</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
+    <select id="ft" aria-label="Tipo"><option value="">All types</option>${nPlan ? `<option value="__planned">Planned from NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Unseen (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
+    ${nDot ? '<button class="btn" id="seenAll">Mark all as seen</button>' : ''}
+    <input id="fq" type="search" placeholder="Search airport, reg, PIC, remarks" size="36" value="${esc(st.q)}">
+    <a class="btn primary" href="#nuovo">New flight</a>
   </div>
-  <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Data</th><th class="l">Da</th><th>Off</th><th class="l">A</th><th>On</th><th class="l">Tipo</th><th class="l">Marca</th><th>Totale</th><th>Funzione</th><th>Notte</th><th>T/O</th><th>LDG</th><th class="l">Comandante</th><th class="l">Note</th></tr></thead>
+  <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Date</th><th class="l">DEP</th><th>OUT</th><th class="l">ARR</th><th>IN</th><th class="l">Type</th><th class="l">Reg</th><th>Total</th><th>Function</th><th>Night</th><th>T/O</th><th>LDG</th><th class="l">PIC name</th><th class="l">Remarks</th></tr></thead>
   <tbody>${rows || '<tr><td colspan="14" class="l">Nessun volo con questi filtri.</td></tr>'}</tbody></table></div>
   ${!st.all && list.length > 300 ? `<p><button class="btn" id="more">Mostra tutte le ${list.length} righe</button></p>` : ''}`;
   $('#fy').value = st.year; $('#ft').value = st.type;
@@ -443,40 +443,51 @@ function viewFlights(main) {
 // ---------- Nuovo / modifica ----------
 function viewEdit(main, id) {
   const orig = id ? data.flights.find(f => f.id === id) : null;
-  if (id && !orig) { main.innerHTML = '<h1>Volo non trovato</h1><p><a href="#voli">Torna ai voli</a></p>'; return; }
+  if (id && !orig) { main.innerHTML = '<h1>Flight not found</h1><p><a href="#voli">Back to Flights</a></p>'; return; }
   if (orig?.planned && !orig.seen) { orig.seen = true; save(); updateBadge(); }
   const last = data.flights.filter(f => f.kind === 'flight' && !f.planned && f.date <= today()).at(-1);
-  const f = orig ? { ...orig } : { ...EMPTY(), date: today(), type: last?.type || '', reg: '', dep: last?.arr || '' };
+  const f = orig ? { ...orig } : { ...EMPTY(), date: today(), reg: '', type: '', dep: last?.arr || '' };
+  const recId = orig ? orig.id : nextId();
+  let locked = !!orig?.locked;
+  let confirmed = !orig?.planned;          // un volo NetLine resta programmato finché non scrivi un orario effettivo
+  let created = !!orig;
   const role = orig ? roleOf(orig) : 'PIC';
   const isSim = f.kind === 'sim';
-  const regs = [...new Set([...data.flights.map(x => x.reg), ...Object.keys(KNOWN_AIRCRAFT)].filter(Boolean))].sort();
-  const typesL = [...new Set([...TYPE_ORDER, ...data.flights.map(x => x.type)].filter(Boolean))];
   const simTypes = [...new Set([...KNOWN_SIMS, ...Object.keys(SIM_DEVICES)])];
   const mpOn = !orig || f.mp > 0 || !(f.spSe || f.spMe);
   const ifrAll = !orig || f.ifr === f.total;
+  const lockBtn = cls => `<button type="button" class="lock keep ${cls}" aria-pressed="${locked}" aria-label="Lock flight" title="Grey: editable · Orange: locked">${LOCK_SVG}</button>`;
 
-  main.innerHTML = `<h1>${orig ? 'Modifica' : 'Nuovo'} ${isSim ? 'simulatore' : 'volo'}</h1>
-  ${orig?.planned ? `<div class="plan-note"><b>Volo importato da NetLine${orig.flightNo ? ` (${esc(orig.flightNo)})` : ''}</b>: gli orari sono quelli schedulati, ${esc(orig.sched?.out || orig.out)}–${esc(orig.sched?.inn || orig.inn)} UTC. Metti off e on blocks effettivi${orig.acHint && !orig.type ? `, la marca (nel turno: ${esc(orig.acHint)})` : ''} e salva: da quel momento il volo entra nei totali.${orig.change ? `<br>Ultima modifica nel turno: ${esc(orig.change)}` : ''}</div>` : ''}
+  main.innerHTML = `
+  ${orig?.planned ? `<div class="plan-note"><b>NetLine${orig.flightNo ? ` · ${esc(orig.flightNo)}` : ''}</b>: STD ${esc(orig.sched?.out || orig.out)} · STA ${esc(orig.sched?.inn || orig.inn)} UTC dal turno. Scrivi OUT, OFF, ON e IN effettivi: il volo entra nei totali appena inserisci gli orari reali.${orig.change ? `<br>Roster change: ${esc(orig.change)}` : ''}</div>` : ''}
   <form class="flight sheet" id="ff" novalidate>
-    <fieldset><div class="seg" role="radiogroup" aria-label="Tipo di registrazione">
-      <label><input type="radio" name="kind" value="flight" ${!isSim ? 'checked' : ''}><span>Volo</span></label>
-      <label><input type="radio" name="kind" value="sim" ${isSim ? 'checked' : ''}><span>Simulatore</span></label></div></fieldset>
+    <div class="sheet-bar">
+      <div class="seg keep" role="radiogroup" aria-label="Entry type">
+        <label><input type="radio" name="kind" value="flight" ${!isSim ? 'checked' : ''}><span>Flight</span></label>
+        <label><input type="radio" name="kind" value="sim" ${isSim ? 'checked' : ''}><span>Simulator</span></label></div>
+      <span class="save-state" id="saveState" aria-live="polite">${orig ? (locked ? 'Locked' : '') : 'New entry'}</span>
+    </div>
     <div id="fFlight" ${isSim ? 'hidden' : ''}>
     <section class="sheet-head">
-      <div class="chips">
-        <label class="chip"><input id="date" type="date" value="${esc(f.date)}" required aria-label="Data"></label>
-        ${orig?.planned ? '<span class="chip warn">PROGRAMMATO</span>' : ''}
+      <canvas class="worldbg" id="worldbg" aria-hidden="true"></canvas>
+      <div class="head-top">
+        <div class="chips">
+          <label class="chip"><input id="date" type="date" value="${esc(f.date)}" required aria-label="Date"></label>
+          ${orig?.planned ? '<span class="chip warn" id="chipPlan">PLANNED</span>' : ''}
+        </div>
+        ${lockBtn('')}
       </div>
       <div class="route">
-        <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Partenza" autocapitalize="characters"><div class="apt-sub" id="depSub"></div>
-          <label class="sch"><span>STD</span><input id="std" value="${esc(f.sched?.out || '')}" placeholder="--:--" aria-label="Partenza schedulata"></label></div>
-        <div class="mid"><svg viewBox="0 0 200 40" aria-hidden="true"><path d="M8 34 Q100 -8 192 34" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
-          <input id="flightNo" class="fno" value="${esc(f.flightNo || '')}" placeholder="N° volo" aria-label="Numero volo"></div>
-        <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrivo" autocapitalize="characters"><div class="apt-sub" id="arrSub"></div>
-          <label class="sch"><span>STA</span><input id="sta" value="${esc(f.sched?.inn || '')}" placeholder="--:--" aria-label="Arrivo schedulato"></label></div>
+        <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Departure" autocapitalize="characters">
+          <div class="apt-sub" id="depSub"></div><div class="tz" id="depTz"></div>
+          <label class="sch"><span>STD</span><input id="std" value="${esc(f.sched?.out || '')}" placeholder="--:--" aria-label="Scheduled time of departure"></label></div>
+        <div class="mid"><input id="flightNo" class="fno" value="${esc(f.flightNo || '')}" placeholder="FLT NO" aria-label="Flight number"></div>
+        <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrival" autocapitalize="characters">
+          <div class="apt-sub" id="arrSub"></div><div class="tz" id="arrTz"></div>
+          <label class="sch"><span>STA</span><input id="sta" value="${esc(f.sched?.inn || '')}" placeholder="--:--" aria-label="Scheduled time of arrival"></label></div>
       </div>
       <div class="actual">
-        <div class="ah">Orari effettivi UTC</div>
+        <div class="ah">Actual times UTC</div>
         <div class="times4">
           <label class="t"><span>OUT</span><input id="out" value="${esc(f.out)}" placeholder="--:--"><small class="d" id="dOut"></small></label>
           <label class="t"><span>OFF</span><input id="off" value="${esc(f.off || '')}" placeholder="--:--"><small class="d" id="dOff"></small></label>
@@ -485,269 +496,390 @@ function viewEdit(main, id) {
         </div>
       </div>
       <div class="blocks">
-        <div><span>Blocco sched.</span><b id="schedBlock">—</b><small class="d"></small></div>
-        <label><span>Blocco reale</span><input id="total" value="${hm(f.total)}" placeholder="0:00"><small class="d" id="dBlock"></small></label>
-        <div><span>Tempo di volo</span><b id="airTime">—</b><small class="d"></small></div>
-        <label><span>Notte</span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}><small class="d" id="nightCalc"></small></label>
-        <div><span>Distanza</span><b id="distNM">—</b><small class="d">NM</small></div>
+        <div><span>SCHED BLOCK</span><b id="schedBlock">—</b><small class="d"></small></div>
+        <label><span>BLOCK TIME</span><input id="total" value="${hm(f.total)}" placeholder="0:00"><small class="d" id="dBlock"></small></label>
+        <div><span>FLIGHT TIME</span><b id="airTime">—</b><small class="d"></small></div>
+        <label><span>NIGHT</span><input id="night" value="${hm(f.night)}" placeholder="0:00" ${!orig || !f.night || orig.planned ? 'data-auto="1"' : ''}><small class="d" id="nightCalc"></small></label>
+        <div><span>DISTANCE</span><b id="distNM">—</b><small class="d">NM</small></div>
       </div>
     </section>
 
     <section class="sheet-card">
-      <h3>Volo</h3>
+      <h3>Flight</h3>
       <div class="ac-row">
-        <span class="cap">Aeromobile</span>
-        <input id="reg" list="regs" class="reg" value="${esc(f.reg)}" placeholder="${esc(f.acHint || 'Marca')}" aria-label="Marca" autocapitalize="characters">
-        <input id="type" list="types" class="type" value="${esc(f.type)}" placeholder="Modello" aria-label="Modello">
+        <span class="cap">Aircraft</span>
+        <select id="regSel" aria-label="Registration">${regOptions(f.reg)}</select>
+        <span class="ac-type" id="acType">${esc(f.type || (f.acHint ? f.acHint + ' (roster)' : ''))}</span>
+        <button type="button" class="tagbtn" id="newRegBtn">+ New reg</button>
+        <input type="hidden" id="reg" value="${esc(f.reg)}"><input type="hidden" id="type" value="${esc(f.type)}">
+      </div>
+      <div class="ac-new" id="acNew" hidden>
+        <input id="newReg" placeholder="Registration" autocapitalize="characters" aria-label="New registration">
+        <select id="newType" aria-label="Aircraft type">${[...new Set([...TYPE_ORDER, ...data.flights.map(x => x.type)].filter(Boolean))].map(t => `<option>${esc(t)}</option>`).join('')}</select>
+        <button type="button" class="btn small primary" id="addReg">Add</button><button type="button" class="btn small" id="cancelReg">Cancel</button>
       </div>
       <div class="flight-grid">
         <div class="col">
-          <div class="cap">Partenza</div>
-          <div class="counter" id="cTO"><div class="lbl">Decolli <button type="button" class="moon" aria-label="Decollo di notte" aria-pressed="false">☾</button></div>
-            <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
+          <div class="cap">DEP</div>
+          <div class="counter" id="cTO"><div class="lbl">Takeoffs <button type="button" class="moon" aria-label="Night takeoff" aria-pressed="false">☾</button></div>
+            <div class="ctl"><button type="button" class="dec" aria-label="Minus">−</button><b>0</b><button type="button" class="inc" aria-label="Plus">+</button></div></div>
         </div>
         <div class="col">
-          <div class="cap">Arrivo</div>
-          <div class="counter" id="cLDG"><div class="lbl">Atterraggi <button type="button" class="moon" aria-label="Atterraggio di notte" aria-pressed="false">☾</button></div>
-            <div class="ctl"><button type="button" class="dec" aria-label="Meno">−</button><b>0</b><button type="button" class="inc" aria-label="Più">+</button></div></div>
+          <div class="cap">ARR</div>
+          <div class="counter" id="cLDG"><div class="lbl">Landings <button type="button" class="moon" aria-label="Night landing" aria-pressed="false">☾</button></div>
+            <div class="ctl"><button type="button" class="dec" aria-label="Minus">−</button><b>0</b><button type="button" class="inc" aria-label="Plus">+</button></div></div>
         </div>
       </div>
-      <label class="ri appr-row"><span>Avvicinamento</span>${approachSelect(f.approach)}</label>
+      <label class="ri appr-row"><span>Approach</span>${approachSelect(f.approach)}</label>
       <input type="hidden" id="toDay" value="${f.toDay || ''}"><input type="hidden" id="toNight" value="${f.toNight || ''}">
       <input type="hidden" id="ldgDay" value="${f.ldgDay || ''}"><input type="hidden" id="ldgNight" value="${f.ldgNight || ''}">
     </section>
 
     <section class="sheet-card">
-      <h3>Funzione</h3>
+      <h3>Function</h3>
       <div class="rows">
-        <div class="ri"><span>Funzione</span><div class="seg" role="radiogroup" aria-label="Funzione">
-          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r === 'SIC' ? 'Copilota' : r}</span></label>`).join('')}</div></div>
-        <label class="ri"><span>Nome del PIC</span><input id="picName" value="${esc(f.picName)}"></label>
+        <div class="ri"><span>Function</span><div class="seg" role="radiogroup" aria-label="Pilot function">
+          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r}</span></label>`).join('')}</div></div>
+        <label class="ri"><span>PIC name</span><input id="picName" value="${esc(f.picName)}"></label>
         <label class="ri"><span>IFR</span><input id="ifr" class="short" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
-        <label class="ri"><span>Multi pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
-        <label class="ri"><span>Istruttore</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
+        <label class="ri"><span>Multi-pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
+        <label class="ri"><span>Instructor</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
       </div>
       <p class="hint rows-hint" id="roleHint"></p>
-      ${f.crew ? `<p class="hint rows-hint">Equipaggio nel turno NetLine: ${esc(f.crew)}</p>` : ''}
+      ${f.crew ? `<p class="hint rows-hint">NetLine crew: ${esc(f.crew)}</p>` : ''}
     </section>
 
     <section class="sheet-card">
-      <h3>Payload e carburante</h3>
+      <h3>Payload · Fuel</h3>
       <div class="tiles">
         <label><span>Payload</span><input id="payload" inputmode="decimal" value="${f.payload || ''}" placeholder="0"><small>t</small></label>
-        <label><span>Pax</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
-        <label><span>Carburante usato</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small></label>
-        <label><span>Carburante pianificato</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
+        <label><span>PAX</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
+        <label><span>Fuel used</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small></label>
+        <label><span>Planned fuel burn</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
       </div>
       <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
     </section>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
-    <fieldset><legend>Sessione</legend><div class="grid">
-      <div class="field"><label for="sdate">Data</label><input id="sdate" type="date" value="${esc(f.date)}"></div>
-      <div class="field w2"><label for="simType">Simulatore</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="BOEING 737-800"></div>
-      <div class="field"><label for="sout">Inizio</label><input id="sout" value="${esc(f.out)}"></div>
-      <div class="field"><label for="sinn">Fine</label><input id="sinn" value="${esc(f.inn)}"></div>
-      <div class="field"><label for="sim">Durata</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
-      <div class="field w3"><label for="spic">Istruttore o esaminatore</label><input id="spic" value="${esc(f.picName)}"></div>
-    </div></fieldset></div>
-    <section class="sheet-card"><h3>Note e firma</h3>
-      <textarea id="remarks" class="note" rows="2" placeholder="Tocca per aggiungere una nota">${esc(f.remarks)}</textarea>
-      <div class="sig-wrap"><div class="sig-head"><span>Firma</span><button type="button" class="btn small" id="sigClear">Cancella firma</button></div>
-        <canvas id="sig" aria-label="Spazio per la firma: firma con il dito o con il mouse"></canvas>
-        <p class="hint" id="sigHint">${f.signature ? 'Firma salvata. Firma di nuovo sopra per sostituirla.' : 'Firma qui con il dito o con il mouse.'}</p></div>
+    <section class="sheet-card">
+      <h3 class="h3-lock">FSTD session ${lockBtn('on-dark')}</h3>
+      <div class="grid sim-grid">
+        <div class="field"><label for="sdate">Date</label><input id="sdate" type="date" value="${esc(f.date)}"></div>
+        <div class="field w2"><label for="simType">FSTD</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="BOEING 737-800"></div>
+        <div class="field"><label for="sout">Start</label><input id="sout" value="${esc(f.out)}"></div>
+        <div class="field"><label for="sinn">End</label><input id="sinn" value="${esc(f.inn)}"></div>
+        <div class="field"><label for="sim">Duration</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
+        <div class="field w3"><label for="spic">Instructor / examiner</label><input id="spic" value="${esc(f.picName)}"></div>
+      </div>
+    </section></div>
+    <section class="sheet-card"><h3>Remarks · Signature</h3>
+      <textarea id="remarks" class="note" rows="2" placeholder="Tap to add remarks">${esc(f.remarks)}</textarea>
+      <div class="sig-wrap"><div class="sig-head"><span>Signature</span><button type="button" class="btn small" id="sigClear">Clear signature</button></div>
+        <canvas id="sig" aria-label="Signature box: sign with your finger or the mouse"></canvas>
+        <p class="hint" id="sigHint">${f.signature ? 'Firma salvata: firma di nuovo sopra per sostituirla.' : 'Firma qui con il dito o con il mouse.'}</p></div>
     </section>
-    <div class="actions"><button class="btn primary" type="submit">${orig?.planned ? 'Conferma con gli orari effettivi' : orig ? 'Salva modifiche' : 'Salva volo'}</button>
-      ${orig ? '<button class="btn" type="button" id="dup">Duplica</button><button class="btn danger" type="button" id="del">Elimina</button>' : ''}
-      <a class="btn" href="#voli">Annulla</a></div>
-    <datalist id="regs">${regs.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
-    <datalist id="types">${typesL.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
+    <div class="actions">
+      <a class="btn primary keep" href="#voli">Done</a>
+      <button class="btn keep" type="button" id="dup">Duplicate</button>
+      <button class="btn danger" type="button" id="del">Delete</button>
+    </div>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
   </form>`;
 
   const form = $('#ff');
-  // campi orario e durata: al tocco selezionano tutto, si scrivono anche senza i due punti
+  const g = k => form.querySelector('#' + k);           // funziona anche quando la pagina è già cambiata
+  // ---------- campi orario: al tocco il valore va in grigio e si riscrive, senza bisogno dei due punti
   const TIME_IDS = ['std', 'sta', 'out', 'off', 'on', 'inn', 'sout', 'sinn'], DUR_IDS = ['total', 'night', 'ifr', 'sim'];
   const isTD = el => TIME_IDS.includes(el.id) || DUR_IDS.includes(el.id) || el.id === 'dep' || el.id === 'arr';
-  for (const id of [...TIME_IDS, ...DUR_IDS]) { const el = $('#' + id); if (el) { el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off'); el.dataset.ph = el.placeholder; } }
-  for (const id of ['dep', 'arr']) $('#' + id).dataset.ph = 'ICAO';
-  // al tocco il valore diventa il suggerimento in grigio e il campo si svuota: si scrive subito il nuovo orario.
-  // Se si esce senza scrivere niente, torna il valore di prima.
-  form.addEventListener('focusin', e => {
-    const el = e.target; if (!isTD(el) || !el.value) return;
-    el.dataset.prev = el.value; el.placeholder = el.value; el.value = '';
-  });
-  form.addEventListener('focusout', e => {
-    const el = e.target; if (!isTD(el)) return;
-    if (el.value === '' && el.dataset.prev) el.value = el.dataset.prev;
-    delete el.dataset.prev; el.placeholder = el.dataset.ph || '';
-  });
-  // la normalizzazione avviene prima degli altri calcoli (fase di cattura)
-  form.addEventListener('change', e => {
-    const el = e.target;
-    if (TIME_IDS.includes(el.id)) el.value = normTime(el.value);
-    else if (DUR_IDS.includes(el.id)) el.value = normDur(el.value);
-  }, true);
+  for (const k of [...TIME_IDS, ...DUR_IDS]) { const el = g(k); if (el) { el.setAttribute('inputmode', 'numeric'); el.setAttribute('autocomplete', 'off'); el.dataset.ph = el.placeholder; } }
+  for (const k of ['dep', 'arr']) g(k).dataset.ph = 'ICAO';
+  form.addEventListener('focusin', e => { const el = e.target; if (!isTD(el) || !el.value) return; el.dataset.prev = el.value; el.placeholder = el.value; el.value = ''; });
+  form.addEventListener('focusout', e => { const el = e.target; if (!isTD(el)) return; if (el.value === '' && el.dataset.prev) el.value = el.dataset.prev; delete el.dataset.prev; el.placeholder = el.dataset.ph || ''; });
+  form.addEventListener('change', e => { const el = e.target; if (TIME_IDS.includes(el.id)) el.value = normTime(el.value); else if (DUR_IDS.includes(el.id)) el.value = normDur(el.value); }, true);
   const kind = () => form.kind.value;
-  form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { $('#fFlight').hidden = kind() === 'sim'; $('#fSim').hidden = kind() !== 'sim'; });
-  const autoTotal = () => {
-    const o = toMin($('#out').value), i = toMin($('#inn').value);
-    if (o != null && i != null) { $('#total').value = hm(((i - o) + 1440) % 1440); syncIfr(); }
-  };
-  const syncIfr = () => { if ($('#ifr').dataset.auto) $('#ifr').value = $('#total').value; };
-  $('#ifr').oninput = () => delete $('#ifr').dataset.auto;
-  ['out', 'inn'].forEach(k => $('#' + k).addEventListener('change', autoTotal));
-  $('#total').addEventListener('change', syncIfr);
-  // notte, decollo e atterraggio di giorno o di notte calcolati dalla posizione del sole lungo la rotta
+  form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { g('fFlight').hidden = kind() === 'sim'; g('fSim').hidden = kind() !== 'sim'; });
+
+  // ---------- blocco, notte, decolli e atterraggi
+  const syncIfr = () => { if (g('ifr').dataset.auto) g('ifr').value = g('total').value; };
+  const autoTotal = () => { const o = toMin(g('out').value), i = toMin(g('inn').value); if (o != null && i != null) { g('total').value = hm(((i - o) + 1440) % 1440); syncIfr(); } };
+  g('ifr').oninput = () => delete g('ifr').dataset.auto;
+  ['out', 'inn'].forEach(k => g(k).addEventListener('change', autoTotal));
+  g('total').addEventListener('change', syncIfr);
   let calc = null;
-  $('#night').addEventListener('input', () => delete $('#night').dataset.auto);
+  g('night').addEventListener('input', () => delete g('night').dataset.auto);
   const placeTOLDG = () => {
     if (!calc) return;
-    const to = num($('#toDay').value) + num($('#toNight').value), ld = num($('#ldgDay').value) + num($('#ldgNight').value);
-    if (to) { $('#toDay').value = calc.toNight ? '' : to; $('#toNight').value = calc.toNight ? to : ''; }
-    if (ld) { $('#ldgDay').value = calc.ldgNight ? '' : ld; $('#ldgNight').value = calc.ldgNight ? ld : ''; }
+    const to = num(g('toDay').value) + num(g('toNight').value), ld = num(g('ldgDay').value) + num(g('ldgNight').value);
+    if (to) { g('toDay').value = calc.toNight ? '' : to; g('toNight').value = calc.toNight ? to : ''; }
+    if (ld) { g('ldgDay').value = calc.ldgNight ? '' : ld; g('ldgNight').value = calc.ldgNight ? ld : ''; }
+  };
+  const counter = (box, dayId, nightId, calcKey) => {
+    const el = g(box), b = el.querySelector('b'), moon = el.querySelector('.moon');
+    let manual = null;
+    const night = () => manual ?? (num(g(nightId).value) > 0 || (!num(g(dayId).value) && !!calc?.[calcKey]));
+    const draw = () => { b.textContent = num(g(dayId).value) + num(g(nightId).value); const n = night(); moon.setAttribute('aria-pressed', n); el.classList.toggle('night', n); };
+    const put = tot => { const n = night(); g(dayId).value = n ? '' : (tot || ''); g(nightId).value = n ? (tot || '') : ''; draw(); schedule(); };
+    const tot = () => num(g(dayId).value) + num(g(nightId).value);
+    el.querySelector('.inc').onclick = () => { if (!locked) put(tot() + 1); };
+    el.querySelector('.dec').onclick = () => { if (!locked) put(Math.max(0, tot() - 1)); };
+    moon.onclick = () => { if (locked) return; manual = !night(); put(tot()); };
+    return draw;
+  };
+  const drawTO = counter('cTO', 'toDay', 'toNight', 'toNight'), drawLDG = counter('cLDG', 'ldgDay', 'ldgNight', 'ldgNight');
+  const punct = d => d <= 3 ? 'ok' : d <= 15 ? 'warn' : 'bad';   // verde entro 3 min, arancione fino a 15, rosso oltre
+  const extras = () => {
+    const off = toMin(g('off').value), on = toMin(g('on').value);
+    g('airTime').textContent = off != null && on != null ? hm(((on - off) + 1440) % 1440) || '0:00' : '—';
+    g('distNM').textContent = calc ? fmtN(calc.nm) : (f.nm ? fmtN(f.nm) : '—');
+    const std = g('std').value, sta = g('sta').value;
+    const delay = (a, b, small, input) => {
+      const x = toMin(a), y = toMin(b), e = g(small), inp = input && g(input);
+      if (inp) inp.classList.remove('p-ok', 'p-warn', 'p-bad');
+      if (x == null || y == null) { e.textContent = ''; e.className = 'd'; return; }
+      let d = ((x - y) + 1440) % 1440; if (d > 720) d -= 1440;
+      if (!input) { e.textContent = `Taxi ${Math.abs(d)} min`; e.className = 'd'; return; }
+      const c = punct(d); inp.classList.add('p-' + c);
+      e.textContent = d === 0 ? 'On time' : `${d > 0 ? '+' : '−'}${Math.abs(d)} min`; e.className = 'd p-' + c;
+    };
+    delay(g('out').value, std, 'dOut', 'out'); delay(g('inn').value, sta, 'dIn', 'inn');
+    delay(g('off').value, g('out').value, 'dOff'); delay(g('inn').value, g('on').value, 'dOn');
+    const sb = toMin(std) != null && toMin(sta) != null ? ((toMin(sta) - toMin(std)) + 1440) % 1440 : null, rb = parseHM(g('total').value);
+    g('schedBlock').textContent = sb != null ? hm0(sb) : '—';
+    g('dBlock').textContent = sb != null && rb ? (rb === sb ? '' : `${rb > sb ? '+' : '−'}${Math.abs(rb - sb)} min`) : '';
+    const fu = parseDec(g('fuelUsed').value), fp = parseDec(g('fuelPlan').value);
+    g('fuelDiff').textContent = fu && fp ? `t, ${fu - fp > 0 ? '+' : '−'}${Math.abs(fu - fp).toFixed(1)} vs plan` : 't';
+    g('fuelDiff').className = fu && fp ? (fu > fp ? 'late' : 'early') : '';
+    g('co2').textContent = fu ? (fu * 3.16).toFixed(1) : '—';
+    drawTO(); drawLDG();
   };
   const runNight = async () => {
     await loadAirports();
-    calc = nightCalc($('#date').value, $('#out').value.trim(), $('#inn').value.trim(), $('#dep').value.trim().toUpperCase(), $('#arr').value.trim().toUpperCase());
-    const h = $('#nightCalc');
-    if (!calc) { h.textContent = ''; setTimeout(() => { try { extras(); } catch { /* non ancora pronto */ } }, 0); return; }
-    h.innerHTML = !$('#night').dataset.auto && parseHM($('#night').value) !== calc.night ? `<button type="button" class="linkbtn" id="useNight" title="Usa la notte calcolata">calcolata ${hm(calc.night) || '0:00'}</button>` : '';
-    if ($('#night').dataset.auto) $('#night').value = hm(calc.night);
-    const u = $('#useNight'); if (u) u.onclick = () => { $('#night').value = hm(calc.night); $('#night').dataset.auto = '1'; placeTOLDG(); runNight(); };
-    if (!orig || $('#night').dataset.auto) placeTOLDG();
-    setTimeout(() => { try { extras(); } catch { /* non ancora pronto */ } }, 0);
+    calc = nightCalc(g('date').value, g('out').value.trim(), g('inn').value.trim(), g('dep').value.trim().toUpperCase(), g('arr').value.trim().toUpperCase());
+    const h = g('nightCalc');
+    if (calc) {
+      h.innerHTML = !g('night').dataset.auto && parseHM(g('night').value) !== calc.night ? `<button type="button" class="linkbtn" id="useNight" title="Use the calculated night time">calc. ${hm(calc.night) || '0:00'}</button>` : '';
+      if (g('night').dataset.auto) g('night').value = hm(calc.night);
+      const u = g('useNight'); if (u) u.onclick = () => { if (locked) return; g('night').value = hm(calc.night); g('night').dataset.auto = '1'; placeTOLDG(); runNight(); schedule(); };
+      if (!orig || g('night').dataset.auto) placeTOLDG();
+    } else h.textContent = '';
+    extras();
   };
-  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', runNight));
-  ['toDay', 'toNight', 'ldgDay', 'ldgNight'].forEach(k => $('#' + k).addEventListener('change', placeTOLDG));
-  runNight();
-  // contatori decolli e atterraggi con la luna
-  const counter = (box, dayId, nightId, calcKey) => {
-    const el = $(box), b = el.querySelector('b'), moon = el.querySelector('.moon');
-    let manual = null; // scelta a mano della luna, vince sul calcolo
-    const night = () => manual ?? (num($(nightId).value) > 0 || (!num($(dayId).value) && !!calc?.[calcKey]));
-    const draw = () => { b.textContent = num($(dayId).value) + num($(nightId).value); const n = night(); moon.setAttribute('aria-pressed', n); el.classList.toggle('night', n); };
-    const put = tot => { const n = night(); $(dayId).value = n ? '' : (tot || ''); $(nightId).value = n ? (tot || '') : ''; draw(); };
-    const tot = () => num($(dayId).value) + num($(nightId).value);
-    el.querySelector('.inc').onclick = () => put(tot() + 1);
-    el.querySelector('.dec').onclick = () => put(Math.max(0, tot() - 1));
-    moon.onclick = () => { manual = !night(); put(tot()); };
-    return draw;
-  };
-  const drawTO = counter('#cTO', '#toDay', '#toNight', 'toNight'), drawLDG = counter('#cLDG', '#ldgDay', '#ldgNight', 'ldgNight');
-  const aptLabel = async () => {
+  // ---------- aeroporti: IATA, nome, fuso orario, planisfero con la rotta
+  const aptInfo = async () => {
     await loadAirports(); IATA ||= await fetch('data/iata.json').then(r => r.json()).catch(() => ({}));
     const rev = c => Object.keys(IATA).find(k => IATA[k] === c) || '';
-    for (const [inp, sub] of [['#dep', '#depSub'], ['#arr', '#arrSub']]) { const c = $(inp).value.trim().toUpperCase(), p = apt(c); $(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(cleanAptName(p[2]))}` : ''; }
+    for (const [inp, sub, tz, time] of [['dep', 'depSub', 'depTz', 'out'], ['arr', 'arrSub', 'arrTz', 'inn']]) {
+      const c = g(inp).value.trim().toUpperCase(), p = apt(c);
+      g(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(cleanAptName(p[2]))}` : '';
+      g(tz).textContent = p?.[4] ? utcLabel(p[4], g('date').value, g(time).value || g(inp === 'dep' ? 'std' : 'sta').value) : '';
+    }
+    drawWorld(g('worldbg'), apt(g('dep').value.trim().toUpperCase()), apt(g('arr').value.trim().toUpperCase()));
   };
-  const extras = () => {
-    const off = toMin($('#off').value), on = toMin($('#on').value);
-    $('#airTime').textContent = off != null && on != null ? hm(((on - off) + 1440) % 1440) || '0:00' : '—';
-    $('#distNM').textContent = calc ? fmtN(calc.nm) : (f.nm ? fmtN(f.nm) : '—');
-    const dl = (a, b, el, taxi) => { const x = toMin(a), y = toMin(b), e = $(el); if (x == null || y == null) { e.textContent = ''; e.className = 'd'; return; }
-      let d = ((x - y) + 1440) % 1440; if (d > 720) d -= 1440;
-      if (taxi) { e.textContent = `taxi ${Math.abs(d)} min`; e.className = 'd'; return; }
-      e.textContent = d === 0 ? 'in orario' : `${d > 0 ? '+' : '−'}${Math.abs(d)} min`; e.className = 'd ' + (d > 0 ? 'late' : 'early'); };
-    const std = $('#std').value, sta = $('#sta').value;
-    dl($('#out').value, std, '#dOut'); dl($('#inn').value, sta, '#dIn');
-    dl($('#off').value, $('#out').value, '#dOff', true); dl($('#inn').value, $('#on').value, '#dOn', true);
-    const sb = toMin(std) != null && toMin(sta) != null ? ((toMin(sta) - toMin(std)) + 1440) % 1440 : null, rb = parseHM($('#total').value);
-    $('#schedBlock').textContent = sb != null ? hm0(sb) : '—';
-    $('#dBlock').textContent = sb != null && rb ? (rb === sb ? '' : `${rb > sb ? '+' : '−'}${Math.abs(rb - sb)} min`) : '';
-    const fu = parseDec($('#fuelUsed').value), fp = parseDec($('#fuelPlan').value);
-    $('#fuelDiff').textContent = fu && fp ? `t, ${fu - fp > 0 ? '+' : '−'}${Math.abs(fu - fp).toFixed(1).replace('.', ',')} sul piano` : 't';
-    $('#fuelDiff').className = fu && fp ? (fu > fp ? 'late' : 'early') : '';
-    $('#co2').textContent = fu ? (fu * 3.16).toFixed(1).replace('.', ',') : '—';
-    drawTO(); drawLDG();
+  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => g(k).addEventListener('change', runNight));
+  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => g(k).addEventListener('change', aptInfo));
+  ['std', 'sta', 'off', 'on', 'total', 'fuelUsed', 'fuelPlan', 'ifr', 'night'].forEach(k => g(k).addEventListener('change', () => setTimeout(extras, 0)));
+  runNight(); aptInfo();
+  const ro = new ResizeObserver(() => drawWorld(g('worldbg'), apt(g('dep').value.trim().toUpperCase()), apt(g('arr').value.trim().toUpperCase())));
+  ro.observe(form.querySelector('.sheet-head'));
+
+  // ---------- marca: elenco con il tipo, o nuova marca
+  const setReg = r => {
+    const t = regTypeOf(r); g('reg').value = r; g('type').value = t || g('type').value;
+    g('acType').textContent = r ? (t || g('type').value) : (f.acHint ? f.acHint + ' (roster)' : '');
   };
-  ['std', 'sta', 'off', 'on', 'out', 'inn', 'total', 'fuelUsed', 'fuelPlan', 'ifr', 'night'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 0)));
-  ['dep', 'arr'].forEach(k => $('#' + k).addEventListener('change', aptLabel));
-  const runNight0 = runNight;
-  ['date', 'dep', 'arr', 'out', 'inn'].forEach(k => $('#' + k).addEventListener('change', () => setTimeout(extras, 50)));
-  aptLabel(); setTimeout(extras, 80); void runNight0;
-  $('#simType').addEventListener('change', () => { const v = $('#simType').value.trim(); if (SIM_DEVICES[v]) { const r = $('#remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; $('#simType').value = SIM_DEVICES[v]; } });
-  const autoSim = () => { const o = toMin($('#sout').value), i = toMin($('#sinn').value); if (o != null && i != null) $('#sim').value = hm(((i - o) + 1440) % 1440); };
-  ['sout', 'sinn'].forEach(k => $('#' + k).addEventListener('change', autoSim));
-  $('#reg').addEventListener('change', () => {
-    const r = $('#reg').value.trim().toUpperCase(); const k = data.flights.findLast(x => x.reg === r);
-    const t = k?.type || KNOWN_AIRCRAFT[r]; if (t) $('#type').value = t;
-  });
+  g('regSel').onchange = () => { if (g('regSel').value === '__new') { g('acNew').hidden = false; g('newReg').focus(); g('regSel').value = g('reg').value; return; } setReg(g('regSel').value); };
+  g('newRegBtn').onclick = () => { if (locked) return; g('acNew').hidden = false; g('newReg').focus(); };
+  g('cancelReg').onclick = () => { g('acNew').hidden = true; };
+  g('addReg').onclick = async () => {
+    const r = g('newReg').value.trim().toUpperCase(), t = g('newType').value;
+    if (!/^[A-Z0-9-]{3,10}$/.test(r)) { toast('Scrivi la marca, per esempio EI-RZI'); return; }
+    (data.aircraft ||= {})[r] = t; data.metaMt = Date.now();
+    g('regSel').innerHTML = regOptions(r); setReg(r); g('acNew').hidden = true; g('newReg').value = '';
+    await save(`${r} aggiunta come ${t}`); schedule();
+  };
+
+  // ---------- funzione
   const hint = () => {
     const r = form.role.value;
-    $('#roleHint').textContent = { PIC: 'Tempo registrato come PIC.', PICUS: 'Registrato come PIC con "PICUS" nelle note: serve la controfirma del comandante (nome e numero di licenza).', SIC: 'Tempo registrato come copilota.', DUAL: 'Tempo di istruzione: nel nome del PIC metti l\'istruttore e la sua certificazione nelle note.' }[r];
-    if ((r === 'PIC' || r === 'PICUS') && !$('#picName').value) $('#picName').value = 'SELF';
+    g('roleHint').textContent = { PIC: 'Logged as PIC.', PICUS: 'Logged as PIC with "PICUS" in the remarks: needs the PIC countersignature (name and licence number).', SIC: 'Logged as SIC (co-pilot).', DUAL: 'Dual instruction: put the instructor as PIC name and his certification in the remarks.' }[r];
+    if ((r === 'PIC' || r === 'PICUS') && !g('picName').value) g('picName').value = 'SELF';
   };
-  form.querySelectorAll('input[name=role]').forEach(r => r.onchange = hint); hint();
-  const sig = signaturePad($('#sig'), f.signature, () => { $('#sigHint').textContent = 'Firma pronta: viene salvata con il volo.'; });
-  $('#sigClear').onclick = () => { sig.clear(); $('#sigHint').textContent = 'Firma cancellata.'; };
-
-  if (orig) {
-    $('#del').onclick = async () => { if (!confirm('Eliminare questa riga dal logbook?')) return; data.flights = data.flights.filter(x => x.id !== orig.id); (data.deleted ||= {})[orig.id] = Date.now(); await save('Riga eliminata'); location.hash = 'voli'; };
-    $('#dup').onclick = () => { viewEdit.dup = orig; location.hash = 'nuovo'; };
-  } else if (viewEdit.dup) {
+  form.querySelectorAll('input[name=role]').forEach(r => r.addEventListener('change', hint)); hint();
+  g('simType').addEventListener('change', () => { const v = g('simType').value.trim(); if (SIM_DEVICES[v]) { const r = g('remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; g('simType').value = SIM_DEVICES[v]; } });
+  const autoSim = () => { const o = toMin(g('sout').value), i = toMin(g('sinn').value); if (o != null && i != null) g('sim').value = hm(((i - o) + 1440) % 1440); };
+  ['sout', 'sinn'].forEach(k => g(k).addEventListener('change', autoSim));
+  const sig = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Firma pronta.'; schedule(); });
+  g('sigClear').onclick = () => { if (locked) return; sig.clear(); g('sigHint').textContent = 'Firma cancellata.'; schedule(); };
+  if (!orig && viewEdit.dup) {
     const d = viewEdit.dup; viewEdit.dup = null;
-    for (const k of ['type', 'reg', 'picName', 'flightNo']) if ($('#' + k)) $('#' + k).value = d[k] || '';
-    $('#dep').value = d.arr; form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint();
+    g('regSel').innerHTML = regOptions(d.reg); setReg(d.reg || '');
+    for (const k of ['picName', 'flightNo']) g(k).value = d[k] || '';
+    g('dep').value = d.arr; form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
   }
 
-  form.onsubmit = async e => {
-    e.preventDefault();
-    try {
-      const rec = orig ? { ...orig } : { ...EMPTY(), id: nextId() };
-      form.querySelectorAll('.err').forEach(x => x.classList.remove('err'));
-      const bad = (el, msg) => { el.classList.add('err'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => el.focus({ preventScroll: true }), 300); toast(msg || 'Controlla il campo evidenziato'); return false; };
-      const remarks = $('#remarks').value.trim();
-      if (kind() === 'sim') {
-        const sim = parseHM($('#sim').value);
-        if (!$('#sdate').value) return bad($('#sdate'), 'Manca la data della sessione');
-        if (!sim || isNaN(sim)) return bad($('#sim'), 'Manca la durata della sessione');
-        Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src, kind: 'sim', date: $('#sdate').value, simType: $('#simType').value.trim(), out: normTime($('#sout').value), inn: normTime($('#sinn').value), sim, picName: $('#spic').value.trim(), remarks });
-      } else {
-        for (const k of ['std', 'sta', 'out', 'off', 'on', 'inn']) {
-          const el = $('#' + k); el.value = normTime(el.value);
-          if (el.value && toMin(el.value) == null) return bad(el, `Orario ${k.toUpperCase()} non valido: scrivi per esempio 1857`);
-        }
-        if (!$('#date').value) return bad($('#date'), 'Manca la data');
-        if (!/^[A-Z0-9]{3,4}$/i.test($('#dep').value.trim())) return bad($('#dep'), 'Manca il codice ICAO di partenza');
-        if (!/^[A-Z0-9]{3,4}$/i.test($('#arr').value.trim())) return bad($('#arr'), "Manca il codice ICAO d'arrivo");
-        if (!$('#out').value) return bad($('#out'), "Manca l'orario OUT");
-        if (!$('#inn').value) return bad($('#inn'), "Manca l'orario IN");
-        let total = parseHM($('#total').value);
-        if (!total || isNaN(total)) total = ((toMin($('#inn').value) - toMin($('#out').value)) + 1440) % 1440;
-        if (!total) return bad($('#total'), 'Il blocco reale è zero: controlla OUT e IN');
-        let night = parseHM($('#night').value), ifr = parseHM($('#ifr').value);
-        if (isNaN(night)) night = calc ? calc.night : 0;
-        if (isNaN(ifr)) ifr = total;
-        night = Math.min(night, total); ifr = Math.min(ifr, total);
-        const role = form.role.value, mp = $('#mpOn').checked;
-        let rem = remarks;
-        if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
-        const std = $('#std').value, sta = $('#sta').value;
-        Object.assign(rec, {
-          kind: 'flight', date: $('#date').value, dep: $('#dep').value.trim().toUpperCase(), arr: $('#arr').value.trim().toUpperCase(),
-          out: $('#out').value, inn: $('#inn').value, off: $('#off').value, on: $('#on').value, reg: $('#reg').value.trim().toUpperCase(), type: $('#type').value.trim(),
-          flightNo: $('#flightNo').value.trim(), picName: $('#picName').value.trim(), total, night, ifr,
-          mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
-          pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
-          instr: $('#instrOn').checked ? total : 0, toDay: num($('#toDay').value), toNight: num($('#toNight').value),
-          ldgDay: num($('#ldgDay').value), ldgNight: num($('#ldgNight').value), sim: 0, simType: '', remarks: rem,
-          pax: num($('#pax').value), payload: parseDec($('#payload').value), fuelPlan: parseDec($('#fuelPlan').value), fuelUsed: parseDec($('#fuelUsed').value),
-          approach: $('#approach').value, nm: calc ? calc.nm : (rec.nm || 0)
-        });
-        if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
-      }
-      const sv = sig.value(); if (sv) rec.signature = sv; else delete rec.signature;
-      rec.mt = Date.now(); delete rec.planned; delete rec.change; rec.seen = true;
-      const i = data.flights.findIndex(x => x.id === rec.id);
-      if (i >= 0) data.flights[i] = rec; else data.flights.push(rec);
-      await save(orig ? 'Volo salvato' : 'Volo aggiunto');
-      updateBadge();
-      viewFlights.st = { year: '', type: '', q: '', all: false }; viewFlights.hl = rec.id;
-      location.hash = 'voli';
-    } catch (err) {
-      console.error(err); toast('Salvataggio non riuscito: ' + err.message);
+  // ---------- salvataggio automatico e lucchetto
+  const state = (txt, cls = '') => { const s = g('saveState'); s.textContent = txt; s.className = 'save-state ' + cls; };
+  const collect = () => {
+    const rec = orig ? { ...(data.flights.find(x => x.id === recId) || orig) } : { ...EMPTY(), id: recId };
+    rec.id = recId;
+    const remarks = g('remarks').value.trim();
+    if (kind() === 'sim') {
+      const sim = parseHM(g('sim').value);
+      if (!g('sdate').value) return { err: 'date missing', el: g('sdate') };
+      if (!sim || isNaN(sim)) return { err: 'duration missing', el: g('sim') };
+      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src || 'app', kind: 'sim', date: g('sdate').value, simType: g('simType').value.trim(), out: normTime(g('sout').value), inn: normTime(g('sinn').value), sim, picName: g('spic').value.trim(), remarks });
+      delete rec.planned;
+    } else {
+      for (const k of ['std', 'sta', 'out', 'off', 'on', 'inn']) { const el = g(k); el.value = normTime(el.value); if (el.value && toMin(el.value) == null) return { err: `${k.toUpperCase()} not valid`, el }; }
+      if (!g('date').value) return { err: 'date missing', el: g('date') };
+      if (!/^[A-Z0-9]{3,4}$/i.test(g('dep').value.trim())) return { err: 'DEP missing', el: g('dep') };
+      if (!/^[A-Z0-9]{3,4}$/i.test(g('arr').value.trim())) return { err: 'ARR missing', el: g('arr') };
+      if (!g('out').value) return { err: 'OUT missing', el: g('out') };
+      if (!g('inn').value) return { err: 'IN missing', el: g('inn') };
+      let total = parseHM(g('total').value);
+      if (!total || isNaN(total)) total = ((toMin(g('inn').value) - toMin(g('out').value)) + 1440) % 1440;
+      if (!total) return { err: 'block time is zero', el: g('total') };
+      let night = parseHM(g('night').value), ifr = parseHM(g('ifr').value);
+      if (isNaN(night)) night = calc ? calc.night : 0;
+      if (isNaN(ifr)) ifr = total;
+      night = Math.min(night, total); ifr = Math.min(ifr, total);
+      const role = form.role.value, mp = g('mpOn').checked;
+      let rem = remarks;
+      if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
+      const std = g('std').value, sta = g('sta').value;
+      Object.assign(rec, {
+        kind: 'flight', date: g('date').value, dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase(),
+        out: g('out').value, inn: g('inn').value, off: g('off').value, on: g('on').value, reg: g('reg').value.trim().toUpperCase(), type: g('type').value.trim(),
+        flightNo: g('flightNo').value.trim(), picName: g('picName').value.trim(), total, night, ifr,
+        mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
+        pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
+        instr: g('instrOn').checked ? total : 0, toDay: num(g('toDay').value), toNight: num(g('toNight').value),
+        ldgDay: num(g('ldgDay').value), ldgNight: num(g('ldgNight').value), sim: 0, simType: '', remarks: rem,
+        pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelPlan: parseDec(g('fuelPlan').value), fuelUsed: parseDec(g('fuelUsed').value),
+        approach: g('approach').value, nm: calc ? calc.nm : (rec.nm || 0)
+      });
+      if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
+      if (confirmed) { delete rec.planned; delete rec.change; } else rec.planned = true;
     }
+    const sv = sig.value(); if (sv) rec.signature = sv; else delete rec.signature;
+    rec.locked = locked; if (!locked) delete rec.locked;
+    rec.seen = true; rec.mt = Date.now();
+    return { rec };
   };
+  const commit = async () => {
+    const r = collect();
+    if (r.err) { state(created ? `Not saved: ${r.err}` : `Draft: ${r.err}`, 'warn'); return r; }
+    const i = data.flights.findIndex(x => x.id === recId);
+    if (i >= 0) data.flights[i] = r.rec; else data.flights.push(r.rec);
+    created = true;
+    await save(); updateBadge();
+    if (confirmed) { g('chipPlan')?.remove(); main.querySelector('.plan-note')?.remove(); }
+    state(`${locked ? 'Locked' : 'Saved'} ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, locked ? 'lockd' : 'ok');
+    return r;
+  };
+  let timer = null;
+  function schedule() { if (locked) return; clearTimeout(timer); state('Saving…'); timer = setTimeout(() => { timer = null; commit(); }, 600); }
+  form.addEventListener('change', e => {
+    if (['out', 'off', 'on', 'inn'].includes(e.target.id)) confirmed = true;
+    if (e.target.id === 'newReg' || e.target.id === 'newType' || e.target.name === 'kind') return;
+    schedule();
+  });
+  form.addEventListener('input', e => { if (e.target.id === 'remarks' || e.target.id === 'picName') schedule(); });
+  const flush = () => {
+    if (!timer) return; clearTimeout(timer); timer = null;
+    const r = collect();
+    if (r.err) { if (created) toast(`Ultima modifica non salvata: ${r.err}`); else toast(`Volo non salvato: ${r.err}`); return; }
+    const i = data.flights.findIndex(x => x.id === recId); if (i >= 0) data.flights[i] = r.rec; else data.flights.push(r.rec);
+    save(); updateBadge();
+  };
+  const leave = () => { flush(); ro.disconnect(); window.removeEventListener('pagehide', flush); };
+  window.addEventListener('hashchange', leave, { once: true });
+  window.addEventListener('pagehide', flush);
+  form.onsubmit = e => { e.preventDefault(); clearTimeout(timer); timer = null; commit(); };
+
+  const applyLock = () => {
+    form.classList.toggle('locked', locked);
+    for (const el of form.elements) if (!el.closest('.keep')) el.disabled = locked;
+    form.querySelectorAll('.lock').forEach(b => { b.setAttribute('aria-pressed', locked); b.setAttribute('aria-label', locked ? 'Unlock flight' : 'Lock flight'); });
+    if (locked) state('Locked', 'lockd');
+  };
+  form.querySelectorAll('.lock').forEach(b => b.onclick = async () => {
+    clearTimeout(timer); timer = null;
+    if (!locked) {
+      locked = true; confirmed = true;
+      const r = await commit();
+      if (r.err) { locked = false; toast(`Non posso bloccare: ${r.err}`); r.el?.scrollIntoView({ block: 'center' }); applyLock(); return; }
+      toast('Flight locked');
+    } else {
+      locked = false; await commit(); toast('Flight unlocked');
+    }
+    applyLock();
+  });
+  applyLock();
+
+  g('del').onclick = async () => {
+    if (locked) return;
+    if (!created) { location.hash = 'voli'; return; }
+    if (!confirm('Delete this entry from the logbook?')) return;
+    clearTimeout(timer); timer = null;
+    data.flights = data.flights.filter(x => x.id !== recId); (data.deleted ||= {})[recId] = Date.now();
+    await save('Entry deleted'); created = false; location.hash = 'voli';
+  };
+  g('dup').onclick = () => { flush(); viewEdit.dup = data.flights.find(x => x.id === recId) || f; location.hash = 'nuovo'; };
+}
+
+const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2" fill="currentColor"/><path class="shackle" d="M8 10.5V7.5a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+// marca -> tipo: storico del logbook, flotta FlightLog, marche aggiunte a mano
+function regTypeOf(r) {
+  if (!r) return '';
+  return data.aircraft?.[r] || data.flights.findLast(x => x.reg === r && x.type)?.type || KNOWN_AIRCRAFT[r] || '';
+}
+function regOptions(sel) {
+  const lastUse = {}, typeOf = {};
+  for (const [r, t] of Object.entries(KNOWN_AIRCRAFT)) { typeOf[r] = t; lastUse[r] ||= ''; }
+  for (const x of data.flights) if (x.kind === 'flight' && x.reg) { if (x.type) typeOf[x.reg] = x.type; if (!x.planned && (lastUse[x.reg] || '') < x.date) lastUse[x.reg] = x.date; else lastUse[x.reg] ||= ''; }
+  for (const [r, t] of Object.entries(data.aircraft || {})) { typeOf[r] = t; lastUse[r] ||= '9999'; }
+  if (sel && !typeOf[sel]) typeOf[sel] = '';
+  const groups = {};
+  for (const r of Object.keys(typeOf)) (groups[typeOf[r] || 'Other'] ||= []).push(r);
+  const gLast = t => groups[t].reduce((m, r) => (lastUse[r] || '') > m ? lastUse[r] : m, '');
+  const order = Object.keys(groups).sort((a, b) => gLast(b).localeCompare(gLast(a)) || typeRank(a) - typeRank(b));
+  return `<option value="">— Registration —</option>` + order.map(t => `<optgroup label="${esc(t)}">${groups[t].sort((a, b) => (lastUse[b] || '').localeCompare(lastUse[a] || '') || a.localeCompare(b)).map(r => `<option value="${esc(r)}" ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')}</optgroup>`).join('') + `<option value="__new">+ New registration…</option>`;
+}
+// "UTC+1" all'ora e alla data del volo, dal fuso dell'aeroporto
+function utcLabel(tz, date, time) {
+  try {
+    const t = Date.parse(`${date || today()}T${normTime(time) || '12:00'}:00Z`);
+    const v = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(t)).find(p => p.type === 'timeZoneName')?.value || '';
+    return v === 'GMT' ? 'UTC+0' : v.replace('GMT', 'UTC');
+  } catch { return ''; }
+}
+// planisfero a puntini con l'arco di cerchio massimo della rotta
+let WORLD = null, worldLoading = null;
+function drawWorld(cv, A, B) {
+  if (!cv) return;
+  if (!WORLD) { (worldLoading ||= fetch('data/worlddots.json').then(r => r.json()).then(j => { const raw = atob(j.bits); j.b = Uint8Array.from(raw, c => c.charCodeAt(0)); WORLD = j; })).then(() => drawWorld(cv, A, B)).catch(() => {}); return; }
+  const r = cv.getBoundingClientRect(); if (!r.width) return;
+  const dpr = devicePixelRatio || 1; cv.width = r.width * dpr; cv.height = r.height * dpr;
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, r.width, r.height);
+  const { w, h, step, lat0, b } = WORLD;
+  // sul telefono il mondo intero è troppo piccolo: lo ingrandisco e lo centro sulla rotta
+  const k = Math.max(1, Math.min(2.6, 640 / r.width)), cs = r.width * k / w, mapW = cs * w, mapH = cs * h;
+  const midLon = A && B ? gcPoint(A, B, .5)[1] : 10;
+  const x0 = Math.max(r.width - mapW, Math.min(0, r.width / 2 - (midLon + 180) / 360 * mapW));
+  const y0 = Math.max(Math.min(0, r.height - mapH), Math.min(18, r.height - mapH));
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#222';
+  ctx.fillStyle = ink; ctx.globalAlpha = .13;
+  const rad = Math.max(.6, cs * .3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (b[i >> 3] & (1 << (i & 7))) { ctx.beginPath(); ctx.arc(x0 + (x + .5) * cs, y0 + (y + .5) * cs, rad, 0, 6.283); ctx.fill(); } }
+  ctx.globalAlpha = 1;
+  if (!A || !B) return;
+  const P = ([la, lo]) => [x0 + (lo + 180) / 360 * mapW, y0 + (lat0 - la) / step * cs];
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--dual').trim() || '#d90'; ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.globalAlpha = .85;
+  ctx.beginPath(); let prev = null;
+  for (let i = 0; i <= 90; i++) { const p = P(gcPoint(A, B, i / 90)); if (!prev || Math.abs(p[0] - prev[0]) > mapW / 2) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); prev = p; }
+  ctx.stroke(); ctx.globalAlpha = 1; ctx.fillStyle = ctx.strokeStyle;
+  for (const q of [A, B]) { const p = P(q); ctx.beginPath(); ctx.arc(p[0], p[1], 3.6, 0, 6.283); ctx.fill(); }
 }
 
 // ---------- scheda volo: avvicinamenti, nomi aeroporto, firma ----------
@@ -852,20 +984,20 @@ function viewPrint(main) {
   const lastN = pages.slice(-Math.max(1, Math.min(st.last, pages.length)));
   const range = ps => ps.length ? `pagine ${ps[0].n}–${ps.at(-1).n}, dal ${dmy(ps[0].first)} al ${dmy(ps.at(-1).lastd)}` : '';
   const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length)).join(''); setTimeout(() => window.print(), 50); };
-  main.innerHTML = `<h1>Stampa EASA</h1>
+  main.innerHTML = `<h1>EASA logbook print</h1>
   <p class="lede">Formato logbook EASA (AMC1 FCL.050), ${pages.length} pagine da ${st.rpp} righe. Nel dialogo di stampa scegli "Salva come PDF".</p>
-  <div class="panel"><h2>Ultime pagine del logbook</h2>
+  <div class="panel"><h2>Last pages</h2>
     <p>Quella che di solito chiede un'azienda: le pagine più recenti, con i riporti e il totale aggiornato.</p>
-    <div class="row"><label>Ultime <input type="number" id="lastN" min="1" max="${pages.length}" value="${st.last}" style="width:64px" class="btn"> pagine</label>
-      <button class="btn primary" id="doLast">Stampa le ultime ${lastN.length} pagine</button>
+    <div class="row"><label>Last <input type="number" id="lastN" min="1" max="${pages.length}" value="${st.last}" style="width:64px" class="btn"> pages</label>
+      <button class="btn primary" id="doLast">Print last ${lastN.length} pages</button>
       <span class="hint">${range(lastN)}</span></div></div>
-  <div class="panel"><h2>Per periodo</h2>
+  <div class="panel"><h2>By period</h2>
     <div class="row filters" style="margin:0">
-      <label>Dal <input type="date" id="pf" value="${st.from}"></label>
-      <label>Al <input type="date" id="pt" value="${st.to}"></label>
-      <button class="btn" id="doPrint">Stampa ${st.from || st.to ? 'il periodo' : 'tutto il logbook'} (${sel.length} pagine)</button></div>
+      <label>From <input type="date" id="pf" value="${st.from}"></label>
+      <label>To <input type="date" id="pt" value="${st.to}"></label>
+      <button class="btn" id="doPrint">Print ${st.from || st.to ? 'period' : 'whole logbook'} (${sel.length} pages)</button></div>
     <p class="hint" style="margin-top:8px">Le pagine mantengono la numerazione e i riporti del logbook completo.</p></div>
-  <div class="row filters"><label>Righe per pagina <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+  <div class="row filters"><label>Lines per page <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
   <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length)).join('')}</div>
   <p class="hint">Anteprima dell'ultima pagina.</p>`;
   $('#rpp').onchange = e => { st.rpp = +e.target.value; viewPrint(main); };
@@ -919,6 +1051,7 @@ async function enrichFromFlightLog(rows) {
     if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate >= td) continue;
     const f = idx.get(`${x.outschedDate}|${x.OUTOACI}|${x.outreal}`);
     if (!f) { notFound++; continue; }
+    if (f.locked) continue;
     const add = { pax: num(x.PAX), payload: parseDec(x.payload), fuelUsed: parseDec(x.fuel), fuelPlan: parseDec(x.fuel_prev), approach: x.ApproachType || '', nm: num(x.ortho), off: x.offtime || '', on: x.ontime || '' };
     let ch = false;
     for (const [k, v] of Object.entries(add)) if (v && !f[k]) { f[k] = v; ch = true; }
@@ -980,23 +1113,23 @@ function applyTheme(t) {
 function viewData(main) {
   const n = data?.flights.length || 0;
   const cur = document.documentElement.dataset.theme || '';
-  main.innerHTML = `<h1>Dati e backup</h1>
+  main.innerHTML = `<h1>Data · Backup</h1>
   <p class="lede">${n ? `${n} righe nel logbook${data.updated ? `, ultima modifica ${new Date(data.updated).toLocaleString('it-IT')}` : ''}.` : 'Il logbook è vuoto.'}</p>
   ${drivePanelHTML()}
-  <div class="panel"><h2>Colori</h2>
+  <div class="panel"><h2>Theme</h2>
     <div class="theme-pick" role="radiogroup" aria-label="Colori">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
-  <div class="panel"><h2>Cartella di backup</h2>
+  <div class="panel"><h2>Backup folder</h2>
     <p>L'app salva <b>logbook.json</b> nella cartella a ogni modifica, più una copia giornaliera nella sottocartella <b>storico</b>. Scegli iCloud Drive › Logbook per averla anche nel cloud.</p>
-    <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Cambia cartella' : 'Scegli cartella'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
+    <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Change folder' : 'Choose folder'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
     ${fsSupported ? '' : '<p class="hint">Questo browser non permette di scrivere in una cartella: apri l\'app con Chrome.</p>'}</div>
-  <div class="panel"><h2>Importa</h2>
+  <div class="panel"><h2>Import</h2>
     <p><b>logbook.json</b> sostituisce tutto il logbook. Un <b>CSV esportato da FlightLog</b> aggiunge solo i voli che non ci sono ancora (stessa data, partenza e orario). Un <b>PDF Individual duty plan di NetLine</b> aggiunge i voli nuovi con gli orari schedulati, da completare con gli effettivi; i voli già nel logbook non vengono toccati. Il file <b>sync</b> della cartella FlightLog Sync completa i voli passati con passeggeri, carburante, payload, avvicinamento e distanza, senza toccare il resto.</p>
     <div class="row"><input type="file" id="dFile"></div></div>
-  <div class="panel"><h2>Esporta</h2>
+  <div class="panel"><h2>Export</h2>
     <p>Una copia da conservare o da aprire in un foglio di calcolo.</p>
-    <div class="row"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>Scarica logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>Scarica CSV</button></div></div>
-  ${n ? `<div class="panel"><h2>Intestazione e riporto iniziale</h2>
-    <div class="row"><label>Nome sul logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Salva nome</button></div>
+    <div class="row"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>Download logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>Download CSV</button></div></div>
+  ${n ? `<div class="panel"><h2>Pilot name · Brought forward</h2>
+    <div class="row"><label>Nome sul logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Save name</button></div>
     <p class="hint">Riporto ante 2007: ${hm0(data.opening?.total)} totali, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} copilota, ${hm0(data.opening?.sim)} simulatore.</p></div>` : ''}`;
   main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
   bindDrivePanel(main);
@@ -1077,7 +1210,7 @@ function plannedBanner() {
   const late = plannedLate();
   if (!late.length) return '';
   return `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 volo già fatto ha' : `${late.length} voli già fatti hanno`} ancora gli orari schedulati.</b> Inserisci gli orari effettivi per farli entrare nei totali.
-    <button class="btn small" data-plan-go>Mostrali</button></div>`;
+    <button class="btn small" data-plan-go>Show</button></div>`;
 }
 function bindPlannedBanner(main) { const b = main.querySelector('[data-plan-go]'); if (b) b.onclick = () => { viewFlights.st = { year: '', type: '__planned', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; }
 function updateBadge() {
@@ -1156,7 +1289,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {
@@ -1195,10 +1328,10 @@ function renderSyncState() {
   el.hidden = false;
   const last = ls.get('gdLast');
   const when = last ? new Date(last).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
-  if (!gdConnected()) el.innerHTML = `Google Drive non collegato.<br><button class="btn small" id="sySync">Collega Google Drive</button>`;
+  if (!gdConnected()) el.innerHTML = `Google Drive non collegato.<br><button class="btn small" id="sySync">Connect Google Drive</button>`;
   else if (GD.state === 'sync') el.innerHTML = 'Google Drive: sincronizzo…';
-  else if (GD.state === 'err') el.innerHTML = `Google Drive: ${esc(GD.msg)}<br><button class="btn small" id="sySync">Riprova</button>`;
-  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: ultima sincronizzazione alle ${when}` : ''}.<br><button class="btn small" id="sySync">Sincronizza</button>`;
+  else if (GD.state === 'err') el.innerHTML = `Google Drive: ${esc(GD.msg)}<br><button class="btn small" id="sySync">Retry</button>`;
+  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: ultima sincronizzazione alle ${when}` : ''}.<br><button class="btn small" id="sySync">Sync</button>`;
   else el.innerHTML = `Google Drive sincronizzato${when ? ` alle ${when}` : ''}`;
   const b = $('#sySync'); if (b) b.onclick = () => syncNow(true);
 }
@@ -1207,8 +1340,8 @@ function drivePanelHTML() {
   return `<div class="panel"><h2>Google Drive</h2>
     <p>Collega il tuo Google Drive per usare lo stesso logbook sul Mac, sull'iPhone e sull'iPad. Il file è <b>Logbook/logbook.json</b> nel tuo Drive e si aggiorna da solo a ogni modifica.</p>
     ${cid ? `<div class="row">
-        <button class="btn primary" id="gdSync">${gdConnected() ? 'Sincronizza ora' : 'Collega Google Drive'}</button>
-        ${gdConnected() ? '<button class="btn" id="gdOff">Scollega questo dispositivo</button>' : ''}
+        <button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>
+        ${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}
         <span class="hint">${gdConnected() ? (last ? `Ultima sincronizzazione ${new Date(last).toLocaleString('it-IT')}` : 'Non ancora sincronizzato') : ''}${GD.state === 'err' ? `. Errore: ${esc(GD.msg)}` : ''}</span></div>`
       : `<p class="hint">Serve prima l'ID client di Google (si crea una volta nella Google Cloud Console). Incollalo qui:</p>
       <div class="row"><input id="gdCid" class="btn" style="flex:1;min-width:260px;text-align:left" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Salva</button></div>`}
@@ -1234,7 +1367,7 @@ function driveStartup() {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }
   } catch { dirHandle = null; }
-  $('#version').textContent = `Versione ${APP_VERSION} del ${APP_DATE}`;
+  $("#version").textContent = `Version ${APP_VERSION} · ${APP_DATE}`;
   renderBackupState();
   route();
   updateBadge();

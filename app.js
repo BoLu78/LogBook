@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.8';
+const APP_VERSION = '3.0.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -285,7 +285,7 @@ const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.rema
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m) };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), ftl: m => loadAirports().then(() => viewFTL(m)) };
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
@@ -297,7 +297,7 @@ function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
-  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics' }[view] || 'Logbook';
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
@@ -365,6 +365,7 @@ function spaceTrip(kmTot, career) {
     <p>${esc(line)}</p></div>`;
 }
 function viewSummary(main) {
+  if ((!APT || !IATA) && !viewSummary.loading && data.roster) viewSummary.loading = Promise.all([loadAirports(), IATA ? 0 : fetch('data/iata.json').then(r => r.json()).then(j => { IATA = j; })]).then(() => { if ((location.hash || '#riepilogo') === '#riepilogo') viewSummary(main); }).catch(() => {});
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
   const sel = viewSummary.period || 'all';
   let list = data.flights, withOpen = true, label = 'since 2007, including hours brought forward';
@@ -409,6 +410,7 @@ function viewSummary(main) {
     <label class="row filters" style="margin:0">Period
     <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div></div>
   ${plannedBanner()}
+  ${(() => { try { return nextDaysHTML(); } catch (e) { console.error(e); return ''; } })()}
   <p class="lede">${fmtN(t.legs)} sectors and ${t.sims} simulator sessions ${label}. Average sector ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
     <div class="tot">${hm0(t.total)}<small>total time</small></div>
@@ -430,7 +432,7 @@ function viewSummary(main) {
     ${t.fuelLegs ? `<div><b>${fmtN(t.fuelUsed)} t</b><span>fuel burned, from ${t.fuelLegs} sectors with data</span></div>` : ''}
   </div>
   ${t.nm ? spaceTrip(t.nm * 1.852, sel === 'all') : ''}
-  <h2>FTL limits · Recency</h2>
+  <h2>FTL limits · Recency <a class="h2-link" href="#ftl">Duty time and FDP →</a></h2>
   <div class="recency">
     <div><b>${hm0(d28.total)}</b><span>last 28 days, limit 100 h</span>${gauge(d28.total, 6000)}</div>
     <div><b>${hm0(y.total)}</b><span>calendar year ${td.slice(0, 4)}, limit 900 h</span>${gauge(y.total, 54000)}</div>
@@ -1454,6 +1456,10 @@ async function importNetline(buf) {
       data.flights = data.flights.filter(f => !goneIds.includes(f.id)); gone = goneIds.length;
     }
   }
+  // servizi del roster (check-in/out, OFF, standby, DH, hotel) per Next days e FTL: il nuovo roster sostituisce i giorni del suo periodo
+  { const now = Date.now(), R = (data.roster ||= {}), pt = x => x ? { ap: x.airport || '', t: x.time || '', label: x.label || '' } : null;
+    for (const d of roster.days || []) R[d.date] = { kind: d.kind, code: d.code || '', ci: pt(d.checkIn), co: pt(d.checkOut), dt: d.dt || '', ft: d.ft || '', win: d.window || null, hotel: typeof d.hotel === 'string' ? d.hotel : d.hotel?.name || '', pickup: (d.seq || []).find(x => x.t === 'pickup')?.time || '', legs: (d.legs || []).map(l => ({ k: l.kind, n: l.number || '', c: l.code || '', dep: l.dep || '', arr: l.arr || '', out: l.depTime || '', inn: l.arrTime || '', ac: l.ac || '' })), mt: now };
+    data.rosterBase = roster.meta?.base || data.rosterBase || 'MXP'; }
   const parts = [`${added} added`, updated && `${updated} changed`, gone && `${gone} removed (no longer in roster)`, untouched && `${untouched} already flown, unchanged`].filter(Boolean);
   await save('NetLine: ' + parts.join(', '));
   updateBadge(); route();
@@ -1537,6 +1543,7 @@ async function gdUpload(id, obj) {
   ls.set('gdFile', j.id); return j.id;
 }
 // unione riga per riga: vince la modifica più recente, le cancellazioni restano cancellate
+function mergeRoster(a = {}, b = {}) { const r = { ...b }; for (const [k, v] of Object.entries(a)) if (!r[k] || (v.mt || 0) >= (r[k].mt || 0)) r[k] = v; return r; }
 function mergeData(local, remote) {
   const del = { ...(remote.deleted || {}) };
   for (const [k, v] of Object.entries(local.deleted || {})) del[k] = Math.max(v, del[k] || 0);
@@ -1545,9 +1552,9 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
-const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {
   if (!gdClientId() || GD.busy) return;
   GD.busy = true; GD.state = 'sync'; renderSyncState();

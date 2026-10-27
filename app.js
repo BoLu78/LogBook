@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.8.1';
+const APP_VERSION = '2.9.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -239,11 +239,11 @@ function sum(list, withOpening) {
   for (const f of list) { if (f.planned) continue; for (const k of SUM_KEYS) t[k] += f[k] || 0; if (f.kind === 'sim') t.sims++; else { t.legs++; t.nm += nmOf(f); if (f.pax) { t.pax += f.pax; t.paxLegs++; } if (f.fuelUsed) { t.fuelUsed += f.fuelUsed; t.fuelLegs++; } t.payload += f.payload || 0; } }
   return t;
 }
-const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.remarks) ? 'PICUS' : 'PIC') : f.dual > 0 ? 'DUAL' : f.sic > 0 ? 'SIC' : '';
+const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.remarks) ? 'PICUS' : 'PIC') : f.dual > 0 ? 'DUAL' : f.sic > 0 ? (/lifus/i.test(f.remarks) ? 'LIFUS' : 'SIC') : '';
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m) };
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
@@ -255,7 +255,7 @@ function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
-  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Data · Backup' }[view] || 'Logbook';
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
@@ -267,7 +267,7 @@ window.addEventListener('hashchange', route);
 function emptyState() {
   return `<h1>Logbook</h1><p class="lede">The logbook is empty.</p>
   <div class="empty"><p>Import your <b>logbook.json</b> file, or open the backup folder if you have already used it on this Mac.</p>
-  <a class="btn primary" href="#dati">Go to Data · Backup</a></div>`;
+  <a class="btn primary" href="#dati">Go to Settings</a></div>`;
 }
 
 // ---------- Riepilogo ----------
@@ -333,8 +333,9 @@ function viewSummary(main) {
   const yrows = yl.map(([yr, s]) => `<tr class="click" data-year="${yr}" tabindex="0" title="Show ${yr} month by month"><td class="l"><b>${yr}</b> <span class="chev" aria-hidden="true">›</span></td><td class="barcell">${splitBar(s, ymax)}</td><td>${s.legs}</td><td><b>${hm(s.total)}</b></td><td>${avg(s)}</td><td>${hm(s.pic)}</td><td>${hm(s.sic)}</td><td>${hm(s.night)}</td><td>${s.ldgDay + s.ldgNight || ''}</td><td>${s.nm ? fmtN(s.nm) : ''}</td><td>${hm(s.sim)}</td></tr>`).join('');
 
   main.innerHTML = `<div class="row" style="justify-content:space-between;align-items:baseline"><h1>Summary</h1>
+    <div class="row" style="margin:0;gap:10px;align-items:center"><button type="button" class="btn" data-act="roster">Import roster</button><button type="button" class="btn" data-act="next">Next leg →</button>
     <label class="row filters" style="margin:0">Period
-    <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div>
+    <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div></div>
   ${plannedBanner()}
   <p class="lede">${fmtN(t.legs)} sectors and ${t.sims} simulator sessions ${label}. Average sector ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
@@ -546,7 +547,7 @@ function viewEdit(main, id) {
       <h3>Function</h3>
       <div class="rows">
         <div class="ri"><span>Function</span><div class="seg" role="radiogroup" aria-label="Pilot function">
-          ${['PIC', 'PICUS', 'SIC', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r}</span></label>`).join('')}</div></div>
+          ${['PIC', 'PICUS', 'SIC', 'LIFUS', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r}</span></label>`).join('')}</div></div>
         <label class="ri"><span>PIC name</span><input id="picName" value="${esc(f.picName)}"></label>
         <label class="ri"><span>IFR</span><input id="ifr" class="short" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
         <label class="ri"><span>Multi-pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
@@ -585,9 +586,19 @@ function viewEdit(main, id) {
         <canvas id="sig" aria-label="Signature box: sign with your finger or the mouse"></canvas>
         <p class="hint" id="sigHint">${f.signature ? 'Signature saved: sign again to replace it.' : 'Sign here with your finger or the mouse.'}</p></div>
     </section>
+    <details class="sheet-card check-card" id="chkBox" ${f.check ? 'open' : ''}>
+      <summary><h3>Check · Examiner <span class="chk-tag" id="chkTag">${f.check?.type ? esc(f.check.type) : 'Line check, OPC, LPC…'}</span></h3></summary>
+      <div class="rows">
+        <label class="ri"><span>Check</span><select id="chkType"><option value="">—</option>${CHECKS.map(c => `<option ${c === f.check?.type ? 'selected' : ''}>${c}</option>`).join('')}${f.check?.type && !CHECKS.includes(f.check.type) ? `<option selected>${esc(f.check.type)}</option>` : ''}</select></label>
+        <label class="ri"><span>Examiner</span><input id="chkName" value="${esc(f.check?.name || '')}" placeholder="Name" autocapitalize="characters"></label>
+        <label class="ri"><span>Licence no.</span><input id="chkLic" value="${esc(f.check?.lic || '')}" placeholder="e.g. IT.FCL.12345"></label>
+      </div>
+      <div class="sig-wrap"><div class="sig-head"><span>Examiner signature</span><button type="button" class="btn small" id="chkClear">Clear signature</button></div>
+        <canvas id="chkSig" aria-label="Examiner signature box"></canvas>
+        <p class="hint">Appears in the remarks of the EASA logbook print.</p></div>
+    </details>
     <div class="actions">
-      <a class="btn primary keep" href="#voli">Done</a>
-      <button class="btn keep" type="button" id="dup">Duplicate</button>
+      <button class="btn primary keep" type="button" id="nextLeg">Next leg <span aria-hidden="true">→</span></button>
       <button class="btn danger" type="button" id="del">Delete</button>
     </div>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
@@ -737,20 +748,26 @@ function viewEdit(main, id) {
   // ---------- funzione
   const hint = () => {
     const r = form.role.value;
-    g('roleHint').textContent = { PIC: 'Logged as PIC.', PICUS: 'Logged as PIC with "PICUS" in the remarks: needs the PIC countersignature (name and licence number).', SIC: 'Logged as SIC (co-pilot).', DUAL: 'Dual instruction: put the instructor as PIC name and his certification in the remarks.' }[r];
+    g('roleHint').textContent = { PIC: 'Logged as PIC.', PICUS: 'Logged as PIC with "PICUS" in the remarks: needs the PIC countersignature (name and licence number).', SIC: 'Logged as SIC (co-pilot).', LIFUS: 'Line flying under supervision: logged as co-pilot time with "LIFUS" in the remarks.', DUAL: 'Dual instruction: put the instructor as PIC name and his certification in the remarks.' }[r];
     if ((r === 'PIC' || r === 'PICUS') && !g('picName').value) g('picName').value = 'SELF';
   };
   form.querySelectorAll('input[name=role]').forEach(r => r.addEventListener('change', hint)); hint();
   g('simType').addEventListener('change', () => { const v = g('simType').value.trim(); if (SIM_DEVICES[v]) { const r = g('remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; g('simType').value = SIM_DEVICES[v]; } });
   const autoSim = () => { const o = toMin(g('sout').value), i = toMin(g('sinn').value); if (o != null && i != null) g('sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => g(k).addEventListener('change', autoSim));
-  const sig = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Firma pronta.'; schedule(); });
-  g('sigClear').onclick = () => { if (locked) return; sig.clear(); g('sigHint').textContent = 'Firma cancellata.'; schedule(); };
+  const sig = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Signature ready.'; schedule(); });
+  g('sigClear').onclick = () => { if (locked) return; sig.clear(); g('sigHint').textContent = 'Signature cleared.'; schedule(); };
+  let chk = null;
+  const chkInit = () => { if (!chk && g('chkBox').open) chk = signaturePad(g('chkSig'), f.check?.sig, schedule); };
+  g('chkBox').addEventListener('toggle', chkInit); chkInit();
+  g('chkClear').onclick = () => { if (locked) return; chkInit(); chk?.clear(); schedule(); };
+  g('chkType').addEventListener('change', () => { g('chkTag').textContent = g('chkType').value || 'Line check, OPC, LPC…'; });
+  form.addEventListener('input', e => { if (e.target.id === 'chkName' || e.target.id === 'chkLic') schedule(); });
   if (!orig && viewEdit.dup) {
     const d = viewEdit.dup; viewEdit.dup = null;
     g('reg').value = d.reg || ''; g('type').value = d.type || ''; g('acType').textContent = d.type || '';
-    for (const k of ['picName', 'flightNo']) g(k).value = d[k] || '';
-    g('dep').value = d.arr; form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
+    g('picName').value = d.picName || ''; g('mpOn').checked = d.mp > 0 || !(d.spSe || d.spMe);
+    g('dep').value = d.arr; g('date').value = legDate(d); form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
   }
 
   // ---------- salvataggio automatico e lucchetto
@@ -782,13 +799,16 @@ function viewEdit(main, id) {
       const role = form.role.value, mp = g('mpOn').checked;
       let rem = remarks;
       if (role === 'PICUS' && !/picus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'PICUS';
+      if (role === 'LIFUS' && !/lifus/i.test(rem)) rem = (rem ? rem + '\n' : '') + 'LIFUS';
+      if (role !== 'PICUS') rem = rem.replace(/^PICUS$/m, '').trim();
+      if (role !== 'LIFUS') rem = rem.replace(/^LIFUS$/m, '').trim();
       const std = g('std').value, sta = g('sta').value;
       Object.assign(rec, {
         kind: 'flight', date: g('date').value, dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase(),
         out: g('out').value, inn: g('inn').value, off: g('off').value, on: g('on').value, reg: g('reg').value.trim().toUpperCase(), type: g('type').value.trim(),
         flightNo: g('flightNo').value.trim(), picName: g('picName').value.trim(), total, night, ifr,
         mp: mp ? total : 0, spMe: mp ? 0 : (rec.spSe ? 0 : total), spSe: mp ? 0 : (rec.spSe ? total : 0),
-        pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' ? total : 0, dual: role === 'DUAL' ? total : 0,
+        pic: role === 'PIC' || role === 'PICUS' ? total : 0, sic: role === 'SIC' || role === 'LIFUS' ? total : 0, dual: role === 'DUAL' ? total : 0,
         instr: g('instrOn').checked ? total : 0, toDay: num(g('toDay').value), toNight: num(g('toNight').value),
         ldgDay: num(g('ldgDay').value), ldgNight: num(g('ldgNight').value), sim: 0, simType: '', remarks: rem,
         pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelPlan: parseDec(g('fuelPlan').value), fuelUsed: parseDec(g('fuelUsed').value),
@@ -798,6 +818,8 @@ function viewEdit(main, id) {
       if (confirmed) { delete rec.planned; delete rec.change; } else rec.planned = true;
     }
     const sv = sig.value(); if (sv) rec.signature = sv; else delete rec.signature;
+    const ck = { type: g('chkType').value, name: g('chkName').value.trim().toUpperCase(), lic: g('chkLic').value.trim(), sig: chk ? chk.value() : f.check?.sig || null };
+    if (ck.type || ck.name || ck.lic || ck.sig) { if (!ck.sig) delete ck.sig; rec.check = ck; } else delete rec.check;
     rec.locked = locked; if (!locked) delete rec.locked;
     rec.seen = true; rec.mt = Date.now();
     return { rec };
@@ -861,9 +883,27 @@ function viewEdit(main, id) {
     data.flights = data.flights.filter(x => x.id !== recId); (data.deleted ||= {})[recId] = Date.now();
     await save('Entry deleted'); created = false; location.hash = 'voli';
   };
-  g('dup').onclick = () => { flush(); viewEdit.dup = data.flights.find(x => x.id === recId) || f; location.hash = 'nuovo'; };
+  g('nextLeg').onclick = () => {
+    if (!created && !locked) { const r = collect(); if (r.err) { toast(`Complete this leg first: ${r.err}`); r.el?.focus(); return; } }
+    flush(); nextLeg(data.flights.find(x => x.id === recId) || f);
+  };
 }
 
+const CHECKS = ['LINE CHECK', 'OPC', 'LPC', 'OPC/LPC', 'ROUTE CHECK', 'LIFUS', 'LINE TRAINING', 'SKILL TEST', 'FINAL LINE CHECK', 'COMMAND CHECK'];
+// tratta successiva: parte da dove è arrivato l'aereo, stessa marca, stesso giorno (o il giorno dopo se si è atterrati dopo mezzanotte)
+const legDate = d => d.out && d.inn && toMin(d.inn) < toMin(d.out) ? addDays(d.date, 1) : d.date;
+function lastLeg() {
+  const td = today();
+  return data.flights.filter(f => f.kind === 'flight' && f.date <= td && (!f.planned || f.date === td)).sort((a, b) => (a.date + a.out).localeCompare(b.date + b.out)).at(-1);
+}
+function nextLeg(base) {
+  if (!data) return;
+  const [v, id] = location.hash.slice(1).split('/');
+  base ||= (v === 'modifica' && data.flights.find(f => f.id === id)) || lastLeg();
+  if (!base || !base.arr) { location.hash = 'nuovo'; return; }
+  viewEdit.dup = base;
+  if (location.hash === '#nuovo') route(); else location.hash = 'nuovo';
+}
 const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2" fill="currentColor"/><path class="shackle" d="M8 10.5V7.5a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
 // marca -> tipo: storico del logbook, flotta FlightLog, marche aggiunte a mano
 function regTypeOf(r) {
@@ -1015,7 +1055,7 @@ function easaPageHTML(p, rowsPerPage, totalPages) {
   const n = v => v || '';
   const body = p.rows.map(f => f.kind === 'sim'
     ? `<tr><td>${dmy(f.date)}</td><td></td><td></td><td></td><td></td><td colspan="2">FSTD</td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.picName)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.simType)}</td><td>${hm(f.sim)}</td><td class="rem">${esc(f.remarks)}</td></tr>`
-    : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`).join('')
+    : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`).join('')
     + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(25)}</tr>`).join('');
   const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td><td>${hm(t.spSe)}</td><td>${hm(t.spMe)}</td><td>${hm(t.mp)}</td><td>${hm(t.total)}</td><td></td><td>${n(t.toDay)}</td><td>${n(t.toNight)}</td><td>${n(t.ldgDay)}</td><td>${n(t.ldgNight)}</td><td>${hm(t.pic)}</td><td>${hm(t.sic)}</td><td>${hm(t.dual)}</td><td>${hm(t.instr)}</td><td>${hm(t.night)}</td><td>${hm(t.ifr)}</td><td></td><td>${hm(t.sim)}</td>${sig}</tr>`;
   const sig = `<td rowspan="3" class="sig">I, ${esc(data.pilot || '')}, certify that the entries in this log are true.<br><br>Pilot's signature ______________</td>`;
@@ -1159,32 +1199,50 @@ function applyTheme(t) {
 function viewData(main) {
   const n = data?.flights.length || 0;
   const cur = document.documentElement.dataset.theme || '';
-  main.innerHTML = `<h1>Data · Backup</h1>
-  <p class="lede">${n ? `${fmtN(n)} entries in the logbook${data.updated ? `, last modified ${new Date(data.updated).toLocaleString('en-GB')}` : ''}.` : 'The logbook is empty.'}</p>
-  ${drivePanelHTML()}
-  <div class="panel"><h2>Theme</h2>
-    <div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>
-  <div class="panel"><h2>Backup folder</h2>
-    <p>The app saves <b>logbook.json</b> to the folder on every change, plus a daily copy in the <b>storico</b> subfolder. Choose iCloud Drive › Logbook to keep it in the cloud as well.</p>
-    <div class="row"><button class="btn primary" id="dChoose">${dirHandle ? 'Change folder' : 'Choose folder'}</button>${dirHandle ? `<span class="hint">Attuale: ${esc(dirHandle.name)}</span>` : ''}</div>
-    ${fsSupported ? '' : '<p class="hint">This browser cannot write to a folder: open the app in Chrome.</p>'}</div>
-  <div class="panel"><h2>Import</h2>
-    <p><b>logbook.json</b> replaces the whole logbook. A <b>FlightLog CSV export</b> adds only flights not yet in the logbook (same date, departure and time). A <b>NetLine Individual duty plan PDF</b> updates planned flights with scheduled times: new flights are added, changed ones updated and cancelled ones removed; flights with actual times or locked are never touched. The <b>sync</b> file from the FlightLog Sync folder completes past flights with PAX, fuel, payload, approach and distance without changing anything else.</p>
-    <div class="row"><input type="file" id="dFile"></div></div>
-  <div class="panel"><h2>Export</h2>
-    <p>A copy to keep or to open in a spreadsheet.</p>
-    <div class="row"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>Download logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>Download CSV</button></div></div>
-  ${n ? `<div class="panel"><h2>Pilot name · Brought forward</h2>
-    <div class="row"><label>Name in logbook <input id="dPilot" value="${esc(data.pilot || '')}" class="btn" style="text-align:left"></label><button class="btn" id="dPilotSave">Save name</button></div>
-    <p class="hint">Brought forward before 2007: ${hm0(data.opening?.total)} total, ${hm0(data.opening?.pic)} PIC, ${hm0(data.opening?.sic)} SIC, ${hm0(data.opening?.sim)} FSTD.</p></div>` : ''}`;
+  const cid = gdClientId(), last = ls.get('gdLast');
+  const sec = (icon, title, body) => `<section class="set-sec"><h2><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${title}</h2><div class="set-group">${body}</div></section>`;
+  const I = {
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+    cloud: '<path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/>',
+    folder: '<path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5H12L10 5H4.5A1.5 1.5 0 0 0 3 6.5z"/>',
+    imp: '<path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4 17v2.5h16V17"/>',
+    exp: '<path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M4 17v2.5h16V17"/>',
+    theme: '<circle cx="12" cy="12" r="8.5"/><circle cx="8.5" cy="10" r="1.3"/><circle cx="12" cy="7.5" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/><path d="M12 20.5c-1.5 0-2-1-2-2s1-1.8 2.2-1.8"/>'
+  };
+  main.innerHTML = `<h1>Settings</h1>
+  <p class="lede">${n ? `${fmtN(n)} entries${data.updated ? ` · last modified ${new Date(data.updated).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}` : 'The logbook is empty.'}</p>
+  ${n ? sec(I.user, 'Profile', `
+    <label class="set-row"><span class="k">Name in logbook</span><input id="dPilot" value="${esc(data.pilot || '')}" placeholder="SURNAME NAME" autocapitalize="characters"></label>
+    <div class="set-row"><span class="k">Printed on</span><span class="v">EASA pages and certification line</span></div>`) : ''}
+  ${sec(I.cloud, 'Google Drive', cid ? `
+    <div class="set-row"><span class="k">Status</span><span class="v">${gdConnected() ? (last ? `Synced ${new Date(last).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Connected, not synced yet') : 'Not connected'}${GD.state === 'err' ? ` · <span class="bad">${esc(GD.msg)}</span>` : ''}</span></div>
+    <div class="set-row"><span class="k">File</span><span class="v">Logbook/logbook.json</span></div>
+    <div class="set-row act"><button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}</div>`
+    : `<div class="set-row col"><span class="k">Google OAuth client ID</span><div class="row" style="margin:0"><input id="gdCid" style="flex:1;min-width:240px" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div></div>`)}
+  ${sec(I.folder, 'Backup folder', `
+    <div class="set-row"><span class="k">Folder</span><span class="v">${dirHandle ? esc(dirHandle.name) : fsSupported ? 'None' : 'Needs Chrome on the Mac'}</span></div>
+    ${fsSupported ? `<div class="set-row act"><button class="btn" id="dChoose">${dirHandle ? 'Change folder' : 'Choose folder'}</button><span class="hint">logbook.json on every change, daily copy in “storico”.</span></div>` : '<div class="set-row"><span class="hint">Safari cannot write to a folder. Google Drive keeps the copy in the cloud.</span></div>'}`)}
+  ${sec(I.imp, 'Import', `
+    <div class="set-row act"><label class="btn primary file-btn">Choose file<input type="file" id="dFile" hidden></label><button type="button" class="btn" data-act="roster">Import roster</button></div>
+    <details class="set-row col more"><summary>What can be imported</summary>
+      <ul><li><b>NetLine Individual duty plan (PDF)</b>: adds new flights, updates changed ones, removes cancelled ones. Flights with actual times or locked are never touched.</li>
+      <li><b>FlightLog CSV export</b>: adds only flights not yet in the logbook.</li>
+      <li><b>FlightLog sync file</b>: completes past flights with PAX, fuel, payload, approach and distance.</li>
+      <li><b>logbook.json</b>: replaces the whole logbook.</li></ul></details>`)}
+  ${sec(I.exp, 'Export', `
+    <div class="set-row act"><button class="btn" id="dJson" ${n ? '' : 'disabled'}>logbook.json</button><button class="btn" id="dCsv" ${n ? '' : 'disabled'}>CSV for spreadsheets</button><a class="btn" href="#stampa">EASA print</a></div>`)}
+  ${sec(I.theme, 'Theme', `
+    <div class="set-row col"><div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>`)}
+  <p class="hint set-ver">Logbook ${APP_VERSION} · ${APP_DATE}</p>`;
   main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
   bindDrivePanel(main);
-  $('#dChoose').onclick = chooseFolder;
+  $('#dChoose')?.addEventListener('click', chooseFolder);
   $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Import failed: ' + err.message); } e.target.value = ''; };
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');
     $('#dCsv').onclick = exportCSV;
-    $('#dPilotSave').onclick = async () => { data.pilot = $('#dPilot').value.trim(); data.metaMt = Date.now(); await save('Name saved'); };
+    const p = $('#dPilot');
+    p.onchange = async () => { const v = p.value.trim().toUpperCase(); p.value = v; if (v === (data.pilot || '')) return; data.pilot = v; data.metaMt = Date.now(); await save('Name saved'); };
   }
 }
 
@@ -1391,6 +1449,17 @@ document.addEventListener('DOMContentLoaded', () => {});
   document.getElementById('scrim').onclick = closeMenu;
   document.getElementById('sideNav').addEventListener('click', e => { if (e.target.closest('a')) closeMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-act]'); if (!a) return;
+    e.preventDefault(); closeMenu();
+    if (a.dataset.act === 'next') nextLeg();
+    else if (a.dataset.act === 'roster') document.getElementById('rosterFile').click();
+  });
+  document.getElementById('rosterFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await importFile(f); route(); } catch (err) { toast('Import failed: ' + err.message); }
+    e.target.value = '';
+  };
   document.getElementById('tbSync').onclick = () => { if (gdClientId()) syncNow(true); else location.hash = 'dati'; };
 })();
 function renderSyncState() {

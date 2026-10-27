@@ -18,6 +18,8 @@
 <header class="topbar">
   <button type="button" class="tb-btn" id="menuBtn" aria-label="Open menu" aria-controls="sideNav" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <span class="tb-title" id="pageTitle">Logbook</span>
+  <button type="button" class="tb-btn" data-act="roster" aria-label="Import roster" title="Import NetLine roster"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg></button>
+  <button type="button" class="tb-btn" data-act="next" aria-label="Next leg" title="Next leg: new flight from the last arrival"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h15M13 6.5 18.5 12 13 17.5M21 5v14"/></svg></button>
   <button type="button" class="tb-btn" id="tbSync" aria-label="Sync with Google Drive" title="Google Drive"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/></svg></button>
   <a class="tb-btn tb-new" href="#nuovo" aria-label="New flight"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
 </header>
@@ -30,19 +32,25 @@
     </div>
     <div class="nav-sec">Logbook</div>
     <a href="#riepilogo" data-view="riepilogo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17V9M8 17V4M13 17v-6M18 17V7"/></svg>Summary</a>
+    <a href="#stat" data-view="stat"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16 8 10l3.5 3L17 5"/><path d="M3 18h14"/></svg>Statistics</a>
     <a href="#voli" data-view="voli"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>Flights</a>
     <a href="#mappa" data-view="mappa"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2.3 2.2 3.3 4.7 3.3 7.5s-1 5.3-3.3 7.5c-2.3-2.2-3.3-4.7-3.3-7.5s1-5.3 3.3-7.5z"/></svg>Map</a>
-    <a href="#nuovo" data-view="nuovo" class="new"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New flight</a>
+    <div class="nav-sec">Entry</div>
+    <a href="#nuovo" data-view="nuovo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New flight</a>
+    <a href="#" data-act="next"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h12M11 5.5l4.5 4.5-4.5 4.5M17.5 4v12"/></svg>Next leg</a>
+    <a href="#" data-act="roster"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="1.6"/><path d="M3 8h14M7 2.5v3M13 2.5v3M10 10.5v5M8 13.5l2 2 2-2"/></svg>Import roster</a>
     <div class="nav-sec">Data</div>
     <a href="#stampa" data-view="stampa"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 8V3h10v5M5 14H3V8h14v6h-2M6 12h8v6H6z"/></svg>EASA print</a>
-    <a href="#dati" data-view="dati"><svg viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="5" rx="6" ry="2.5"/><path d="M4 5v10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5M4 10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/></svg>Data · Backup</a>
+    <a href="#dati" data-view="dati"><svg viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="5" rx="6" ry="2.5"/><path d="M4 5v10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5M4 10c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/></svg>Settings · Data</a>
     <div class="backup-state" id="backupState" role="status"></div>
     <div class="version" id="version"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
 </div>
+<input type="file" id="rosterFile" accept=".pdf,application/pdf" hidden>
 <div id="printArea" aria-hidden="true"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="stats.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

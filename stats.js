@@ -22,19 +22,21 @@ function viewStats(main) {
   const all = data.flights.filter(f => !f.planned && f.date <= to).sort((a, b) => (a.date + (a.out || '')).localeCompare(b.date + (b.out || '')));
   const list = all.filter(f => !from || f.date >= from);
   const fl = list.filter(f => f.kind === 'flight');
-  const t = sum(list);
+  // "All" come nel Summary: con le ore portate avanti prima del 2007
+  const withOpen = per === 'all' && !!data.opening?.total;
+  const t = sum(list, withOpen), tLog = sum(list);
   const day = Math.max(0, t.total - t.night);
 
   main.innerHTML = `<h1>Statistics</h1>
   <div class="chips-row" role="radiogroup" aria-label="Period">${STAT_PERIODS.map(([k, l]) => `<button type="button" class="pchip ${k === per ? 'on' : ''}" data-p="${k}" role="radio" aria-checked="${k === per}">${l}</button>`).join('')}
-    <span class="hint">${from ? `${dmy(from)} – ${dmy(to)}` : 'Whole logbook since ' + (all[0] ? dmy(all[0].date) : '—')}</span></div>
+    <span class="hint">${from ? `${dmy(from)} – ${dmy(to)}` : 'Whole career' + (withOpen ? `, including ${hm0(data.opening.total)} brought forward before 2007` : '')}</span></div>
   <div class="stat-tiles">
     <div><b>${hm0(t.total)}</b><span>block time</span></div>
     <div><b>${fmtN(t.legs)}</b><span>sectors</span></div>
-    <div><b>${fl.length ? avg(t) : '—'}</b><span>average sector</span></div>
+    <div><b>${fl.length ? avg(tLog) : '—'}</b><span>average sector</span></div>
     <div><b>${t.total ? Math.round(t.night / t.total * 100) : 0}%</b><span>night</span></div>
     <div><b>${t.ldgDay + t.ldgNight}</b><span>landings</span></div>
-    <div><b>${fmtN(t.nm)}</b><span>NM flown</span></div>
+    <div><b>${fmtN(t.nm * 1.852)} km</b><small class="nm">${fmtN(t.nm)} NM</small><span>distance flown</span></div>
   </div>
   ${fl.length ? `
   <section class="chart-card"><h2>Cumulative hours</h2><div class="chart" id="chCum"></div></section>
@@ -49,9 +51,9 @@ function viewStats(main) {
   main.querySelectorAll('.pchip').forEach(b => b.onclick = () => { viewStats.per = b.dataset.p; viewStats(main); });
   if (!fl.length) return;
 
-  // ---- ore cumulative (riporto escluso: parte dal primo volo del periodo)
+  // ---- ore cumulative (con "All" parte dalle ore portate avanti)
   {
-    const pts = []; let acc = 0;
+    let acc = withOpen ? data.opening.total : 0; const pts = withOpen ? [[list[0].date, acc]] : [];
     for (const f of list) { acc += f.kind === 'sim' ? 0 : f.total; pts.push([f.date, acc]); }
     const dense = []; for (const p of pts) { if (dense.length && dense.at(-1)[0] === p[0]) dense[dense.length - 1] = p; else dense.push(p); }
     lineChart($('#chCum'), [{ name: 'Block time', color: cssv('--accent'), pts: dense.map(([d, v]) => [dayNum(d), v, d]) }], {

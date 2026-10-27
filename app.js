@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.9.1';
+const APP_VERSION = '2.9.2';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -38,6 +38,8 @@ const TYPE_ALIAS = { D328: 'Do328-110', B744: 'B747-400', B748: 'B747-8', B789: 
 const CODE_FIX = { LZSZ: 'LSZS', LZSB: 'LSZB', DZNT: 'DTNH', EGRP: 'EGPH' };
 function normalizeTypes(d) {
   let n = 0;
+  for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; f.mt = Date.now(); n++; }
+  if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
   // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
   const byNorm = new Map(Object.keys(KNOWN_AIRCRAFT).map(r => [r.replace(/[^A-Z0-9]/g, ''), r]));
   for (const f of d?.flights || []) if (f.kind === 'flight' && f.reg && !KNOWN_AIRCRAFT[f.reg]) { const r = byNorm.get(f.reg.toUpperCase().replace(/[^A-Z0-9]/g, '')); if (r && r !== f.reg) { f.reg = r; if (!f.type) f.type = KNOWN_AIRCRAFT[r]; f.mt = Date.now(); n++; } }
@@ -79,6 +81,12 @@ const SIM_DEVICES = { 'B787/B777 FSTD NL-787': 'Boeing 787-9[3]', 'DE-1A-113': '
   'EU-A0244': 'BOEING 787-9 Dreamliner', 'EU-A0250': 'BOEING 787-9 Dreamliner', 'EU-UKFB607': 'BOEING 787-9 Dreamliner', 'EU-UKFB637': 'BOEING 787-9 Dreamliner',
   'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-800', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8',
   'SIM B787/B777 NL-787': 'BOEING 787-9 Dreamliner', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
+// simulatori: matricola del dispositivo -> tipo (dalla flotta FlightLog), più quelli aggiunti a mano in data.simulators
+const SIM_FLEET = { 'B787/B777 FSTD NL-787': 'Boeing 787-9[3]', 'DE-1A-113': 'Boeing 787-9[3]', 'DE1A-049': 'BOEING 747-400', 'EU-A0244': 'BOEING 787-9 Dreamliner', 'EU-A0250': 'BOEING 787-9 Dreamliner', 'EU-UKFB607': 'BOEING 787-9 Dreamliner', 'EU-UKFB637': 'BOEING 787-9 Dreamliner', 'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-800', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8', 'SIM B787/B777 NL-787': 'BOEING 787-9 Dreamliner', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
+const SIM_NOTES = { 'I-T.081': 'B737-800W', 'LT.FSTD.18': 'B737-8 MAX s/n 2051' };
+// sessioni FlightLog: data -> simulatore usato
+const SIM_SESSIONS = {"2026-10-20":"I-T.081","2026-08-28":"I-T.081","2026-08-27":"I-T.081","2026-08-26":"I-T.081","2026-07-06":"I-T.081","2026-07-04":"LT.FSTD.18","2026-07-03":"LT.FSTD.18","2026-07-02":"LT.FSTD.18","2026-07-01":"LT.FSTD.18","2026-06-27":"I-T.081","2026-06-26":"I-T.081","2026-06-24":"I-T.081","2026-06-23":"I-T.081","2026-06-22":"I-T.081","2026-06-19":"I-T.081","2026-06-18":"I-T.081","2026-01-24":"EU-UKFB607","2026-01-23":"EU-UKFB607","2025-09-07":"EU-UKFB607","2025-09-06":"EU-UKFB607","2025-02-24":"EU-A0250","2025-02-23":"EU-A0250","2024-09-06":"DE-1A-113","2024-09-05":"DE-1A-113","2024-03-17":"DE-1A-113","2024-03-16":"DE-1A-113","2024-03-15":"DE-1A-113","2024-02-19":"B787/B777 FSTD NL-787","2024-02-18":"SIM B787/B777 NL-787","2024-02-17":"SIM B787/B777 NL-787","2024-02-16":"SIM B787/B777 NL-787","2024-02-14":"SIM B787/B777 NL-787","2024-02-13":"SIM B787/B777 NL-787","2024-02-12":"SIM B787/B777 NL-787","2023-10-22":"SIM LU002 B744","2023-10-21":"SIM LU003 B748","2023-05-24":"SIM B747","2023-05-21":"SIM B748","2023-05-20":"SIM B748","2023-05-19":"SIM B747","2022-10-27":"SIM B747","2022-10-26":"SIM B747","2022-07-14":"SIM B747","2022-07-13":"SIM B747","2022-05-25":"DE1A-049","2022-02-28":"DE1A-049","2022-02-25":"DE1A-049","2022-02-22":"DE1A-049","2021-09-02":"DE1A-049","2021-09-01":"DE1A-049","2021-05-07":"DE1A-049","2021-05-06":"DE1A-049"};
+const simFleet = () => ({ ...SIM_FLEET, ...Object.fromEntries(Object.entries(data?.simulators || {}).map(([k, v]) => [k, v.type])) });
 const KNOWN_SIMS = ['BOEING 737-800', 'BOEING 787-9 Dreamliner', 'Boeing 787-9[3]', 'BOEING 747-8', 'BOEING 747-400', 'P180 Avanti'];
 const SIM_BY_FAMILY = { 'Piaggio P180': 'P180 Avanti', 'Boeing 747': 'BOEING 747-400', 'Boeing 787': 'BOEING 787-9 Dreamliner', 'Boeing 737': 'BOEING 737-800' };
 function simName(f, nearType) {
@@ -417,7 +425,7 @@ function viewFlights(main) {
   const shown = st.all ? list : list.slice(0, 300);
   const rows = shown.map(f => {
     const r = roleOf(f);
-    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td></td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
+    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td class="l">${esc(f.simReg || '')}</td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
     if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Unseen"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.change || f.flightNo || '')}</div></td></tr>`;
     return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td class="o">${hm(f.night)}</td><td class="o">${(f.toDay + f.toNight) || ''}</td><td class="o">${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
   }).join('');
@@ -573,7 +581,8 @@ function viewEdit(main, id) {
       <h3 class="h3-lock">FSTD session ${lockBtn('on-dark')}</h3>
       <div class="grid sim-grid">
         <div class="field"><label for="sdate">Date</label><input id="sdate" type="date" value="${esc(f.date)}"></div>
-        <div class="field w2"><label for="simType">FSTD</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="BOEING 737-800"></div>
+        <div class="field w2"><label for="simReg">FSTD registration</label><input id="simReg" list="simregs" value="${esc(f.simReg || '')}" placeholder="e.g. I-T.081" autocapitalize="characters" autocomplete="off" spellcheck="false"><small class="hint" id="simRegHint"></small></div>
+        <div class="field w2"><label for="simType">FSTD type</label><input id="simType" list="simtypes" value="${esc(f.simType)}" placeholder="BOEING 737-800"></div>
         <div class="field"><label for="sout">Start</label><input id="sout" value="${esc(f.out)}"></div>
         <div class="field"><label for="sinn">End</label><input id="sinn" value="${esc(f.inn)}"></div>
         <div class="field"><label for="sim">Duration</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
@@ -604,6 +613,7 @@ function viewEdit(main, id) {
       </div>
       <button class="btn danger" type="button" id="del">Delete</button>
     </div>
+    <datalist id="simregs">${Object.entries(simFleet()).map(([r, t]) => `<option value="${esc(r)}">${esc(t)}${SIM_NOTES[r] ? ' · ' + esc(SIM_NOTES[r]) : ''}</option>`).join('')}</datalist>
     <datalist id="simtypes">${simTypes.map(r => `<option>${esc(r)}</option>`).join('')}</datalist>
   </form>`;
 
@@ -755,7 +765,16 @@ function viewEdit(main, id) {
     if ((r === 'PIC' || r === 'PICUS') && !g('picName').value) g('picName').value = 'SELF';
   };
   form.querySelectorAll('input[name=role]').forEach(r => r.addEventListener('change', hint)); hint();
-  g('simType').addEventListener('change', () => { const v = g('simType').value.trim(); if (SIM_DEVICES[v]) { const r = g('remarks'); if (!r.value.includes(v)) r.value = (r.value ? r.value + ' / ' : '') + v; g('simType').value = SIM_DEVICES[v]; } });
+  const simRegInfo = () => {
+    const v = g('simReg').value.trim().toUpperCase(), fl = simFleet(), h = g('simRegHint');
+    const hit = Object.keys(fl).find(k => k.toUpperCase() === v);
+    if (hit) { g('simReg').value = hit; g('simType').value = fl[hit]; h.textContent = SIM_NOTES[hit] || ''; h.className = 'hint'; }
+    else if (v) { g('simReg').value = v; h.textContent = 'New FSTD: enter its type, it will be remembered.'; h.className = 'hint warn'; if (!g('simType').value) g('simType').focus(); }
+    else h.textContent = '';
+  };
+  g('simReg').addEventListener('change', simRegInfo);
+  if (g('simReg').value) { const v = g('simReg').value; g('simRegHint').textContent = SIM_NOTES[v] || (simFleet()[v] ? '' : ''); }
+  g('simType').addEventListener('change', () => { const v = g('simType').value.trim(); const fl = simFleet(); if (fl[v]) { g('simReg').value = v; g('simType').value = fl[v]; simRegInfo(); } });
   const autoSim = () => { const o = toMin(g('sout').value), i = toMin(g('sinn').value); if (o != null && i != null) g('sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => g(k).addEventListener('change', autoSim));
   const sig = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Signature ready.'; schedule(); });
@@ -783,8 +802,10 @@ function viewEdit(main, id) {
       const sim = parseHM(g('sim').value);
       if (!g('sdate').value) return { err: 'date missing', el: g('sdate') };
       if (!sim || isNaN(sim)) return { err: 'duration missing', el: g('sim') };
-      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src || 'app', kind: 'sim', date: g('sdate').value, simType: g('simType').value.trim(), out: normTime(g('sout').value), inn: normTime(g('sinn').value), sim, picName: g('spic').value.trim(), remarks });
+      Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src || 'app', kind: 'sim', date: g('sdate').value, simReg: g('simReg').value.trim().toUpperCase(), simType: g('simType').value.trim(), out: normTime(g('sout').value), inn: normTime(g('sinn').value), sim, picName: g('spic').value.trim(), remarks });
       delete rec.planned;
+      if (!rec.simReg) delete rec.simReg;
+      else if (!simFleet()[rec.simReg] && rec.simType) { (data.simulators ||= {})[rec.simReg] = { type: rec.simType }; data.metaMt = Date.now(); }
     } else {
       for (const k of ['std', 'sta', 'out', 'off', 'on', 'inn']) { const el = g(k); el.value = normTime(el.value); if (el.value && toMin(el.value) == null) return { err: `${k.toUpperCase()} not valid`, el }; }
       if (!g('date').value) return { err: 'date missing', el: g('date') };
@@ -1075,7 +1096,7 @@ function easaPageHTML(p, rowsPerPage, totalPages) {
   <tr class="sub"><th>PLACE</th><th>TIME</th><th>PLACE</th><th>TIME</th><th>MAKE, MODEL<br>VARIANT</th><th>REGIS-<br>TRATION</th><th>SE</th><th>ME</th><th>DAY</th><th>NIGHT</th><th>DAY</th><th>NIGHT</th><th>PIC</th><th>CO-<br>PILOT</th><th>DUAL</th><th>INSTR.</th><th>NIGHT</th><th>IFR</th><th>TYPE</th><th>TOTAL<br>TIME</th></tr></thead>`;
   const n = v => v || '';
   const body = p.rows.map(f => f.kind === 'sim'
-    ? `<tr><td>${dmy(f.date)}</td><td></td><td></td><td></td><td></td><td colspan="2">FSTD</td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.picName)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.simType)}</td><td>${hm(f.sim)}</td><td class="rem">${esc(f.remarks)}</td></tr>`
+    ? `<tr><td>${dmy(f.date)}</td><td></td><td></td><td></td><td></td><td class="pn">FSTD</td><td class="pn">${esc(f.simReg || '')}</td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.picName)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pn">${esc(f.simType)}</td><td>${hm(f.sim)}</td><td class="rem">${esc(f.remarks)}</td></tr>`
     : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`).join('')
     + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(25)}</tr>`).join('');
   const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td><td>${hm(t.spSe)}</td><td>${hm(t.spMe)}</td><td>${hm(t.mp)}</td><td>${hm(t.total)}</td><td></td><td>${n(t.toDay)}</td><td>${n(t.toNight)}</td><td>${n(t.ldgDay)}</td><td>${n(t.ldgNight)}</td><td>${hm(t.pic)}</td><td>${hm(t.sic)}</td><td>${hm(t.dual)}</td><td>${hm(t.instr)}</td><td>${hm(t.night)}</td><td>${hm(t.ifr)}</td><td></td><td>${hm(t.sim)}</td>${sig}</tr>`;
@@ -1155,6 +1176,7 @@ async function enrichFromFlightLog(rows) {
   const td = today(); let filled = 0, notFound = 0;
   const idx = new Map(data.flights.filter(f => f.kind === 'flight').map(f => [`${f.date}|${f.dep}|${f.out}`, f]));
   for (const x of rows) {
+    if (x.sessiontype === 'SIMULATOR' && x.immat) { const sm = data.flights.find(f => f.kind === 'sim' && f.date === x.outschedDate && !f.simReg); if (sm) { sm.simReg = x.immat; sm.mt = Date.now(); filled++; } if (!simFleet()[x.immat] && x.aircraftname) (data.simulators ||= {})[x.immat] = { type: x.aircraftname }; continue; }
     if (x.sessiontype !== 'FLIGHT' || !x.outschedDate || x.outschedDate >= td) continue;
     const f = idx.get(`${x.outschedDate}|${x.OUTOACI}|${x.outreal}`);
     if (!f) { notFound++; continue; }
@@ -1428,7 +1450,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, simRegDone: local.simRegDone || remote.simRegDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

@@ -645,3 +645,5 @@ form.locked #chkSig { pointer-events: none; border-style: solid; }
 .leg-nav #prevLeg:disabled { opacity: .45; }
 form.sheet .actions { align-items: center; }
 form.sheet .actions #del { margin-left: auto; }
+.field small.hint { display: block; margin-top: 4px; font-size: 12px; } .hint.warn { color: var(--amber); }
+#simReg { text-transform: uppercase; }

@@ -21,7 +21,7 @@ function viewFleet(main) {
   const card = (x, sim) => `<button type="button" class="ac-card" data-reg="${esc(x.reg)}" data-sim="${sim ? 1 : ''}">
       <span class="ac-ico" style="${sim ? '' : `--c:var(${FLEET_COL[x.fam] || '--muted'})`}">${sim ? '🎮' : '✈︎'}</span>
       <span class="ac-main"><small>${x.s.n ? `${x.s.n} ${sim ? 'session' : 'flight'}${x.s.n > 1 ? 's' : ''} · ${hm0(x.s.t)}${x.s.last ? ` · last ${dmy(x.s.last)}` : ''}` : sim ? 'no sessions' : 'not flown yet'}</small>
-        <b>${esc(x.reg)}</b><span class="ac-type">${esc(x.type || '—')}${x.note ? ` · ${esc(x.note)}` : ''}</span></span>
+        <b>${esc(x.reg)}</b><span class="ac-type">${esc(sim ? x.type || '—' : easaModel(x.type) || '—')}${x.note ? ` · ${esc(x.note)}` : ''}</span></span>
       ${!sim && x.s.last >= recent ? '<span class="ac-cur">current</span>' : ''}${x.mine && !x.s.n ? '<span class="ac-cur new">added</span>' : ''}</button>`;
   main.innerHTML = `<h1>Aircraft</h1>
   <p class="lede">${ac.length} aircraft · ${sims.length} simulators. Tap one to see its flights.</p>

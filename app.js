@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.6';
+const APP_VERSION = '3.2.7';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -71,6 +71,13 @@ function normalizeTypes(d) {
   let n = dedupe(d);
   for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
+  // una volta sola: tipi di simulatore nel formato EASA (dalla matricola se nota, altrimenti dal vecchio nome)
+  if (d && !d.simTypeDone) {
+    const OLD = { 'BOEING 787-9 DREAMLINER': 'BOEING 787-9', 'BOEING 787-9[3]': 'BOEING 787-9', 'P180 AVANTI': 'PIAGGIO P180 AVANTI' };
+    for (const f of d.flights || []) if (f.kind === 'sim') { const v = (SIM_FLEET[f.simReg] || OLD[(f.simType || '').toUpperCase()] || f.simType || ''); if (v && v !== f.simType) f.simType = v; }
+    for (const v of Object.values(d.simulators || {})) if (OLD[(v.type || '').toUpperCase()]) v.type = OLD[v.type.toUpperCase()];
+    d.simTypeDone = 1; n++;
+  }
   // una volta sola: tutto il testo in maiuscolo (nomi, note, numeri di volo, simulatori, esaminatori)
   if (d && !d.upperDone) { const now = Date.now(); for (const f of d.flights || []) { let ch = false; for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'crew']) if (typeof f[k] === 'string' && f[k] !== f[k].toUpperCase()) { f[k] = f[k].toUpperCase(); ch = true; } if (f.check?.name && f.check.name !== f.check.name.toUpperCase()) { f.check.name = f.check.name.toUpperCase(); ch = true; } } d.upperDone = 1; n++; }
   // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
@@ -112,27 +119,27 @@ function normalizeTypes(d) {
 // Flotta conosciuta (dalla lista aerei di FlightLog): marca -> modello
 const KNOWN_AIRCRAFT = {"4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400", "VQBWS": "B747-400"};
 // Simulatori dalla lista aerei di FlightLog: sigla -> nome
-const SIM_DEVICES = { 'B787/B777 FSTD NL-787': 'Boeing 787-9[3]', 'DE-1A-113': 'Boeing 787-9[3]', 'DE1A-049': 'BOEING 747-400',
-  'EU-A0244': 'BOEING 787-9 Dreamliner', 'EU-A0250': 'BOEING 787-9 Dreamliner', 'EU-UKFB607': 'BOEING 787-9 Dreamliner', 'EU-UKFB637': 'BOEING 787-9 Dreamliner',
-  'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-800', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8',
-  'SIM B787/B777 NL-787': 'BOEING 787-9 Dreamliner', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
+const SIM_DEVICES = { 'B787/B777 FSTD NL-787': 'BOEING 787-9', 'DE-1A-113': 'BOEING 787-9', 'DE1A-049': 'BOEING 747-400',
+  'EU-A0244': 'BOEING 787-9', 'EU-A0250': 'BOEING 787-9', 'EU-UKFB607': 'BOEING 787-9', 'EU-UKFB637': 'BOEING 787-9',
+  'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-8', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8',
+  'SIM B787/B777 NL-787': 'BOEING 787-9', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
 // simulatori: matricola del dispositivo -> tipo (dalla flotta FlightLog), più quelli aggiunti a mano in data.simulators
-const SIM_FLEET = { 'B787/B777 FSTD NL-787': 'Boeing 787-9[3]', 'DE-1A-113': 'Boeing 787-9[3]', 'DE1A-049': 'BOEING 747-400', 'EU-A0244': 'BOEING 787-9 Dreamliner', 'EU-A0250': 'BOEING 787-9 Dreamliner', 'EU-UKFB607': 'BOEING 787-9 Dreamliner', 'EU-UKFB637': 'BOEING 787-9 Dreamliner', 'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-800', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8', 'SIM B787/B777 NL-787': 'BOEING 787-9 Dreamliner', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
+const SIM_FLEET = { 'B787/B777 FSTD NL-787': 'BOEING 787-9', 'DE-1A-113': 'BOEING 787-9', 'DE1A-049': 'BOEING 747-400', 'EU-A0244': 'BOEING 787-9', 'EU-A0250': 'BOEING 787-9', 'EU-UKFB607': 'BOEING 787-9', 'EU-UKFB637': 'BOEING 787-9', 'I-T.081': 'BOEING 737-800', 'LT.FSTD.18': 'BOEING 737-8', 'SIM B747': 'BOEING 747-400', 'SIM B748': 'BOEING 747-8', 'SIM B787/B777 NL-787': 'BOEING 787-9', 'SIM LU002 B744': 'BOEING 747-400', 'SIM LU003 B748': 'BOEING 747-8' };
 const SIM_NOTES = { 'I-T.081': 'B737-800W', 'LT.FSTD.18': 'B737-8 MAX s/n 2051' };
 // sessioni FlightLog: data -> simulatore usato
 const SIM_SESSIONS = {"2026-10-20":"I-T.081","2026-08-28":"I-T.081","2026-08-27":"I-T.081","2026-08-26":"I-T.081","2026-07-06":"I-T.081","2026-07-04":"LT.FSTD.18","2026-07-03":"LT.FSTD.18","2026-07-02":"LT.FSTD.18","2026-07-01":"LT.FSTD.18","2026-06-27":"I-T.081","2026-06-26":"I-T.081","2026-06-24":"I-T.081","2026-06-23":"I-T.081","2026-06-22":"I-T.081","2026-06-19":"I-T.081","2026-06-18":"I-T.081","2026-01-24":"EU-UKFB607","2026-01-23":"EU-UKFB607","2025-09-07":"EU-UKFB607","2025-09-06":"EU-UKFB607","2025-02-24":"EU-A0250","2025-02-23":"EU-A0250","2024-09-06":"DE-1A-113","2024-09-05":"DE-1A-113","2024-03-17":"DE-1A-113","2024-03-16":"DE-1A-113","2024-03-15":"DE-1A-113","2024-02-19":"B787/B777 FSTD NL-787","2024-02-18":"SIM B787/B777 NL-787","2024-02-17":"SIM B787/B777 NL-787","2024-02-16":"SIM B787/B777 NL-787","2024-02-14":"SIM B787/B777 NL-787","2024-02-13":"SIM B787/B777 NL-787","2024-02-12":"SIM B787/B777 NL-787","2023-10-22":"SIM LU002 B744","2023-10-21":"SIM LU003 B748","2023-05-24":"SIM B747","2023-05-21":"SIM B748","2023-05-20":"SIM B748","2023-05-19":"SIM B747","2022-10-27":"SIM B747","2022-10-26":"SIM B747","2022-07-14":"SIM B747","2022-07-13":"SIM B747","2022-05-25":"DE1A-049","2022-02-28":"DE1A-049","2022-02-25":"DE1A-049","2022-02-22":"DE1A-049","2021-09-02":"DE1A-049","2021-09-01":"DE1A-049","2021-05-07":"DE1A-049","2021-05-06":"DE1A-049"};
 const simFleet = () => ({ ...SIM_FLEET, ...Object.fromEntries(Object.entries(data?.simulators || {}).map(([k, v]) => [k, v.type])) });
-const KNOWN_SIMS = ['BOEING 737-800', 'BOEING 787-9 Dreamliner', 'Boeing 787-9[3]', 'BOEING 747-8', 'BOEING 747-400', 'P180 Avanti'];
-const SIM_BY_FAMILY = { 'Piaggio P180': 'P180 Avanti', 'Boeing 747': 'BOEING 747-400', 'Boeing 787': 'BOEING 787-9 Dreamliner', 'Boeing 737': 'BOEING 737-800' };
+const KNOWN_SIMS = ['BOEING 737-8', 'BOEING 737-800', 'BOEING 787-9', 'BOEING 747-8', 'BOEING 747-400', 'PIAGGIO P180 AVANTI'];
+const SIM_BY_FAMILY = { 'Piaggio P180': 'PIAGGIO P180 AVANTI', 'Boeing 747': 'BOEING 747-400', 'Boeing 787': 'BOEING 787-9', 'Boeing 737': 'BOEING 737-800' };
 function simName(f, nearType) {
   const raw = (f.simType || '').replace(/\s+/g, ' ').replace(/- (\d)/g, '-$1').replace(/^FFS /i, '').trim();
   const hit = KNOWN_SIMS.find(n => n.toLowerCase() === raw.toLowerCase()); if (hit) return hit;
   const txt = `${f.simType} ${f.remarks}`;
   if (/747-?8|B748|conversion -8/i.test(txt)) return 'BOEING 747-8';
   if (/737|B738|B38M/i.test(txt)) return 'BOEING 737-800';
-  if (/787|B789|B777/i.test(txt)) return 'BOEING 787-9 Dreamliner';
+  if (/787|B789|B777/i.test(txt)) return 'BOEING 787-9';
   if (/747|B744/i.test(txt)) return 'BOEING 747-400';
-  if (/P180|avanti/i.test(txt)) return 'P180 Avanti';
+  if (/P180|avanti/i.test(txt)) return 'PIAGGIO P180 AVANTI';
   return SIM_BY_FAMILY[familyOf(nearType)] || '';
 }
 const FAMILY = { 'Do328-110': 'Dornier 328', 'P180 Avanti 1': 'Piaggio P180', 'P180 Avanti 2': 'Piaggio P180', 'B747-400': 'Boeing 747', 'B747-8': 'Boeing 747', 'B787-9': 'Boeing 787', 'B737-800': 'Boeing 737', 'B737-8': 'Boeing 737' };
@@ -1187,10 +1194,13 @@ function easaPages(rowsPerPage) {
 // esercizio, istruttore/esaminatore e firma vanno nelle Remarks. La colonna Name PIC resta vuota.
 const fstdType = f => [f.simType, f.simReg].filter(Boolean).join(' / ');
 const fstdRemarks = f => [f.remarks, f.picName && !(f.remarks || '').toUpperCase().includes(f.picName.toUpperCase()) ? `INSTR./EXAM. ${f.picName}` : ''].filter(Boolean).join(' · ');
+// colonna 4 EASA "make, model, variant": costruttore, modello e variante per esteso
+const EASA_MODEL = { 'B737-8': 'BOEING 737-8', 'B737-800': 'BOEING 737-800', 'B787-9': 'BOEING 787-9', 'B747-400': 'BOEING 747-400', 'B747-8': 'BOEING 747-8', 'P180 Avanti 1': 'PIAGGIO P180 AVANTI', 'P180 Avanti 2': 'PIAGGIO P180 AVANTI II', 'Do328-110': 'DORNIER 328-110' };
+const easaModel = t => EASA_MODEL[t] || (t || '').toUpperCase();
 function easaRow(f) {
   const n = v => v || '';
   if (f.kind === 'sim') return { cells: ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', dmy(f.date), fstdType(f), hm(f.sim)], rem: fstdRemarks(f) };
-  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), n(f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
+  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), easaModel(f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
 }
 function easaTotCells(t) { const n = v => v || ''; return [hm(t.spSe), hm(t.spMe), hm(t.mp), hm(t.total), '', n(t.ldgDay), n(t.ldgNight), hm(t.night), hm(t.ifr), hm(t.pic), hm(t.sic), hm(t.dual), hm(t.instr), '', '', hm(t.sim)]; }
 const EASA_HEAD = `<thead><tr><th rowspan="2">DATE<br>(dd/mm/yy)</th><th colspan="2">DEPARTURE</th><th colspan="2">ARRIVAL</th><th colspan="2">AIRCRAFT</th><th colspan="2">SINGLE PILOT<br>TIME</th><th rowspan="2">MULTI-<br>PILOT<br>TIME</th><th rowspan="2">TOTAL<br>TIME OF<br>FLIGHT</th><th rowspan="2">NAME PIC</th><th colspan="2">LANDINGS</th><th colspan="2">OPERATIONAL<br>CONDITION TIME</th><th colspan="4">PILOT FUNCTION TIME</th><th colspan="3">FSTD SESSION</th><th rowspan="2">REMARKS<br>AND ENDORSEMENTS</th></tr>
@@ -1623,7 +1633,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

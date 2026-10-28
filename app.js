@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.5';
+const APP_VERSION = '3.0.6';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1541,8 +1541,15 @@ async function gdToken(interactive) {
     tc.requestAccessToken({ prompt: ls.get('gdOn') === '1' ? '' : 'consent' });
   });
 }
+// ogni chiamata a Drive: fino a 3 tentativi se la rete cade, e nel messaggio il passaggio che non è riuscito
 async function gdFetch(url, opt = {}) {
-  const r = await fetch(url, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + GD.token } });
+  const step = /upload/.test(url) ? 'upload' : /alt=media/.test(url) ? 'download' : 'find file';
+  let r, last;
+  for (let i = 0; i < 3; i++) {
+    try { r = await fetch(url, { ...opt, cache: 'no-store', headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + GD.token } }); break; }
+    catch (e) { last = e; await new Promise(res => setTimeout(res, 1200 * (i + 1))); }
+  }
+  if (!r) throw new Error(`${last?.message || 'network error'} (${step}, ${navigator.onLine ? 'online' : 'offline'})`);
   if (r.status === 401) { GD.token = null; ss.set('gdTok', null); throw Object.assign(new Error('Google sign-in expired'), { auth: true }); }
   if (!r.ok) throw new Error(`Google Drive ${r.status}: ${(await r.text()).slice(0, 140)}`);
   return r;

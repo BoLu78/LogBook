@@ -728,3 +728,4 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 .pdf-ready[hidden] { display: none; }
 /* stampa dal browser: se il foglio è verticale la tabella si restringe invece di tagliarsi */
 @media print and (orientation: portrait) { .easa-page { zoom: .7; } }
+.crash { white-space: pre-wrap; font-size: 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; color: var(--red); }

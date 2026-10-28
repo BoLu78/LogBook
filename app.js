@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.4';
+const APP_VERSION = '3.0.5';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -295,6 +295,15 @@ function loadMap() {
   return mapLoading ||= js('lib/d3-array.min.js').then(() => js('lib/d3-geo.min.js')).then(() => js('lib/topojson-client.min.js')).then(() => js('map.js'))
     .catch(e => { mapLoading = null; $('#main').innerHTML = `<h1>Map</h1><p class="lede">${esc(e.message)}. Open the app once while online.</p>`; throw e; });
 }
+// se una pagina si rompe, al posto della pagina bianca mostra l'errore e un modo per uscirne
+function showCrash(main, e) {
+  console.error(e);
+  main.innerHTML = `<h1>Something went wrong</h1><p class="lede">This page could not be shown. Your data is safe.</p>
+    <pre class="crash">${esc(String(e?.message || e))}\n${esc(String(e?.stack || '').split('\n').slice(0, 4).join('\n'))}\n${esc(APP_VERSION)} · ${esc(navigator.userAgent)}</pre>
+    <p class="row"><a class="btn primary" href="#riepilogo">Summary</a> <a class="btn" href="#voli">Flights</a> <button class="btn" type="button" onclick="location.reload()">Reload</button></p>`;
+}
+window.addEventListener('error', e => { const m = document.getElementById('main'); if (m && !m.innerHTML.trim()) showCrash(m, e.error || e.message); });
+window.addEventListener('unhandledrejection', e => { const m = document.getElementById('main'); if (m && !m.innerHTML.trim()) showCrash(m, e.reason); });
 function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
@@ -303,7 +312,7 @@ function route() {
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
-  views[view](main, arg);
+  try { const r = views[view](main, arg); if (r?.catch) r.catch(e => showCrash(main, e)); } catch (e) { showCrash(main, e); }
   main.focus({ preventScroll: true });
 }
 window.addEventListener('hashchange', route);

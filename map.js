@@ -64,7 +64,9 @@ async function viewMap(main) {
       <select id="mPer" aria-label="Period"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
       <select id="mFam" aria-label="Family"><option value="">All families</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select>
     </div></div>
-  <p class="lede">${list.length} sectors on ${routes.size} routes. Drag to pan, pinch, scroll or + / − to zoom; tap an airport to identify it, tap again for its flights.</p>
+  <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Flight map"></canvas><div class="map-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button></div><div class="map-tip" id="mapTip" hidden></div>
+    <div class="map-legend">${fams.filter(f => !st.fam || f === st.fam).map(f => `<span><i style="background:var(${FAM_VAR[f] || '--muted'})"></i>${esc(f)}</span>`).join('')}</div></div>
+  <p class="lede">${list.length} sectors on ${routes.size} routes. Drag to move, pinch or + / − to zoom; tap an airport to identify it, tap again for its flights.</p>
   <div class="recency">
     <div><b>${aps.size}</b><span>airports</span></div>
     <div><b>${countries.size}</b><span>countries</span></div>
@@ -72,8 +74,6 @@ async function viewMap(main) {
     <div><b>${longest ? `${esc(longest.f.dep)}–${esc(longest.f.arr)}` : '—'}</b><span>${longest ? `longest sector, ${fmt(longest.d)} NM on ${dmy(longest.f.date)}` : ''}</span></div>
     <div><b>${topAp[0] ? esc(topAp[0].code) : '—'}</b><span>${topAp[0] ? `most visited airport, ${topAp[0].n} movements` : ''}</span></div>
   </div>
-  <div class="map-wrap" id="mapWrap"><canvas id="mapCv" aria-label="Flight map"></canvas><div class="map-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button></div><div class="map-tip" id="mapTip" hidden></div>
-    <div class="map-legend">${fams.filter(f => !st.fam || f === st.fam).map(f => `<span><i style="background:var(${FAM_VAR[f] || '--muted'})"></i>${esc(f)}</span>`).join('')}</div></div>
   ${unknown.size ? `<p class="hint">Unknown codes, not shown on the map: ${[...unknown].map(([c, n]) => `<a href="#voli" data-q="${esc(c)}">${esc(c)}</a> (${n})`).join(', ')}. Correct them in Flights if they are typos.</p>` : ''}
   <div class="two">
     <div><h2>Top airports</h2><table class="data"><thead><tr><th class="l">ICAO</th><th class="l">Airport</th><th class="l">Country</th><th>Movements</th></tr></thead>
@@ -93,17 +93,21 @@ async function viewMap(main) {
   const routeArr = [...routes.values()].sort((a, b) => a.n - b.n);
   const apArr = topAp.slice().reverse();
   const maxN = Math.max(1, ...apArr.map(a => a.n));
-  let W = 0, H = 0, proj, path, raf = 0;
+  let W = 0, H = 0, C = 1, proj, path, raf = 0;
 
   function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#888'; }
   function setup() {
     const dpr = window.devicePixelRatio || 1;
-    W = wrap.clientWidth; H = st.mode === 'globe' ? Math.min(680, Math.max(420, W * 0.62)) : Math.round(W * 0.52);
+    W = wrap.clientWidth; H = st.mode === 'globe' ? Math.min(680, Math.max(420, W * 0.62)) : Math.round(Math.max(W * 0.52, Math.min(innerHeight - 150, W * 1.25)));
     cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (st.mode === 'globe') proj = d3.geoOrthographic().clipAngle(90).translate([W / 2, H / 2]).scale((H / 2 - 12) * st.k).rotate(st.rot);
     else proj = d3.geoNaturalEarth1().rotate([st.rot[0], 0, 0]).fitExtent([[8, 8], [W - 8, H - 8]], { type: 'Sphere' }).precision(.3);
-    if (st.mode === 'flat') { const s = proj.scale(), t = proj.translate(); proj.scale(s * st.k).translate([W / 2 + (t[0] - W / 2) * st.k, H / 2 + (t[1] - H / 2) * st.k - (st.panY || 0)]); }
+    if (st.mode === 'flat') {
+      // sullo schermo verticale il planisfero riempie tutta l'altezza (si scorre di lato), invece di restare una striscia in mezzo
+      const bb = d3.geoPath(proj).bounds({ type: 'Sphere' }); C = Math.max(1, (H - 16) / (bb[1][1] - bb[0][1]));
+      const s = proj.scale(), t = proj.translate(), kk = st.k * C; proj.scale(s * kk).translate([W / 2 + (t[0] - W / 2) * kk, H / 2 + (t[1] - H / 2) * kk - (st.panY || 0)]);
+    }
     path = d3.geoPath(proj, ctx);
   }
   let fast = false, fullTimer = 0;
@@ -136,7 +140,7 @@ async function viewMap(main) {
     }
     // etichette dei più frequenti
     ctx.font = '600 11px B612, sans-serif'; ctx.fillStyle = C.ink; ctx.textBaseline = 'middle';
-    const boxes = [], maxLab = st.k > 4 ? 60 : st.k > 2 ? 30 : 14;
+    const boxes = [], maxLab = st.k > 12 ? 300 : st.k > 4 ? 80 : st.k > 2 ? 30 : 14;
     for (const a of topAp) {
       if (!a.xy || boxes.length >= maxLab) continue;
       const bx = [a.xy[0] + 6, a.xy[1] - 13, a.xy[0] + 40, a.xy[1] + 1];
@@ -151,21 +155,40 @@ async function viewMap(main) {
 
   // ---------- interazione: trascina per spostare, due dita o rotella per lo zoom, pulsanti + / − ----------
   const pts = new Map(); let drag = null, pinch = null;
-  const zoomTo = k => { st.k = Math.max(1, Math.min(14, k)); if (st.k === 1) st.panY = 0; redraw(); };
+  // zoom intorno a un punto (dita, cursore o centro): il punto sotto le dita resta fermo
+  const MAXK = 80;
+  const clampPan = () => { const lim = H * (st.k - 1) / 2 + (st.k > 1 ? H * 0.1 : 0); st.panY = Math.max(-lim, Math.min(lim, st.panY || 0)); };
+  const zoomAt = (k2, fx, fy, b = { k: st.k, rot: st.rot, panY: st.panY || 0 }, ll = proj.invert?.([fx, fy])) => {
+    k2 = Math.max(1, Math.min(MAXK, k2));
+    st.rot = [b.rot[0] - (fx - W / 2) * (k2 / b.k - 1) * 180 / (W * k2 * C), 0, 0];
+    st.panY = (fy - H / 2 + b.panY) * k2 / b.k - (fy - H / 2);
+    st.k = k2; if (k2 === 1) st.panY = 0; clampPan();
+    // correzione esatta: il punto geografico che era sotto le dita torna sotto le dita
+    if (ll && isFinite(ll[0])) for (let i = 0; i < 2; i++) { setup(); const p = proj(ll); if (!p) break; st.rot[0] += (fx - p[0]) * 180 / (W * st.k * C); if (st.k > 1) { st.panY += p[1] - fy; clampPan(); } }
+    redraw();
+  };
+  const zoomTo = k => zoomAt(k, W / 2, H / 2);
+  const local = (x, y) => { const r = cv.getBoundingClientRect(); return [x - r.left, y - r.top]; };
   const nearest = (x, y, max = 400) => { let best = null, bd = max; for (const a of apArr) if (a.xy) { const d = (a.xy[0] - x) ** 2 + (a.xy[1] - y) ** 2; if (d < bd) { bd = d; best = a; } } return best; };
   const showTip = (a, x, y) => { tip.hidden = false; tip.innerHTML = `<b>${a.code}</b> ${esc(a.name)}<br>${esc(regionName(a.cc))}, ${a.n} movements`; tip.style.left = Math.max(4, Math.min(W - 224, x + 14)) + 'px'; tip.style.top = (y + 14) + 'px'; cv.dataset.q = a.code; };
   cv.onpointerdown = e => {
     cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pts.size === 2) { const [p, q] = [...pts.values()]; pinch = { d: Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, k: st.k }; drag = null; tip.hidden = true; }
+    if (pts.size === 2) { const [p, q] = [...pts.values()]; pinch = { d: Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, m: local((p[0] + q[0]) / 2, (p[1] + q[1]) / 2), b: { k: st.k, rot: st.rot.slice(), panY: st.panY || 0 } }; pinch.ll = proj.invert?.(pinch.m); drag = null; tip.hidden = true; }
     else if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, rot: st.rot.slice(), panY: st.panY || 0, moved: false };
   };
   cv.onpointermove = e => {
     if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pinch && pts.size === 2) { const [p, q] = [...pts.values()]; zoomTo(pinch.k * Math.hypot(p[0] - q[0], p[1] - q[1]) / pinch.d); return; }
+    if (pinch && pts.size === 2) {
+      const [p, q] = [...pts.values()], m = local((p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+      const k2 = Math.max(1, Math.min(MAXK, pinch.b.k * Math.hypot(p[0] - q[0], p[1] - q[1]) / pinch.d));
+      // zoom attorno al punto iniziale tra le dita, poi spostamento se le dita si muovono insieme
+      const b = { ...pinch.b, rot: [pinch.b.rot[0] + (m[0] - pinch.m[0]) * 180 / (W * pinch.b.k * C), 0, 0], panY: pinch.b.panY - (m[1] - pinch.m[1]) };
+      zoomAt(k2, m[0], m[1], b, pinch.ll); return;
+    }
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-      if (drag.moved) { tip.hidden = true; st.rot = [drag.rot[0] + dx * (180 / (W * st.k)), 0, 0]; st.panY = st.k > 1 ? drag.panY - dy : 0; redraw(); }
+      if (drag.moved) { tip.hidden = true; st.rot = [drag.rot[0] + dx * (180 / (W * st.k * C)), 0, 0]; st.panY = st.k > 1 ? drag.panY - dy : 0; clampPan(); redraw(); }
       return;
     }
     if (e.pointerType !== 'mouse') return;
@@ -187,7 +210,7 @@ async function viewMap(main) {
   };
   cv.onpointerup = up; cv.onpointercancel = up;
   cv.onpointerleave = e => { if (e.pointerType === 'mouse') tip.hidden = true; };
-  cv.addEventListener('wheel', e => { e.preventDefault(); zoomTo(st.k * Math.exp(-e.deltaY * .0015)); }, { passive: false });
+  cv.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = local(e.clientX, e.clientY); zoomAt(st.k * Math.exp(-e.deltaY * .0015), x, y); }, { passive: false });
   cv.ondblclick = () => { st.rot = [-12, 0, 0]; st.k = 1; st.panY = 0; redraw(); };
   wrap.querySelector('.map-zoom').onclick = e => {
     const b = e.target.closest('button'); if (!b) return;

@@ -729,3 +729,7 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 /* stampa dal browser: se il foglio è verticale la tabella si restringe invece di tagliarsi */
 @media print and (orientation: portrait) { .easa-page { zoom: .7; } }
 .crash { white-space: pre-wrap; font-size: 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; color: var(--red); }
+/* 3.0.7: Previous / Next nella barra in alto (iPad); sul Mac restano in fondo alla scheda */
+.tb-btn[hidden] { display: none !important; }
+.tb-btn:disabled { opacity: .35; }
+@media (max-width: 1100px) { .leg-nav { display: none; } }

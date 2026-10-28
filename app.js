@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.6';
+const APP_VERSION = '3.0.7';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -308,6 +308,8 @@ function route() {
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
+  // Previous / Next in alto solo nella scheda di un volo
+  for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !(view === 'modifica' || view === 'nuovo'); }
   const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
@@ -997,7 +999,7 @@ function viewEdit(main, id) {
   const navBtns = () => {
     const p = neighbour(-1), n = neighbour(1);
     const what = x => x.kind === 'sim' ? `SIM ${x.simReg || x.simType || ''}`.trim() : `${x.dep}–${x.arr}`;
-    g('prevLeg').disabled = !p; g('prevLeg').title = p ? `${dmy(p.date)} ${what(p)}` : 'No earlier entry';
+    g('prevLeg').disabled = !p; const tp = $('#tbPrev'), tn = $('#tbNext'); if (tp) { tp.disabled = !p; tp.title = p ? `Previous: ${dmy(p.date)} ${what(p)}` : 'No earlier entry'; } if (tn) tn.title = n ? `Next: ${dmy(n.date)} ${what(n)}` : 'New next leg from this arrival'; g('prevLeg').title = p ? `${dmy(p.date)} ${what(p)}` : 'No earlier entry';
     g('nextLeg').innerHTML = n ? 'Next <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
     g('nextLeg').title = n ? `${dmy(n.date)} ${what(n)}` : 'Create a new leg from this arrival';
   };
@@ -1643,6 +1645,8 @@ document.addEventListener('DOMContentLoaded', () => {});
     try { await importFile(f); route(); } catch (err) { toast('Import failed: ' + err.message); }
     e.target.value = '';
   };
+  document.getElementById('tbPrev').onclick = () => { const b = document.getElementById('prevLeg'); if (b && !b.disabled) b.click(); };
+  document.getElementById('tbNext').onclick = () => document.getElementById('nextLeg')?.click();
   document.getElementById('tbSync').onclick = () => { if (gdClientId()) syncNow(true); else location.hash = 'dati'; };
 })();
 function renderSyncState() {

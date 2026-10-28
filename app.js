@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -287,7 +287,7 @@ const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.rema
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), ftl: m => loadAirports().then(() => viewFTL(m)) };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), aerei: m => viewFleet(m), ftl: m => loadAirports().then(() => viewFTL(m)) };
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
@@ -310,7 +310,7 @@ function route() {
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
   // Previous / Next in alto solo nella scheda di un volo
   for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !(view === 'modifica' || view === 'nuovo'); }
-  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL' }[view] || 'Logbook';
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
@@ -499,7 +499,7 @@ function viewFlights(main) {
   const q = st.q.toLowerCase();
   let list = data.flights.filter(f => (!st.year || f.date.startsWith(st.year)) &&
     (!st.type || (st.type === 'Simulator' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
-    (!q || [f.dep, f.arr, f.reg, f.picName, f.remarks, f.simType, f.flightNo].join(' ').toLowerCase().includes(q)));
+    (!q || [f.dep, f.arr, f.reg, f.simReg, f.picName, f.remarks, f.simType, f.flightNo].join(' ').toLowerCase().includes(q)));
   const t = sum(list);
   list = list.slice().reverse();
   const shown = st.all ? list : list.slice(0, 300);
@@ -597,7 +597,6 @@ function viewEdit(main, id) {
         <div><span>DISTANCE</span><b id="distNM">—</b><small class="d">NM</small></div>
       </div>
     </section>
-    <section class="sheet-card swx" id="swxCard" hidden></section>
 
     <section class="sheet-card">
       <h3>Flight</h3>
@@ -656,6 +655,7 @@ function viewEdit(main, id) {
       </div>
       <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
     </section>
+    <section class="sheet-card swx" id="swxCard" hidden></section>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
     <section class="sheet-card">

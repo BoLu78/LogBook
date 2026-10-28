@@ -753,3 +753,23 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 .swx-kp.mid { background: #ca8a04; } .swx-kp.warn { background: var(--amber); } .swx-kp.bad { background: var(--red); }
 .swx-chip { font-family: var(--font); font-weight: 700; font-size: 13px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--rule); }
 .swx-chip.ok { color: var(--ok); } .swx-chip.warn { color: var(--amber); border-color: var(--amber); } .swx-chip.bad { color: var(--red); border-color: var(--red); }
+/* 3.2: Aircraft */
+.fleet-bar { display: flex; gap: 10px; margin: 0 0 16px; }
+.fleet-bar input { flex: 1; font: inherit; font-size: 16px; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); color: var(--ink); text-transform: uppercase; }
+.fleet-add label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.fleet-add input { font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); text-transform: uppercase; min-width: 180px; }
+.fleet-add .row { align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.fleet-fam { margin: 0 0 22px; }
+.fleet-fam h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0 10px; }
+.fleet-fam h2 i { width: 12px; height: 12px; border-radius: 3px; }
+.fleet-fam h2 small { margin-left: auto; font-weight: 400; font-size: 13px; color: var(--muted); }
+.ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.ac-card { display: flex; align-items: center; gap: 14px; text-align: left; font: inherit; background: var(--sheet); border: 1px solid var(--rule-soft); border-radius: 12px; padding: 12px 14px; cursor: pointer; color: var(--ink); }
+.ac-card:hover { border-color: var(--accent); }
+.ac-ico { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; flex: none; background: color-mix(in srgb, var(--c, var(--muted)) 16%, transparent); color: var(--c, var(--muted)); }
+.ac-main { display: grid; min-width: 0; flex: 1; }
+.ac-main small { color: var(--muted); font-size: 12.5px; }
+.ac-main b { font-family: var(--font); font-size: 22px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-type { color: var(--ink-2); font-size: 14px; }
+.ac-cur { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); border-radius: 5px; padding: 2px 6px; flex: none; }
+.ac-cur.new { color: var(--accent); border-color: var(--accent); }

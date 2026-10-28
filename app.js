@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.3';
+const APP_VERSION = '3.2.4';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -497,7 +497,7 @@ function viewFlights(main) {
   const types = [...new Set(data.flights.map(f => f.kind === 'sim' ? 'Simulator' : f.type).filter(Boolean))].sort();
   const q = st.q.toLowerCase();
   let list = data.flights.filter(f => (!st.year || f.date.startsWith(st.year)) &&
-    (!st.type || (st.type === 'Simulator' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
+    (!st.type || (st.type === 'Simulator' ? f.kind === 'sim' : st.type === '__planned' ? f.planned : st.type === '__check' ? fnMismatch(f) : st.type === '__dot' ? f.planned && !f.seen : f.type === st.type)) &&
     (!q || [f.dep, f.arr, f.reg, f.simReg, f.picName, f.remarks, f.simType, f.flightNo].join(' ').toLowerCase().includes(q)));
   const t = sum(list);
   list = list.slice().reverse();
@@ -514,7 +514,7 @@ function viewFlights(main) {
   <p class="lede">${fmtN(t.legs)} sectors, ${hm0(t.total)} flight time${t.sims ? `, ${t.sims} simulator sessions (${hm0(t.sim)})` : ''}.</p>
   <div class="row filters">
     <select id="fy" aria-label="Year"><option value="">All years</option>${years.map(y => `<option>${y}</option>`).join('')}</select>
-    <select id="ft" aria-label="Type"><option value="">All types</option>${nPlan ? `<option value="__planned">Planned from NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Unseen (${nDot})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
+    <select id="ft" aria-label="Type"><option value="">All types</option>${nPlan ? `<option value="__planned">Planned from NetLine (${nPlan})</option>` : ''}${nDot ? `<option value="__dot">Unseen (${nDot})</option>` : ''}${data.flights.some(fnMismatch) ? `<option value="__check">Function time ≠ total (${data.flights.filter(fnMismatch).length})</option>` : ''}${types.map(y => `<option>${esc(y)}</option>`).join('')}</select>
     ${nDot ? '<button class="btn" id="seenAll">Mark all as seen</button>' : ''}
     <input id="fq" type="search" placeholder="Search airport, reg, PIC, remarks" size="36" value="${esc(st.q)}">
     <a class="btn primary" href="#nuovo">New flight</a>
@@ -640,6 +640,7 @@ function viewEdit(main, id) {
         <label class="ri"><span>Multi-pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
         <label class="ri"><span>Instructor</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
       </div>
+      ${orig && fnMismatch(orig) ? `<div class="fn-warn keep" id="fnWarn">⚠︎ Function time saved: PIC ${hm(orig.pic) || '0:00'} · SIC ${hm(orig.sic) || '0:00'} · Dual ${hm(orig.dual) || '0:00'}, but total time is ${hm(orig.total)}. <button type="button" class="btn small primary keep" id="fnFix">Set ${esc(roleOf(orig) || 'PIC')} = ${hm(orig.total)}</button></div>` : ''}
       <p class="hint rows-hint" id="roleHint"></p>
       ${f.crew ? `<p class="hint rows-hint">NetLine crew: ${esc(f.crew)}</p>` : ''}
     </section>
@@ -989,6 +990,7 @@ function viewEdit(main, id) {
     data.flights = data.flights.filter(x => x.id !== recId); (data.deleted ||= {})[recId] = Date.now();
     await save('Entry deleted'); created = false; location.hash = 'voli';
   };
+  const fx = g('fnFix'); if (fx) fx.onclick = async () => { const rec = data.flights.find(x => x.id === recId); if (!rec) return; fixFunctionTime(rec); await save('Function time corrected'); updateBadge(); route(); };
   // navigazione tra le tratte registrate, in ordine cronologico
   const legKey = x => x.date + ' ' + (x.out || '') + ' ' + x.id;
   const legs = () => data.flights.slice().sort((a, b) => legKey(a).localeCompare(legKey(b)));
@@ -1514,13 +1516,22 @@ function plannedLate() {
   const now = Date.now();
   return data.flights.filter(f => f.planned && Date.parse(`${f.date}T${f.inn || '23:59'}:00Z`) + (toMin(f.inn) < toMin(f.out) ? 86400000 : 0) < now);
 }
+// coerenza: la somma PIC + copilota + dual deve essere uguale al tempo totale del volo
+const fnMismatch = f => f.kind === 'flight' && !f.planned && f.total > 0 && (f.pic || 0) + (f.sic || 0) + (f.dual || 0) !== f.total;
+function fixFunctionTime(f) {
+  const r = roleOf(f) || (f.pic ? 'PIC' : f.sic ? 'SIC' : f.dual ? 'DUAL' : 'PIC'), t = f.total;
+  f.pic = r === 'PIC' || r === 'PICUS' ? t : 0; f.sic = r === 'SIC' || r === 'LIFUS' ? t : 0; f.dual = r === 'DUAL' ? t : 0; f.mt = Date.now();
+}
 function plannedBanner() {
+  const bad = data.flights.filter(fnMismatch);
+  const chk = bad.length ? `<div class="plan-alert" role="alert"><b>${bad.length === 1 ? '1 flight has' : `${bad.length} flights have`} function time different from the total time</b> (e.g. PIC 0:41 on a 1:41 flight). It would print wrong on the EASA pages.
+    <button class="btn small" data-chk-go>Show</button></div>` : '';
   const late = plannedLate();
-  if (!late.length) return '';
-  return `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 past flight still has' : `${late.length} past flights still have`} scheduled times only.</b> Enter actual times to include them in the totals.
+  if (!late.length) return chk;
+  return chk + `<div class="plan-alert" role="alert"><b>${late.length === 1 ? '1 past flight still has' : `${late.length} past flights still have`} scheduled times only.</b> Enter actual times to include them in the totals.
     <button class="btn small" data-plan-go>Show</button></div>`;
 }
-function bindPlannedBanner(main) { const b = main.querySelector('[data-plan-go]'); if (b) b.onclick = () => { viewFlights.st = { year: '', type: '__planned', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; }
+function bindPlannedBanner(main) { const c = main.querySelector('[data-chk-go]'); if (c) c.onclick = () => { viewFlights.st = { year: '', type: '__check', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; const b = main.querySelector('[data-plan-go]'); if (b) b.onclick = () => { viewFlights.st = { year: '', type: '__planned', q: '', all: false }; location.hash === '#voli' ? route() : (location.hash = 'voli'); }; }
 function updateBadge() {
   const a = document.querySelector('.side a[data-view="voli"]'); if (!a || !data) return;
   const n = data.flights.filter(f => f.planned && !f.seen).length;

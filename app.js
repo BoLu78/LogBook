@@ -1,6 +1,6 @@
 'use strict';
-const APP_VERSION = '3.2.4';
-const APP_DATE = '27/10/2026';
+const APP_VERSION = '3.2.5';
+const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
 // ---------- utilità ----------
@@ -1648,6 +1648,14 @@ async function syncNow(interactive) {
 }
 let syncTimer;
 function scheduleSync() { if (gdConnected() && gdTokenOk()) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
+// aggiornamento forzato: salva su Drive se possibile, toglie la copia offline dell'app e ricarica l'ultima versione (il logbook resta nell'archivio locale)
+async function forceUpdate() {
+  toast('Updating the app…');
+  try { if (gdConnected() && gdTokenOk()) await Promise.race([syncNow(false), new Promise(r => setTimeout(r, 6000))]); } catch { /* si aggiorna comunque */ }
+  try { for (const r of await navigator.serviceWorker?.getRegistrations?.() || []) await r.unregister(); } catch { /* ok */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch { /* ok */ }
+  location.replace(location.pathname + '?v=' + Date.now() + (location.hash || ''));
+}
 // ---------- menu a scomparsa (iPad e telefono) ----------
 function openMenu() { document.body.classList.add('menu-open'); $('#scrim').hidden = false; $('#menuBtn')?.setAttribute('aria-expanded', 'true'); $('#sideNav a')?.focus(); }
 function closeMenu() { if (!document.body.classList.contains('menu-open')) return; document.body.classList.remove('menu-open'); $('#scrim').hidden = true; $('#menuBtn')?.setAttribute('aria-expanded', 'false'); }
@@ -1663,6 +1671,7 @@ document.addEventListener('DOMContentLoaded', () => {});
     e.preventDefault(); closeMenu();
     if (a.dataset.act === 'next') nextLeg();
     else if (a.dataset.act === 'roster') document.getElementById('rosterFile').click();
+    else if (a.dataset.act === 'update') forceUpdate();
   });
   document.getElementById('rosterFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -1760,8 +1769,15 @@ function driveStartup() {
     navigator.serviceWorker.register('sw.js').then(reg => {
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
-        nw?.addEventListener('statechange', () => { if (nw.state === 'activated' && navigator.serviceWorker.controller) toast('App updated: reload the page for the new version'); });
+        nw?.addEventListener('statechange', () => {
+          if (nw.state !== 'activated' || !navigator.serviceWorker.controller) return;
+          // versione nuova pronta: si ricarica da sola, ma non mentre stai scrivendo un volo
+          if (/nuovo|modifica/.test(location.hash)) toast('New version ready: it loads when you leave this flight, or use Update app in the menu');
+          else { toast('Updating to the new version…'); setTimeout(() => location.reload(), 800); }
+        });
       });
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
     }).catch(() => {});
   }
 })();

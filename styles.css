@@ -779,3 +779,6 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 .filter-bar #clearAll { margin-left: auto; }
 .fchip { font: inherit; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); cursor: pointer; }
 .fchip b { color: var(--muted); font-size: 12px; }
+.ac-edit { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--rule); color: var(--ink-2); font-size: 16px; }
+.ac-edit:hover { border-color: var(--accent); color: var(--accent); }
+.ac-q { font-style: normal; font-weight: 700; color: var(--amber); margin-left: 4px; }

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.7';
+const APP_VERSION = '3.2.8';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1197,10 +1197,20 @@ const fstdRemarks = f => [f.remarks, f.picName && !(f.remarks || '').toUpperCase
 // colonna 4 EASA "make, model, variant": costruttore, modello e variante per esteso
 const EASA_MODEL = { 'B737-8': 'BOEING 737-8', 'B737-800': 'BOEING 737-800', 'B787-9': 'BOEING 787-9', 'B747-400': 'BOEING 747-400', 'B747-8': 'BOEING 747-8', 'P180 Avanti 1': 'PIAGGIO P180 AVANTI', 'P180 Avanti 2': 'PIAGGIO P180 AVANTI II', 'Do328-110': 'DORNIER 328-110' };
 const easaModel = t => EASA_MODEL[t] || (t || '').toUpperCase();
+// variante esatta per marca (747 cargo: F di fabbrica, ERF, BCF convertiti); quelle segnate ? vanno confermate dal pilota
+const EASA_REG = {
+  'I-SWIA': 'BOEING 747-400F', 'I-SWIB': 'BOEING 747-400F', 'OE-IFB': 'BOEING 747-400ERF', 'OE-IFD': 'BOEING 747-400ERF', 'OE-ILC': 'BOEING 747-400F',
+  'OE-IFK': 'BOEING 747-400F', 'OE-IFM': 'BOEING 747-400F', 'VQ-BWT': 'BOEING 747-400F', 'VQ-BWL': 'BOEING 747-400BCF', 'VQ-BWM': 'BOEING 747-400BCF',
+  'VQ-BWS': 'BOEING 747-400F', 'VQBWS': 'BOEING 747-400F', 'VP-BYK': 'BOEING 747-400F',
+  '4K-BCH': 'BOEING 747-400F', '4K-BCI': 'BOEING 747-400F', '4K-BCR': 'BOEING 747-400F', '4K-BCV': 'BOEING 747-400F', '4K-SW008': 'BOEING 747-400F', '4K-SW800': 'BOEING 747-400F', '4K-SW888': 'BOEING 747-400F',
+  'VQ-BVB': 'BOEING 747-8F', 'VQ-BVC': 'BOEING 747-8F', 'VQ-BBM': 'BOEING 747-8F', '4K-BBH': 'BOEING 747-8F'
+};
+const EASA_REG_CHECK = new Set(['OE-IFK', 'OE-IFM', 'VQ-BWL', 'VQ-BWM', 'VQ-BWS', 'VQBWS', 'VP-BYK', '4K-BCV', '4K-SW008', '4K-SW800', 'I-SWIA']);
+const easaModelOf = (reg, type) => data?.acModel?.[reg] || EASA_REG[reg] || easaModel(type);
 function easaRow(f) {
   const n = v => v || '';
   if (f.kind === 'sim') return { cells: ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', dmy(f.date), fstdType(f), hm(f.sim)], rem: fstdRemarks(f) };
-  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), easaModel(f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
+  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), easaModelOf(f.reg, f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
 }
 function easaTotCells(t) { const n = v => v || ''; return [hm(t.spSe), hm(t.spMe), hm(t.mp), hm(t.total), '', n(t.ldgDay), n(t.ldgNight), hm(t.night), hm(t.ifr), hm(t.pic), hm(t.sic), hm(t.dual), hm(t.instr), '', '', hm(t.sim)]; }
 const EASA_HEAD = `<thead><tr><th rowspan="2">DATE<br>(dd/mm/yy)</th><th colspan="2">DEPARTURE</th><th colspan="2">ARRIVAL</th><th colspan="2">AIRCRAFT</th><th colspan="2">SINGLE PILOT<br>TIME</th><th rowspan="2">MULTI-<br>PILOT<br>TIME</th><th rowspan="2">TOTAL<br>TIME OF<br>FLIGHT</th><th rowspan="2">NAME PIC</th><th colspan="2">LANDINGS</th><th colspan="2">OPERATIONAL<br>CONDITION TIME</th><th colspan="4">PILOT FUNCTION TIME</th><th colspan="3">FSTD SESSION</th><th rowspan="2">REMARKS<br>AND ENDORSEMENTS</th></tr>
@@ -1633,7 +1643,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, acModel: { ...(remote.acModel || {}), ...(local.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

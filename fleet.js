@@ -21,8 +21,8 @@ function viewFleet(main) {
   const card = (x, sim) => `<button type="button" class="ac-card" data-reg="${esc(x.reg)}" data-sim="${sim ? 1 : ''}">
       <span class="ac-ico" style="${sim ? '' : `--c:var(${FLEET_COL[x.fam] || '--muted'})`}">${sim ? '🎮' : '✈︎'}</span>
       <span class="ac-main"><small>${x.s.n ? `${x.s.n} ${sim ? 'session' : 'flight'}${x.s.n > 1 ? 's' : ''} · ${hm0(x.s.t)}${x.s.last ? ` · last ${dmy(x.s.last)}` : ''}` : sim ? 'no sessions' : 'not flown yet'}</small>
-        <b>${esc(x.reg)}</b><span class="ac-type">${esc(sim ? x.type || '—' : easaModel(x.type) || '—')}${x.note ? ` · ${esc(x.note)}` : ''}</span></span>
-      ${!sim && x.s.last >= recent ? '<span class="ac-cur">current</span>' : ''}${x.mine && !x.s.n ? '<span class="ac-cur new">added</span>' : ''}</button>`;
+        <b>${esc(x.reg)}</b><span class="ac-type">${esc(sim ? x.type || '—' : easaModelOf(x.reg, x.type) || '—')}${x.note ? ` · ${esc(x.note)}` : ''}${!sim && EASA_REG_CHECK.has(x.reg) && !data.acModel?.[x.reg] ? ' <em class="ac-q" title="Variant to confirm">?</em>' : ''}</span></span>
+      ${!sim ? `<span class="ac-edit" role="button" tabindex="0" data-edit="${esc(x.reg)}" title="EASA make, model, variant">✎</span>` : ''}${!sim && x.s.last >= recent ? '<span class="ac-cur">current</span>' : ''}${x.mine && !x.s.n ? '<span class="ac-cur new">added</span>' : ''}</button>`;
   main.innerHTML = `<h1>Aircraft</h1>
   <p class="lede">${ac.length} aircraft · ${sims.length} simulators. Tap one to see its flights.</p>
   <div class="fleet-bar"><input type="search" id="fq" placeholder="Search registration or type" value="${esc(st.q)}" autocapitalize="characters"><button type="button" class="btn primary" id="fAdd">+ Add</button></div>
@@ -51,5 +51,13 @@ function viewFleet(main) {
     data.metaMt = Date.now(); st.add = false; st.q = '';
     await save(`${reg} added`); viewFleet(main);
   };
+  main.querySelectorAll('[data-edit]').forEach(b => b.onclick = async e => {
+    e.stopPropagation();
+    const reg = b.dataset.edit, cur = easaModelOf(reg, regs.get(reg));
+    const v = prompt(`EASA make, model, variant for ${reg}\n(as printed in the logbook, e.g. BOEING 747-400ERF)`, cur);
+    if (v == null) return;
+    const t = v.trim().toUpperCase(); (data.acModel ||= {}); if (t && t !== cur) data.acModel[reg] = t; else if (!t) delete data.acModel[reg]; else return;
+    data.metaMt = Date.now(); await save(`${reg}: ${t || 'default name'}`); viewFleet(main);
+  });
   main.querySelectorAll('.ac-card').forEach(b => b.onclick = () => { viewFlights.st = { year: '', type: '', q: b.dataset.reg, all: false }; location.hash = 'voli'; });
 }

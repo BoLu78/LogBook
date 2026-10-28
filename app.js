@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.8';
+const APP_VERSION = '3.2.9';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -78,6 +78,8 @@ function normalizeTypes(d) {
     for (const v of Object.values(d.simulators || {})) if (OLD[(v.type || '').toUpperCase()]) v.type = OLD[v.type.toUpperCase()];
     d.simTypeDone = 1; n++;
   }
+  // una volta sola: ore di funzione uguali al tempo totale dove il dato importato era sbagliato
+  if (d && !d.fnFixDone) { for (const f of d.flights || []) if (fnMismatch(f)) { const mt = f.mt; fixFunctionTime(f); if (mt) f.mt = mt; else delete f.mt; } d.fnFixDone = 1; n++; }
   // una volta sola: tutto il testo in maiuscolo (nomi, note, numeri di volo, simulatori, esaminatori)
   if (d && !d.upperDone) { const now = Date.now(); for (const f of d.flights || []) { let ch = false; for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'crew']) if (typeof f[k] === 'string' && f[k] !== f[k].toUpperCase()) { f[k] = f[k].toUpperCase(); ch = true; } if (f.check?.name && f.check.name !== f.check.name.toUpperCase()) { f.check.name = f.check.name.toUpperCase(); ch = true; } } d.upperDone = 1; n++; }
   // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
@@ -117,7 +119,7 @@ function normalizeTypes(d) {
   return n;
 }
 // Flotta conosciuta (dalla lista aerei di FlightLog): marca -> modello
-const KNOWN_AIRCRAFT = {"4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400", "VQBWS": "B747-400"};
+const KNOWN_AIRCRAFT = {"VQ-BWS": "B747-400", "4K-BBH": "B747-8", "4K-BCH": "B747-400", "4K-BCI": "B747-400", "4K-BCR": "B747-400", "4K-BCV": "B747-400", "4K-SW008": "B747-400", "4K-SW800": "B747-400", "4K-SW888": "B747-400", "EI-HIL": "B737-800", "EI-HIM": "B737-800", "EI-NEO": "B787-9", "EI-NEU": "B787-9", "EI-NEW": "B787-9", "EI-NUA": "B787-9", "EI-NYE": "B787-9", "EI-RZA": "B737-8", "EI-RZB": "B737-8", "EI-RZC": "B737-8", "EI-RZD": "B737-8", "EI-RZE": "B737-8", "EI-RZF": "B737-8", "EI-RZG": "B737-8", "EI-RZH": "B737-8", "EI-XIN": "B787-9", "I-FXRB": "P180 Avanti 1", "I-FXRC": "P180 Avanti 1", "I-FXRD": "P180 Avanti 1", "I-FXRE": "P180 Avanti 1", "I-FXRG": "P180 Avanti 2", "I-FXRH": "P180 Avanti 2", "I-FXRI": "P180 Avanti 2", "I-FXRJ": "P180 Avanti 2", "I-FXRK": "P180 Avanti 2", "I-FXRL": "P180 Avanti 2", "I-NEOU": "B737-800", "I-NEOZ": "B737-800", "I-SWIA": "B747-400", "I-SWIB": "B747-400", "OE-IFB": "B747-400", "OE-IFD": "B747-400", "OE-IFK": "B747-400", "OE-IFM": "B747-400", "OE-ILC": "B747-400", "VP-BYK": "B747-400", "VQ-BBM": "B747-8", "VQ-BVB": "B747-8", "VQ-BVC": "B747-8", "VQ-BWL": "B747-400", "VQ-BWM": "B747-400", "VQ-BWT": "B747-400"};
 // Simulatori dalla lista aerei di FlightLog: sigla -> nome
 const SIM_DEVICES = { 'B787/B777 FSTD NL-787': 'BOEING 787-9', 'DE-1A-113': 'BOEING 787-9', 'DE1A-049': 'BOEING 747-400',
   'EU-A0244': 'BOEING 787-9', 'EU-A0250': 'BOEING 787-9', 'EU-UKFB607': 'BOEING 787-9', 'EU-UKFB637': 'BOEING 787-9',
@@ -1200,12 +1202,12 @@ const easaModel = t => EASA_MODEL[t] || (t || '').toUpperCase();
 // variante esatta per marca (747 cargo: F di fabbrica, ERF, BCF convertiti); quelle segnate ? vanno confermate dal pilota
 const EASA_REG = {
   'I-SWIA': 'BOEING 747-400F', 'I-SWIB': 'BOEING 747-400F', 'OE-IFB': 'BOEING 747-400ERF', 'OE-IFD': 'BOEING 747-400ERF', 'OE-ILC': 'BOEING 747-400F',
-  'OE-IFK': 'BOEING 747-400F', 'OE-IFM': 'BOEING 747-400F', 'VQ-BWT': 'BOEING 747-400F', 'VQ-BWL': 'BOEING 747-400BCF', 'VQ-BWM': 'BOEING 747-400BCF',
-  'VQ-BWS': 'BOEING 747-400F', 'VQBWS': 'BOEING 747-400F', 'VP-BYK': 'BOEING 747-400F',
+  'OE-IFK': 'BOEING 747-400F', 'OE-IFM': 'BOEING 747-400F', 'VQ-BWT': 'BOEING 747-400F', 'VQ-BWL': 'BOEING 747-400M', 'VQ-BWM': 'BOEING 747-400M',
+  'VQ-BWS': 'BOEING 747-400F', 'VP-BYK': 'BOEING 747-400BCF',
   '4K-BCH': 'BOEING 747-400F', '4K-BCI': 'BOEING 747-400F', '4K-BCR': 'BOEING 747-400F', '4K-BCV': 'BOEING 747-400F', '4K-SW008': 'BOEING 747-400F', '4K-SW800': 'BOEING 747-400F', '4K-SW888': 'BOEING 747-400F',
   'VQ-BVB': 'BOEING 747-8F', 'VQ-BVC': 'BOEING 747-8F', 'VQ-BBM': 'BOEING 747-8F', '4K-BBH': 'BOEING 747-8F'
 };
-const EASA_REG_CHECK = new Set(['OE-IFK', 'OE-IFM', 'VQ-BWL', 'VQ-BWM', 'VQ-BWS', 'VQBWS', 'VP-BYK', '4K-BCV', '4K-SW008', '4K-SW800', 'I-SWIA']);
+const EASA_REG_CHECK = new Set();
 const easaModelOf = (reg, type) => data?.acModel?.[reg] || EASA_REG[reg] || easaModel(type);
 function easaRow(f) {
   const n = v => v || '';
@@ -1546,7 +1548,7 @@ function plannedLate() {
 // coerenza: la somma PIC + copilota + dual deve essere uguale al tempo totale del volo
 const fnMismatch = f => f.kind === 'flight' && !f.planned && f.total > 0 && (f.pic || 0) + (f.sic || 0) + (f.dual || 0) !== f.total;
 function fixFunctionTime(f) {
-  const r = roleOf(f) || (f.pic ? 'PIC' : f.sic ? 'SIC' : f.dual ? 'DUAL' : 'PIC'), t = f.total;
+  const r = roleOf(f) || (/picus/i.test(f.remarks) ? 'PICUS' : /lifus/i.test(f.remarks) ? 'LIFUS' : f.pic ? 'PIC' : f.sic ? 'SIC' : f.dual ? 'DUAL' : 'PIC'), t = f.total;
   f.pic = r === 'PIC' || r === 'PICUS' ? t : 0; f.sic = r === 'SIC' || r === 'LIFUS' ? t : 0; f.dual = r === 'DUAL' ? t : 0; f.mt = Date.now();
 }
 function plannedBanner() {
@@ -1643,7 +1645,7 @@ function mergeData(local, remote) {
   for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, acModel: { ...(remote.acModel || {}), ...(local.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(remote.acModel || {}), ...(local.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
 const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {

@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.2.1';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -61,7 +61,6 @@ function dedupe(d) {
       if (o.sched && !keep.sched) keep.sched = o.sched;
       gone.add(o.id);
     }
-    keep.mt = now;
   }
   if (!gone.size) return 0;
   const del = (d.deleted ||= {}); for (const id of gone) del[id] = now;
@@ -70,21 +69,21 @@ function dedupe(d) {
 }
 function normalizeTypes(d) {
   let n = dedupe(d);
-  for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; f.mt = Date.now(); n++; }
+  for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
   // una volta sola: tutto il testo in maiuscolo (nomi, note, numeri di volo, simulatori, esaminatori)
-  if (d && !d.upperDone) { const now = Date.now(); for (const f of d.flights || []) { let ch = false; for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'crew']) if (typeof f[k] === 'string' && f[k] !== f[k].toUpperCase()) { f[k] = f[k].toUpperCase(); ch = true; } if (f.check?.name && f.check.name !== f.check.name.toUpperCase()) { f.check.name = f.check.name.toUpperCase(); ch = true; } if (ch) f.mt = now; } d.upperDone = 1; n++; }
+  if (d && !d.upperDone) { const now = Date.now(); for (const f of d.flights || []) { let ch = false; for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'crew']) if (typeof f[k] === 'string' && f[k] !== f[k].toUpperCase()) { f[k] = f[k].toUpperCase(); ch = true; } if (f.check?.name && f.check.name !== f.check.name.toUpperCase()) { f.check.name = f.check.name.toUpperCase(); ch = true; } } d.upperDone = 1; n++; }
   // una volta sola: lucchetto a tutte le tratte già registrate (non ai voli pianificati dal roster)
-  if (d && !d.lockAllDone) { const now = Date.now(); for (const f of d.flights || []) if (!f.planned && !f.locked) { f.locked = true; f.mt = now; } d.lockAllDone = 1; n++; }
+  if (d && !d.lockAllDone) { const now = Date.now(); for (const f of d.flights || []) if (!f.planned && !f.locked) { f.locked = true; } d.lockAllDone = 1; n++; }
   // marche scritte senza trattino (EIRZE) -> come nella flotta (EI-RZE)
   const byNorm = new Map(Object.keys(KNOWN_AIRCRAFT).map(r => [r.replace(/[^A-Z0-9]/g, ''), r]));
-  for (const f of d?.flights || []) if (f.kind === 'flight' && f.reg && !KNOWN_AIRCRAFT[f.reg]) { const r = byNorm.get(f.reg.toUpperCase().replace(/[^A-Z0-9]/g, '')); if (r && r !== f.reg) { f.reg = r; if (!f.type) f.type = KNOWN_AIRCRAFT[r]; f.mt = Date.now(); n++; } }
-  for (const f of d?.flights || []) if (f.src === 'netline' && /^Equipaggio: /.test(f.remarks || '')) { f.crew = f.remarks.replace(/^Equipaggio: /, ''); f.remarks = ''; f.mt = Date.now(); n++; }
+  for (const f of d?.flights || []) if (f.kind === 'flight' && f.reg && !KNOWN_AIRCRAFT[f.reg]) { const r = byNorm.get(f.reg.toUpperCase().replace(/[^A-Z0-9]/g, '')); if (r && r !== f.reg) { f.reg = r; if (!f.type) f.type = KNOWN_AIRCRAFT[r]; n++; } }
+  for (const f of d?.flights || []) if (f.src === 'netline' && /^Equipaggio: /.test(f.remarks || '')) { f.crew = f.remarks.replace(/^Equipaggio: /, ''); f.remarks = ''; n++; }
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
     let ch = false;
     for (const k of ['dep', 'arr']) if (CODE_FIX[f[k]]) { f[k] = CODE_FIX[f[k]]; ch = true; }
-    if (ch) { f.mt = Date.now(); n++; }
+    if (ch) n++;
   }
   for (const f of d?.flights || []) {
     if (f.kind !== 'flight') continue;
@@ -1388,7 +1387,9 @@ function viewData(main) {
   ${sec(I.cloud, 'Google Drive', cid ? `
     <div class="set-row"><span class="k">Status</span><span class="v">${gdConnected() ? (last ? `Synced ${new Date(last).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Connected, not synced yet') : 'Not connected'}${GD.state === 'err' ? ` · <span class="bad">${esc(GD.msg)}</span>` : ''}</span></div>
     <div class="set-row"><span class="k">File</span><span class="v">Logbook/logbook.json</span></div>
-    <div class="set-row act"><button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}</div>`
+    <div class="set-row act"><button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}</div>
+    ${gdConnected() ? '<div class="set-row act"><button class="btn" id="gdRecover">Recover lost data</button><span class="hint">Brings back names, remarks, signatures and other fields emptied by a sync, from the versions Drive kept (last 30 days).</span></div>' : ''}
+    ${gdConnected() ? '<div class="set-row act"><button class="btn" id="gdRecover">Recover lost data from Drive history</button><span class="hint">Brings back names, remarks, signatures and other fields that were emptied by a sync, from the versions Drive kept in the last 30 days.</span></div>' : ''}`
     : `<div class="set-row col"><span class="k">Google OAuth client ID</span><div class="row" style="margin:0"><input id="gdCid" style="flex:1;min-width:240px" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div></div>`)}
   ${sec(I.folder, 'Backup folder', `
     <div class="set-row"><span class="k">Folder</span><span class="v">${dirHandle ? esc(dirHandle.name) : fsSupported ? 'None' : 'Needs Chrome on the Mac'}</span></div>
@@ -1679,7 +1680,37 @@ function drivePanelHTML() {
       <div class="row"><input id="gdCid" class="btn" style="flex:1;min-width:260px;text-align:left" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div>`}
   </div>`;
 }
+// recupero dalla cronologia di Drive: per ogni voce ancora presente, i campi oggi vuoti che in una versione precedente avevano un valore
+const RECOVER_FIELDS = ['picName', 'remarks', 'signature', 'check', 'simReg', 'simType', 'flightNo', 'approach', 'pax', 'payload', 'fuelUsed', 'fuelPlan', 'off', 'on', 'sched', 'reg', 'crew'];
+async function recoverFromDrive(btn) {
+  const old = btn.textContent; btn.disabled = true;
+  try {
+    await gdToken(true); const id = await gdFindFile(); if (!id) throw new Error('no logbook on Drive');
+    btn.textContent = 'Reading Drive history…';
+    const list = await (await gdFetch(`${GAPI}/${id}/revisions?fields=revisions(id,modifiedTime)&pageSize=200`)).json();
+    const revs = (list.revisions || []).sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime)).slice(0, 40);
+    const cur = new Map(data.flights.map(f => [f.id, f])), found = new Map();
+    const empty = v => v == null || v === '' || v === 0 || (typeof v === 'object' && !Object.keys(v).length);
+    let i = 0;
+    for (const r of revs) {
+      btn.textContent = `Reading version ${++i} of ${revs.length}…`;
+      let d; try { d = await (await gdFetch(`${GAPI}/${id}/revisions/${r.id}?alt=media`)).json(); } catch { continue; }
+      for (const f of d.flights || []) {
+        const c = cur.get(f.id); if (!c) continue;
+        for (const k of RECOVER_FIELDS) if (empty(c[k]) && !empty(f[k]) && !found.has(f.id + '|' + k)) found.set(f.id + '|' + k, { f: c, k, v: f[k], when: r.modifiedTime });
+      }
+    }
+    if (!found.size) { toast('Nothing to recover: no field was lost'); return; }
+    const lines = [...found.values()].slice(0, 25).map(x => `${dmy(x.f.date)} ${x.f.kind === 'sim' ? 'SIM' : `${x.f.dep}-${x.f.arr}`}: ${x.k} = ${typeof x.v === 'object' ? (x.k === 'signature' ? 'signature' : JSON.stringify(x.v).slice(0, 40)) : String(x.v).slice(0, 40)}`);
+    if (!confirm(`Recover ${found.size} field${found.size > 1 ? 's' : ''} from Drive history?\n\n${lines.join('\n')}${found.size > 25 ? `\n… and ${found.size - 25} more` : ''}`)) return;
+    const now = Date.now();
+    for (const x of found.values()) { x.f[x.k] = x.v; x.f.mt = now; }
+    await save(`${found.size} field${found.size > 1 ? 's' : ''} recovered`); scheduleSync(); route();
+  } catch (e) { toast('Recovery failed: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
 function bindDrivePanel(main) {
+  const rc = main.querySelector('#gdRecover'); if (rc) rc.onclick = () => recoverFromDrive(rc);
   const s = main.querySelector('#gdSync'); if (s) s.onclick = () => syncNow(true);
   const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Disconnect Google Drive from this device? Data stays both here and on Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
   const c = main.querySelector('#gdCidSave'); if (c) c.onclick = () => { const v = main.querySelector('#gdCid').value.trim(); if (!/\.apps\.googleusercontent\.com$/.test(v)) return toast('This does not look like a Google client ID'); ls.set('gdClient', v); renderSyncState(); route(); };

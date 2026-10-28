@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.5';
+const APP_VERSION = '3.2.6';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -519,10 +519,17 @@ function viewFlights(main) {
     <input id="fq" type="search" placeholder="Search airport, reg, PIC, remarks" size="36" value="${esc(st.q)}">
     <a class="btn primary" href="#nuovo">New flight</a>
   </div>
+  ${st.year || st.type || st.q ? `<div class="filter-bar"><span>Filtered:</span>${[
+      st.year && ['year', st.year],
+      st.type && ['type', { __planned: 'Planned from NetLine', __dot: 'Unseen', __check: 'Function time ≠ total' }[st.type] || st.type],
+      st.q && ['q', `“${st.q}”`]].filter(Boolean).map(([k, l]) => `<button type="button" class="fchip" data-clear="${k}" aria-label="Remove filter ${esc(l)}">${esc(l)} <b aria-hidden="true">✕</b></button>`).join('')}
+    <button type="button" class="btn small primary" id="clearAll">✕ Clear filters</button></div>` : ''}
   <div class="scroll" style="max-height:none"><table class="data"><thead><tr><th class="l">Date</th><th class="l">DEP</th><th>OUT</th><th class="l">ARR</th><th>IN</th><th class="l">Type</th><th class="l">Reg</th><th>Total</th><th>Function</th><th class="o">Night</th><th class="o">T/O</th><th class="o">LDG</th><th class="l">PIC name</th><th class="l o">Remarks</th></tr></thead>
   <tbody>${rows || '<tr><td colspan="14" class="l">No flights match these filters.</td></tr>'}</tbody></table></div>
   ${!st.all && list.length > 300 ? `<p><button class="btn" id="more">Show all ${list.length} entries</button></p>` : ''}`;
   $('#fy').value = st.year; $('#ft').value = st.type;
+  main.querySelectorAll('[data-clear]').forEach(b => b.onclick = () => { st[b.dataset.clear] = ''; st.all = false; viewFlights(main); });
+  if ($('#clearAll')) $('#clearAll').onclick = () => { Object.assign(st, { year: '', type: '', q: '', all: false }); viewFlights(main); };
   $('#fy').onchange = e => { st.year = e.target.value; viewFlights(main); };
   $('#ft').onchange = e => { st.type = e.target.value; viewFlights(main); };
   let deb; $('#fq').oninput = e => { clearTimeout(deb); deb = setTimeout(() => { st.q = e.target.value; viewFlights(main); const i = $('#fq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };

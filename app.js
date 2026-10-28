@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.2';
+const APP_VERSION = '3.2.3';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1159,8 +1159,9 @@ function signaturePad(cv, initial, onDraw) {
 }
 
 // ---------- Stampa EASA ----------
-const EASA_COLS = [ // [larghezza mm]
-  13, 10, 9, 10, 9, 11, 14, 10, 10, 11, 11, 16, 8, 8, 8, 8, 11, 11, 10, 10, 11, 11, 13, 10, 0];
+// AMC1 FCL.050, modello aeroplani: 1 data · 2 partenza · 3 arrivo · 4 aereo · 5 single pilot SE/ME · 6 multi-pilot · 7 totale ·
+// 8 nome PIC · 9 atterraggi giorno/notte · 10 condizioni notte/IFR · 11 funzione PIC/copilota/dual/istruttore · 12 FSTD data/tipo/totale · 13 note
+const EASA_COLS = [13, 10, 9, 10, 9, 13, 14, 9, 9, 11, 11, 18, 8, 8, 11, 11, 11, 11, 10, 10, 13, 16, 10, 0];
 function easaPages(rowsPerPage) {
   const all = data.flights.filter(f => !f.planned); const pages = [];
   let prev = Object.fromEntries(SUM_KEYS.map(k => [k, data.opening?.[k] || 0]));
@@ -1177,18 +1178,23 @@ function easaPages(rowsPerPage) {
 // esercizio, istruttore/esaminatore e firma vanno nelle Remarks. La colonna Name PIC resta vuota.
 const fstdType = f => [f.simType, f.simReg].filter(Boolean).join(' / ');
 const fstdRemarks = f => [f.remarks, f.picName && !(f.remarks || '').toUpperCase().includes(f.picName.toUpperCase()) ? `INSTR./EXAM. ${f.picName}` : ''].filter(Boolean).join(' · ');
+function easaRow(f) {
+  const n = v => v || '';
+  if (f.kind === 'sim') return { cells: ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', dmy(f.date), fstdType(f), hm(f.sim)], rem: fstdRemarks(f) };
+  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), n(f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
+}
+function easaTotCells(t) { const n = v => v || ''; return [hm(t.spSe), hm(t.spMe), hm(t.mp), hm(t.total), '', n(t.ldgDay), n(t.ldgNight), hm(t.night), hm(t.ifr), hm(t.pic), hm(t.sic), hm(t.dual), hm(t.instr), '', '', hm(t.sim)]; }
+const EASA_HEAD = `<thead><tr><th rowspan="2">DATE<br>(dd/mm/yy)</th><th colspan="2">DEPARTURE</th><th colspan="2">ARRIVAL</th><th colspan="2">AIRCRAFT</th><th colspan="2">SINGLE PILOT<br>TIME</th><th rowspan="2">MULTI-<br>PILOT<br>TIME</th><th rowspan="2">TOTAL<br>TIME OF<br>FLIGHT</th><th rowspan="2">NAME PIC</th><th colspan="2">LANDINGS</th><th colspan="2">OPERATIONAL<br>CONDITION TIME</th><th colspan="4">PILOT FUNCTION TIME</th><th colspan="3">FSTD SESSION</th><th rowspan="2">REMARKS<br>AND ENDORSEMENTS</th></tr>
+  <tr class="sub"><th>PLACE</th><th>TIME</th><th>PLACE</th><th>TIME</th><th>MAKE, MODEL,<br>VARIANT</th><th>REGIS-<br>TRATION</th><th>SE</th><th>ME</th><th>DAY</th><th>NIGHT</th><th>NIGHT</th><th>IFR</th><th>PILOT-IN-<br>COMMAND</th><th>CO-<br>PILOT</th><th>DUAL</th><th>INSTR-<br>UCTOR</th><th>DATE<br>(dd/mm/yy)</th><th>TYPE</th><th>TOTAL TIME<br>OF SESSION</th></tr></thead>`;
+const EASA_CERT = name => `I certify that the entries in this log are true.<br><br>PILOT'S SIGNATURE ______________<br>${esc(name || '')}`;
 function easaPageHTML(p, rowsPerPage, totalPages) {
   const cg = `<colgroup>${EASA_COLS.map(w => w ? `<col style="width:${w}mm">` : '<col>').join('')}</colgroup>`;
-  const head = `<thead><tr><th rowspan="2">DATE<br>(dd/mm/yy)</th><th colspan="2">DEPARTURE</th><th colspan="2">ARRIVAL</th><th colspan="2">AIRCRAFT</th><th colspan="2">SINGLE PILOT<br>TIME</th><th rowspan="2">MULTI<br>PILOT<br>TIME</th><th rowspan="2">TOTAL<br>TIME OF<br>FLIGHT</th><th rowspan="2">NAME<br>PIC</th><th colspan="2">TAKE-OFFS</th><th colspan="2">LANDINGS</th><th colspan="4">PILOT FUNCTION TIME</th><th colspan="2">OPERATIONAL<br>CONDITION TIME</th><th colspan="2">FSTD SESSION</th><th rowspan="2">REMARKS AND<br>ENDORSEMENTS</th></tr>
-  <tr class="sub"><th>PLACE</th><th>TIME</th><th>PLACE</th><th>TIME</th><th>MAKE, MODEL<br>VARIANT</th><th>REGIS-<br>TRATION</th><th>SE</th><th>ME</th><th>DAY</th><th>NIGHT</th><th>DAY</th><th>NIGHT</th><th>PIC</th><th>CO-<br>PILOT</th><th>DUAL</th><th>INSTR.</th><th>NIGHT</th><th>IFR</th><th>TYPE</th><th>TOTAL<br>TIME</th></tr></thead>`;
-  const n = v => v || '';
-  const body = p.rows.map(f => f.kind === 'sim'
-    ? `<tr><td>${dmy(f.date)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pn">${esc(fstdType(f))}</td><td>${hm(f.sim)}</td><td class="rem">${esc(fstdRemarks(f))}${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`
-    : `<tr><td>${dmy(f.date)}</td><td>${esc(f.dep)}</td><td>${esc(f.out)}</td><td>${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="pn">${esc(f.type)}</td><td>${esc(f.reg)}</td><td>${hm(f.spSe)}</td><td>${hm(f.spMe)}</td><td>${hm(f.mp)}</td><td>${hm(f.total)}</td><td class="pn">${esc(f.picName)}</td><td>${n(f.toDay)}</td><td>${n(f.toNight)}</td><td>${n(f.ldgDay)}</td><td>${n(f.ldgNight)}</td><td>${hm(f.pic)}</td><td>${hm(f.sic)}</td><td>${hm(f.dual)}</td><td>${hm(f.instr)}</td><td>${hm(f.night)}</td><td>${hm(f.ifr)}</td><td></td><td></td><td class="rem">${esc(f.remarks)}${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td></tr>`).join('')
-    + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(25)}</tr>`).join('');
-  const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td><td>${hm(t.spSe)}</td><td>${hm(t.spMe)}</td><td>${hm(t.mp)}</td><td>${hm(t.total)}</td><td></td><td>${n(t.toDay)}</td><td>${n(t.toNight)}</td><td>${n(t.ldgDay)}</td><td>${n(t.ldgNight)}</td><td>${hm(t.pic)}</td><td>${hm(t.sic)}</td><td>${hm(t.dual)}</td><td>${hm(t.instr)}</td><td>${hm(t.night)}</td><td>${hm(t.ifr)}</td><td></td><td>${hm(t.sim)}</td>${sig}</tr>`;
-  const sig = `<td rowspan="3" class="sig">I, ${esc(data.pilot || '')}, certify that the entries in this log are true.<br><br>Pilot's signature ______________</td>`;
-  return `<section class="easa-page"><table class="easa">${cg}${head}<tbody>${body}
+  const extra = f => `${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}`;
+  const body = p.rows.map(f => { const r = easaRow(f); return `<tr>${r.cells.map((c, i) => `<td${[5, 11, 21].includes(i) ? ' class="pn"' : ''}>${esc(c)}</td>`).join('')}<td class="rem">${esc(r.rem)}${extra(f)}</td></tr>`; }).join('')
+    + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(24)}</tr>`).join('');
+  const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td>${easaTotCells(t).map(c => `<td>${c}</td>`).join('')}${sig}</tr>`;
+  const sig = `<td rowspan="3" class="sig">${EASA_CERT(data.pilot)}</td>`;
+  return `<section class="easa-page"><table class="easa">${cg}${EASA_HEAD}<tbody>${body}
     ${totRow('TOTAL THIS PAGE', p.page, sig)}${totRow('TOTAL FROM PREVIOUS PAGES', p.prev, '')}${totRow('TOTAL TIME', p.tot, '')}</tbody></table>
     <div class="easa-foot"><span>${esc(data.pilot || '')}</span><span>Page ${p.n} / ${totalPages}</span></div></section>`;
 }

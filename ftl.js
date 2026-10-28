@@ -158,6 +158,42 @@ function windows(model) {
   const y0 = Date.parse(today().slice(0, 4) + '-01-01T00:00:00Z');
   return { cur, peak, peakDay, dYear: dutyIn(model.duties, y0, td), fYear: flightIn(y0, td), f12m: flightIn(td - 365 * DAY, td), now };
 }
+// ---------- proiezione: valore mobile dei 28 giorni, da 28 giorni fa a fine roster (almeno 28 giorni avanti)
+function projection(model) {
+  const td = utcMs(today(), '0000'), last = Math.max(td + 28 * DAY, ...model.duties.map(d => Math.floor(d.end / DAY) * DAY));
+  const pts = [];
+  for (let t = td - 28 * DAY; t <= last; t += DAY) { const e = t + DAY; pts.push({ t, f: flightIn(e - 28 * DAY, e), d: dutyIn(model.duties, e - 28 * DAY, e) }); }
+  return { pts, td };
+}
+function projChart(box, P, key, lim, label) {
+  const W = Math.max(320, box.clientWidth || 760), H = 260, L = 46, R = 14, T = 18, B = 30;
+  const n = P.pts.length, X = i => L + i / (n - 1) * (W - L - R);
+  const ymax = Math.max(lim * 1.08, ...P.pts.map(p => p[key])), Y = v => T + (1 - v / ymax) * (H - T - B);
+  const now = P.pts.findIndex(p => p.t === P.td);
+  const line = (a, b) => P.pts.slice(a, b + 1).map((p, j) => `${j ? 'L' : 'M'}${X(a + j).toFixed(1)},${Y(p[key]).toFixed(1)}`).join('');
+  const peak = P.pts.slice(now).reduce((m, p, j) => p[key] > m.v ? { v: p[key], i: now + j } : m, { v: -1, i: now });
+  const ticks = []; for (let i = 0; i < n; i += 7) ticks.push(`<text x="${X(i)}" y="${H - 10}" class="ax" text-anchor="middle">${new Date(P.pts[i].t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }).toUpperCase().replace('SEPT', 'SEP')}</text>`);
+  const grid = [0, .25, .5, .75].map(k => lim * k).concat(lim).map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="gl"/><text x="${L - 6}" y="${Y(v) + 4}" class="ax" text-anchor="end">${Math.round(v / 60)}h</text>`).join('');
+  const area = `${line(0, n - 1)}L${X(n - 1)},${Y(0)}L${X(0)},${Y(0)}Z`;
+  const col = peak.v > lim ? 'var(--red)' : peak.v >= lim * .9 ? 'var(--amber)' : 'var(--accent)';
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${label}: projected rolling 28 days">
+    ${grid}<path d="${area}" fill="${col}" opacity=".10"/>
+    <line x1="${L}" x2="${W - R}" y1="${Y(lim)}" y2="${Y(lim)}" stroke="var(--red)" stroke-width="1.6" stroke-dasharray="6 5"/><text x="${L + 6}" y="${Y(lim) - 6}" class="lab" fill="var(--red)" style="fill:var(--red)">${lim / 60}h</text>
+    <path d="${line(0, now)}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="${line(now, n - 1)}" fill="none" stroke="${col}" stroke-width="2.4" stroke-dasharray="7 5" stroke-linejoin="round"/>
+    <line x1="${X(now)}" x2="${X(now)}" y1="${T - 6}" y2="${H - B}" stroke="var(--amber)" stroke-width="1.4" stroke-dasharray="4 4"/><text x="${X(now)}" y="${T - 8}" class="lab" text-anchor="middle" style="fill:var(--amber)">NOW</text>
+    ${peak.v > 0 ? `<circle cx="${X(peak.i)}" cy="${Y(peak.v)}" r="4.5" fill="${col}" stroke="var(--sheet)" stroke-width="2"/>` : ''}
+    ${ticks.join('')}<line class="xh" y1="${T}" y2="${H - B}" style="display:none"/><g class="dots"></g><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>
+    <div class="ctip" hidden></div>
+    <div class="proj-foot"><span>Peak projected${peak.v > 0 ? ` on ${dmy(dateUTC(P.pts[peak.i].t))}` : ''}</span><b style="color:${col}">${durHM(Math.max(0, peak.v))} / ${lim / 60}h</b></div>`;
+  const svg = box.querySelector('svg'), xh = svg.querySelector('.xh'), dots = svg.querySelector('.dots'), tip = box.querySelector('.ctip');
+  const move = e => { const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width, i = Math.max(0, Math.min(n - 1, Math.round((px - L) / (W - L - R) * (n - 1)))), p = P.pts[i];
+    xh.setAttribute('x1', X(i)); xh.setAttribute('x2', X(i)); xh.style.display = ''; dots.innerHTML = `<circle cx="${X(i)}" cy="${Y(p[key])}" r="4.5" fill="${col}" stroke="var(--sheet)" stroke-width="2"/>`;
+    tip.hidden = false; tip.innerHTML = `<b>${dmy(dateUTC(p.t))}</b><div>${label} 28 days <b>${durHM(p[key])}</b></div><div>${i > now ? 'planned' : 'flown'} · ${durHM(Math.max(0, lim - p[key]))} remaining</div>`;
+    tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, X(i) / W * r.width + 12)) + 'px'; };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', () => { xh.style.display = 'none'; dots.innerHTML = ''; tip.hidden = true; });
+}
 // giorni liberi nel mese (OFF, HOL) dal roster
 function daysOff(model, ym) { return model.days.filter(d => d.date.startsWith(ym) && (d.kind === 'off' || d.kind === 'vacation')).length; }
 // riposo esteso ricorrente (7.1.14 c): ≥ 36 h con 2 notti locali, al massimo ogni 168 h
@@ -207,6 +243,7 @@ function viewFTL(main) {
   <section class="chart-card"><h2>Duty time</h2><div class="ftl-gs">
     ${gaugeRow('7 days', w.cur.d7, FTL_LIM.d7, w.peak.d7, w.peakDay.d7)}${gaugeRow('14 days', w.cur.d14, FTL_LIM.d14, w.peak.d14, w.peakDay.d14)}
     ${gaugeRow('28 days', w.cur.d28, FTL_LIM.d28, w.peak.d28, w.peakDay.d28)}${gaugeRow('Year ' + td.slice(0, 4), w.dYear, FTL_LIM.dYear)}</div></section>
+  <section class="chart-card"><div class="proj-head"><h2>Projected 28 days</h2><div class="seg-mini" role="radiogroup"><button type="button" data-k="f" class="${(viewFTL.k || 'f') === 'f' ? 'on' : ''}">Flight time</button><button type="button" data-k="d" class="${viewFTL.k === 'd' ? 'on' : ''}">Duty time</button></div></div><div class="chart" id="projBox"></div></section>
   <section class="chart-card"><h2>Flight time</h2><div class="ftl-gs">
     ${gaugeRow('28 days', w.cur.f28, FTL_LIM.f28, w.peak.f28, w.peakDay.f28)}${gaugeRow('Year ' + td.slice(0, 4), w.fYear, FTL_LIM.fYear)}${gaugeRow('12 months', w.f12m, FTL_LIM.f12m)}</div></section>
   <div class="chart-two">
@@ -217,6 +254,9 @@ function viewFTL(main) {
     <div class="scroll"><table class="data ftl-t"><thead><tr><th class="l">Date</th><th class="l">Duty</th><th>Report UTC</th><th>End UTC</th><th>DP</th><th>FDP</th><th>Sect.</th><th>Rest before</th><th class="l"></th></tr></thead>
     <tbody>${shown.map(row).join('') || '<tr><td colspan="9" class="l">No duties.</td></tr>'}</tbody></table></div>
     <p class="hint">FDP max from table 7.1.7.1 at the reference time; (B) acclimatised to home base, (X) unknown state. Home stand-by counts 25%, reserve 0. Rest minimum: home base the longer of the previous duty or 12 h, away 10 h (14 h after an FDP with ≥ 4 h time difference). Flags in the acclimatised time zone.</p></section>`;
+  const P = projection(model), drawP = () => { const k = viewFTL.k || 'f'; projChart($('#projBox'), P, k, k === 'f' ? FTL_LIM.f28 : FTL_LIM.d28, k === 'f' ? 'Flight time' : 'Duty time'); main.querySelectorAll('.seg-mini button').forEach(b => b.classList.toggle('on', b.dataset.k === k)); };
+  main.querySelectorAll('.seg-mini button').forEach(b => b.onclick = () => { viewFTL.k = b.dataset.k; drawP(); });
+  drawP();
 }
 
 // ---------- Summary: i prossimi giorni

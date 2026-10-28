@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.0.7';
+const APP_VERSION = '3.1.0';
 const APP_DATE = '27/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -597,6 +597,7 @@ function viewEdit(main, id) {
         <div><span>DISTANCE</span><b id="distNM">—</b><small class="d">NM</small></div>
       </div>
     </section>
+    <section class="sheet-card swx" id="swxCard" hidden></section>
 
     <section class="sheet-card">
       <h3>Flight</h3>
@@ -708,6 +709,7 @@ function viewEdit(main, id) {
   form.addEventListener('focusout', e => { const el = e.target; if (!isTD(el)) return; if (el.value === '' && el.dataset.prev) el.value = el.dataset.prev; delete el.dataset.prev; el.placeholder = el.dataset.ph || ''; });
   form.addEventListener('change', e => { const el = e.target; if (TIME_IDS.includes(el.id)) el.value = normTime(el.value); else if (DUR_IDS.includes(el.id)) el.value = normDur(el.value); }, true);
   const kind = () => form.kind.value;
+  try { swxCard(form); } catch (e) { console.error(e); }
   form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { g('fFlight').hidden = kind() === 'sim'; g('fSim').hidden = kind() !== 'sim'; });
 
   // ---------- blocco, notte, decolli e atterraggi

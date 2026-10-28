@@ -27,7 +27,7 @@ async function easaPdf(pages, rpp, totalPages) {
       if (f.check) remParts.push([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '));
       const sigs = [f.check?.sig, f.signature].filter(Boolean);
       const rem = { content: remParts.filter(Boolean).join('\n'), styles: { halign: 'left', fontSize: 4.8 }, sigs };
-      if (f.kind === 'sim') return [dmy(f.date), '', '', '', '', 'FSTD', n(f.simReg), '', '', '', '', n(f.picName), '', '', '', '', '', '', '', '', '', '', n(f.simType), hm(f.sim), rem];
+      if (f.kind === 'sim') { rem.content = [fstdRemarks(f), remParts.slice(1).join('\n')].filter(Boolean).join('\n'); return [dmy(f.date), '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', fstdType(f), hm(f.sim), rem]; }
       return [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), n(f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.toDay), n(f.toNight), n(f.ldgDay), n(f.ldgNight), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), hm(f.night), hm(f.ifr), '', '', rem];
     });
     while (body.length < rpp) body.push(Array(25).fill(''));

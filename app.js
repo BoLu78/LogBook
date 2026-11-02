@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.3.1';
+const APP_VERSION = '3.4.0';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1193,7 +1193,7 @@ function signaturePad(cv, initial, onDraw) {
 // ---------- Stampa EASA ----------
 // AMC1 FCL.050, modello aeroplani: 1 data · 2 partenza · 3 arrivo · 4 aereo · 5 single pilot SE/ME · 6 multi-pilot · 7 totale ·
 // 8 nome PIC · 9 atterraggi giorno/notte · 10 condizioni notte/IFR · 11 funzione PIC/copilota/dual/istruttore · 12 FSTD data/tipo/totale · 13 note
-const EASA_COLS = [13, 10, 9, 10, 9, 13, 14, 9, 9, 11, 11, 18, 8, 8, 11, 11, 11, 11, 10, 10, 13, 16, 10, 0];
+// le colonne della stampa EASA sono definite più sotto (EASA_LEFT, EASA_RIGHT)
 function easaPages(rowsPerPage) {
   const all = data.flights.filter(f => !f.planned); const pages = [];
   let prev = Object.fromEntries(SUM_KEYS.map(k => [k, data.opening?.[k] || 0]));
@@ -1223,50 +1223,103 @@ const EASA_REG = {
 };
 const EASA_REG_CHECK = new Set();
 const easaModelOf = (reg, type) => data?.acModel?.[reg] || EASA_REG[reg] || easaModel(type);
-function easaRow(f) {
-  const n = v => v || '';
-  if (f.kind === 'sim') return { cells: ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', dmy(f.date), fstdType(f), hm(f.sim)], rem: fstdRemarks(f) };
-  return { cells: [dmy(f.date), n(f.dep), n(f.out), n(f.arr), n(f.inn), easaModelOf(f.reg, f.type), n(f.reg), hm(f.spSe), hm(f.spMe), hm(f.mp), hm(f.total), n(f.picName), n(f.ldgDay), n(f.ldgNight), hm(f.night), hm(f.ifr), hm(f.pic), hm(f.sic), hm(f.dual), hm(f.instr), '', '', ''], rem: f.remarks || '' };
+// ---------- colonne della stampa ----------
+// Numerazione AMC1 FCL.050 come nel libretto cartaceo: 1 data · 2 partenza · 3 arrivo · 4 aereo · 5 single/multi pilot · 6 totale ·
+// 7 nome PIC · 8 decolli/atterraggi · 9 notte/IFR · 10 funzione · 11 FSTD · 12 remarks.
+// Pagina sinistra del libretto: colonne 1-8; pagina destra: 9-12 con la dichiarazione e la firma.
+const easaN = v => v ? String(v) : '';
+const onFlight = fn => f => f.kind === 'sim' ? '' : fn(f);
+const onSim = fn => f => f.kind === 'sim' ? fn(f) : '';
+const EC = (key, num, group, sub, w, cell, tot, cls) => ({ key, num, group, sub, w, cell, tot, cls });
+const EASA_LEFT = [
+  EC('date', 1, 'DATE\n(dd/mm/yy)', '', 20, onFlight(f => dmy(f.date))),
+  EC('dep', 2, 'DEPARTURE', 'PLACE', 15, onFlight(f => easaN(f.dep))), EC('out', 2, 'DEPARTURE', 'TIME', 13, onFlight(f => easaN(f.out))),
+  EC('arr', 3, 'ARRIVAL', 'PLACE', 15, onFlight(f => easaN(f.arr))), EC('inn', 3, 'ARRIVAL', 'TIME', 13, onFlight(f => easaN(f.inn))),
+  EC('model', 4, 'AIRCRAFT', 'MAKE, MODEL,\nVARIANT', 38, onFlight(f => easaModelOf(f.reg, f.type)), null, 'pn'),
+  EC('reg', 4, 'AIRCRAFT', 'REGISTRATION', 22, onFlight(f => easaN(f.reg))),
+  EC('se', 5, 'SINGLE PILOT\nTIME', 'SE', 14, onFlight(f => hm(f.spSe)), t => hm(t.spSe)),
+  EC('me', 5, 'SINGLE PILOT\nTIME', 'ME', 14, onFlight(f => hm(f.spMe)), t => hm(t.spMe)),
+  EC('mp', 5, 'MULTI-PILOT\nTIME', '', 18, onFlight(f => hm(f.mp)), t => hm(t.mp)),
+  EC('total', 6, 'TOTAL TIME\nOF FLIGHT', '', 18, onFlight(f => hm(f.total)), t => hm(t.total)),
+  EC('picName', 7, 'NAME PIC', '', 40, onFlight(f => easaN(f.picName)), null, 'pn'),
+  EC('toDay', 8, 'TAKEOFFS', 'DAY', 11, onFlight(f => easaN(f.toDay)), t => easaN(t.toDay)),
+  EC('toNight', 8, 'TAKEOFFS', 'NIGHT', 11, onFlight(f => easaN(f.toNight)), t => easaN(t.toNight)),
+  EC('ldgDay', 8, 'LANDINGS', 'DAY', 11, onFlight(f => easaN(f.ldgDay)), t => easaN(t.ldgDay)),
+  EC('ldgNight', 8, 'LANDINGS', 'NIGHT', 11, onFlight(f => easaN(f.ldgNight)), t => easaN(t.ldgNight))
+];
+const EASA_RIGHT = [
+  EC('night', 9, 'OPERATIONAL\nCONDITION TIME', 'NIGHT', 18, onFlight(f => hm(f.night)), t => hm(t.night)),
+  EC('ifr', 9, 'OPERATIONAL\nCONDITION TIME', 'IFR', 18, onFlight(f => hm(f.ifr)), t => hm(t.ifr)),
+  EC('pic', 10, 'PILOT FUNCTION TIME', 'PILOT-IN-\nCOMMAND', 19, onFlight(f => hm(f.pic)), t => hm(t.pic)),
+  EC('sic', 10, 'PILOT FUNCTION TIME', 'CO-PILOT', 19, onFlight(f => hm(f.sic)), t => hm(t.sic)),
+  EC('dual', 10, 'PILOT FUNCTION TIME', 'DUAL', 18, onFlight(f => hm(f.dual)), t => hm(t.dual)),
+  EC('instr', 10, 'PILOT FUNCTION TIME', 'INSTRUCTOR/\nEXAMINER', 19, onFlight(f => hm(f.instr)), t => hm(t.instr)),
+  EC('sdate', 11, 'SYNTHETIC TRAINING DEVICES SESSION', 'DATE\n(dd/mm/yy)', 18, onSim(f => dmy(f.date))),
+  EC('stype', 11, 'SYNTHETIC TRAINING DEVICES SESSION', 'TYPE', 40, onSim(fstdType), null, 'pn'),
+  EC('sim', 11, 'SYNTHETIC TRAINING DEVICES SESSION', 'TOTAL TIME\nOF SESSION', 18, onSim(f => hm(f.sim)), t => hm(t.sim)),
+  EC('rem', 12, 'REMARKS AND\nENDORSEMENTS', '', 0, f => f.kind === 'sim' ? fstdRemarks(f) : (f.remarks || ''))
+];
+// layout "book": ogni pagina del logbook = due fogli A4 (sinistra e destra), come il libretto cartaceo.
+// layout "single": tutte le colonne su un foglio, larghezze ridotte in proporzione.
+const EASA_SINGLE = (() => {
+  const cols = [...EASA_LEFT, ...EASA_RIGHT], fixed = cols.reduce((a, c) => a + c.w, 0), k = (287 - 34) / fixed;
+  const short = { reg: { sub: 'REG.' }, mp: { group: 'MULTI-\nPILOT\nTIME' }, instr: { sub: 'INSTR./\nEXAM.' } };
+  return cols.map(c => ({ ...c, ...short[c.key], w: c.w ? +(c.w * k).toFixed(1) : 0 }));
+})();
+const easaSheets = layout => layout === 'single' ? [{ cols: EASA_SINGLE, side: '' }] : [{ cols: EASA_LEFT, side: 'L' }, { cols: EASA_RIGHT, side: 'R' }];
+const EASA_W = 287;   // larghezza utile A4 orizzontale, mm
+// intestazione in tre righe: numeri di colonna, gruppi, sottocolonne
+function easaHeadModel(cols) {
+  const runs = key => { const out = []; cols.forEach((c, i) => { const k = key(c); if (out.length && out.at(-1).k === k) out.at(-1).span++; else out.push({ k, span: 1, i }); }); return out; };
+  const nums = runs(c => c.num).map(r => ({ text: String(r.k), span: r.span }));
+  const groups = runs(c => c.group).map(r => ({ text: r.k, span: r.span, tall: r.span === 1 && !cols[r.i].sub }));
+  const subs = cols.filter(c => c.sub).map(c => ({ text: c.sub }));
+  return { nums, groups, subs };
 }
-function easaTotCells(t) { const n = v => v || ''; return [hm(t.spSe), hm(t.spMe), hm(t.mp), hm(t.total), '', n(t.ldgDay), n(t.ldgNight), hm(t.night), hm(t.ifr), hm(t.pic), hm(t.sic), hm(t.dual), hm(t.instr), '', '', hm(t.sim)]; }
-const EASA_HEAD = `<thead><tr><th rowspan="2">DATE<br>(dd/mm/yy)</th><th colspan="2">DEPARTURE</th><th colspan="2">ARRIVAL</th><th colspan="2">AIRCRAFT</th><th colspan="2">SINGLE PILOT<br>TIME</th><th rowspan="2">MULTI-<br>PILOT<br>TIME</th><th rowspan="2">TOTAL<br>TIME OF<br>FLIGHT</th><th rowspan="2">NAME PIC</th><th colspan="2">LANDINGS</th><th colspan="2">OPERATIONAL<br>CONDITION TIME</th><th colspan="4">PILOT FUNCTION TIME</th><th colspan="3">FSTD SESSION</th><th rowspan="2">REMARKS<br>AND ENDORSEMENTS</th></tr>
-  <tr class="sub"><th>PLACE</th><th>TIME</th><th>PLACE</th><th>TIME</th><th>MAKE, MODEL,<br>VARIANT</th><th>REGIS-<br>TRATION</th><th>SE</th><th>ME</th><th>DAY</th><th>NIGHT</th><th>NIGHT</th><th>IFR</th><th>PILOT-IN-<br>COMMAND</th><th>CO-<br>PILOT</th><th>DUAL</th><th>INSTR-<br>UCTOR</th><th>DATE<br>(dd/mm/yy)</th><th>TYPE</th><th>TOTAL TIME<br>OF SESSION</th></tr></thead>`;
-const EASA_CERT = name => `I certify that the entries in this log are true.<br><br>PILOT'S SIGNATURE ______________<br>${esc(name || '')}`;
-function easaPageHTML(p, rowsPerPage, totalPages) {
-  const cg = `<colgroup>${EASA_COLS.map(w => w ? `<col style="width:${w}mm">` : '<col>').join('')}</colgroup>`;
-  const extra = f => `${f.check ? `<div class="chk-rem">${esc([f.check.type, f.check.name, f.check.lic].filter(Boolean).join(' · '))}${f.check.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>` : ''}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}`;
-  const body = p.rows.map(f => { const r = easaRow(f); return `<tr>${r.cells.map((c, i) => `<td${[5, 11, 21].includes(i) ? ' class="pn"' : ''}>${esc(c)}</td>`).join('')}<td class="rem">${esc(r.rem)}${extra(f)}</td></tr>`; }).join('')
-    + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(24)}</tr>`).join('');
-  const totRow = (lab, t, sig) => `<tr class="tot"><td colspan="7" class="lab">${lab}</td>${easaTotCells(t).map(c => `<td>${c}</td>`).join('')}${sig}</tr>`;
-  const sig = `<td rowspan="3" class="sig">${EASA_CERT(data.pilot)}</td>`;
-  return `<section class="easa-page"><table class="easa">${cg}${EASA_HEAD}<tbody>${body}
-    ${totRow('TOTAL THIS PAGE', p.page, sig)}${totRow('TOTAL FROM PREVIOUS PAGES', p.prev, '')}${totRow('TOTAL TIME', p.tot, '')}</tbody></table>
-    <div class="easa-foot"><span>${esc(data.pilot || '')}</span><span>Page ${p.n} / ${totalPages}</span></div></section>`;
+const easaLabelSpan = cols => cols[0].key === 'date' ? cols.findIndex(c => c.tot) : 0;
+const easaCert = () => `I, ${(data.pilot || '').toUpperCase()}, certify that the entries in this log are true.`;
+const easaRemExtra = f => [f.check ? [f.check.type, f.check.name, f.check.lic].filter(Boolean).join(', ') : ''].filter(Boolean);
+const easaSideName = s => s === 'L' ? 'left' : s === 'R' ? 'right' : '';
+function easaSheetHTML(p, rowsPerPage, totalPages, sheet) {
+  const { cols, side } = sheet, hm3 = easaHeadModel(cols), br = t => esc(t).replace(/\n/g, '<br>');
+  const cg = `<colgroup>${cols.map(c => c.w ? `<col style="width:${c.w}mm">` : '<col>').join('')}</colgroup>`;
+  const head = `<thead><tr class="num">${hm3.nums.map(x => `<th colspan="${x.span}">${x.text}</th>`).join('')}</tr>
+    <tr>${hm3.groups.map(x => `<th colspan="${x.span}"${x.tall ? ' rowspan="2"' : ''}>${br(x.text)}</th>`).join('')}</tr>
+    <tr class="sub">${hm3.subs.map(x => `<th>${br(x.text)}</th>`).join('')}</tr></thead>`;
+  const remCell = f => `<td class="rem">${esc(cols.at(-1).cell(f))}${easaRemExtra(f).map(t => `<div class="chk-rem">${esc(t)}${f.check?.sig ? `<img class="sig-img" src="${f.check.sig}" alt="">` : ''}</div>`).join('')}${f.signature ? `<img class="sig-img" src="${f.signature}" alt="">` : ''}</td>`;
+  const body = p.rows.map(f => `<tr>${cols.map(c => c.key === 'rem' ? remCell(f) : `<td${c.cls ? ` class="${c.cls}"` : ''}>${esc(c.cell(f))}</td>`).join('')}</tr>`).join('')
+    + Array.from({ length: rowsPerPage - p.rows.length }, () => `<tr>${'<td></td>'.repeat(cols.length)}</tr>`).join('');
+  const ls = easaLabelSpan(cols), hasRem = cols.at(-1).key === 'rem';
+  const totRow = (lab, t, first) => `<tr class="tot">${ls ? `<td colspan="${ls}" class="lab">${lab}</td>` : ''}${cols.slice(ls).map(c => c.key === 'rem' ? (first ? `<td rowspan="3" class="sig">${esc(easaCert())}<div class="sig-line">PILOT'S SIGNATURE</div></td>` : '') : `<td>${c.tot ? c.tot(t) : ''}</td>`).join('')}</tr>`;
+  return `<section class="easa-page${side ? ' book' : ''}"><table class="easa">${cg}${head}<tbody>${body}
+    ${totRow('TOTAL THIS PAGE', p.page, true)}${totRow('TOTAL FROM PREVIOUS PAGES', p.prev)}${totRow('TOTAL TIME', p.tot)}</tbody></table>
+    <div class="easa-foot"><span>${esc(data.pilot || '')}</span><span>Page ${p.n}${side ? ` · ${easaSideName(side)}` : ''} / ${totalPages}</span></div></section>`;
 }
+const easaPageHTML = (p, rpp, totalPages, layout) => easaSheets(layout).map(sh => easaSheetHTML(p, rpp, totalPages, sh)).join('');
 function viewPrint(main) {
-  const st = viewPrint.st ||= { rpp: 18, from: '', to: '', last: (() => { try { return +localStorage.getItem('lastPages') || 3; } catch { return 3; } })() };
+  const st = viewPrint.st ||= { rpp: 18, layout: ls.get('easaLayout') || 'book', from: '', to: '', last: (() => { try { return +localStorage.getItem('lastPages') || 3; } catch { return 3; } })() };
   const pages = easaPages(st.rpp);
   const sel = pages.filter(p => (!st.from || p.lastd >= st.from) && (!st.to || p.first <= st.to));
   const lastN = pages.slice(-Math.max(1, Math.min(st.last, pages.length)));
   const range = ps => ps.length ? `pages ${ps[0].n}–${ps.at(-1).n}, ${dmy(ps[0].first)} to ${dmy(ps.at(-1).lastd)}` : '';
-  const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length)).join(''); setTimeout(() => window.print(), 50); };
+  const print = ps => { if (!ps.length) return; $('#printArea').innerHTML = ps.map(p => easaPageHTML(p, st.rpp, pages.length, st.layout)).join(''); setTimeout(() => window.print(), 50); };
   // PDF A4 orizzontale: su iPad è l'unico modo sicuro, Safari ignora l'orientamento della stampa
   const pdf = async (ps, btn) => {
     if (!ps.length) return;
     const old = btn.textContent; btn.disabled = true; btn.textContent = 'Creating PDF…';
     try {
-      const blob = await easaPdf(ps, st.rpp, pages.length);
+      const blob = await easaPdf(ps, st.rpp, pages.length, st.layout);
       const name = `Logbook_EASA_${ps[0].n}-${ps.at(-1).n}.pdf`, url = URL.createObjectURL(blob);
       const file = new File([blob], name, { type: 'application/pdf' });
       const bar = $('#pdfReady'); bar.hidden = false;
-      bar.innerHTML = `<b>PDF ready</b> · ${ps.length} page${ps.length > 1 ? 's' : ''} A4 landscape <a class="btn primary" href="${url}" target="_blank" rel="noopener">Open PDF</a> <a class="btn" href="${url}" download="${name}">Download</a>${navigator.canShare?.({ files: [file] }) ? ' <button class="btn" type="button" id="pdfShare">Share / Print</button>' : ''}`;
+      bar.innerHTML = `<b>PDF ready</b> · ${ps.length} logbook page${ps.length > 1 ? 's' : ''}${st.layout === 'single' ? '' : ` (${ps.length * 2} A4 sheets, left + right)`} A4 landscape <a class="btn primary" href="${url}" target="_blank" rel="noopener">Open PDF</a> <a class="btn" href="${url}" download="${name}">Download</a>${navigator.canShare?.({ files: [file] }) ? ' <button class="btn" type="button" id="pdfShare">Share / Print</button>' : ''}`;
       $('#pdfShare')?.addEventListener('click', () => navigator.share({ files: [file], title: name }).catch(() => {}));
       bar.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     } catch (e) { toast('PDF not created: ' + e.message); }
     btn.disabled = false; btn.textContent = old;
   };
   main.innerHTML = `<h1>EASA logbook print</h1>
-  <p class="lede">EASA logbook format (AMC1 FCL.050), ${pages.length} pages of ${st.rpp} lines. The PDF is always A4 landscape, ready to print or send.</p>
+  <p class="lede">EASA logbook format (AMC1 FCL.050), ${pages.length} pages of ${st.rpp} lines. ${st.layout === 'single' ? 'Each page on one A4 landscape sheet.' : 'Each page on two A4 landscape sheets, left (columns 1–8) and right (9–12), like the paper logbook.'}</p>
   <div class="pdf-ready" id="pdfReady" hidden></div>
   <div class="panel"><h2>Last pages</h2>
     <p>What an operator usually asks for: the most recent pages, with totals brought forward and up to date.</p>
@@ -1279,10 +1332,11 @@ function viewPrint(main) {
       <label>To <input type="date" id="pt" value="${st.to}"></label>
       <button class="btn primary" id="doPrint">PDF ${st.from || st.to ? 'period' : 'whole logbook'} (${sel.length} pages)</button><button class="btn" id="doPrintPr" title="Browser print (Mac)">Print</button></div>
     <p class="hint" style="margin-top:8px">Pages keep the numbering and totals brought forward of the full logbook.</p></div>
-  <div class="row filters"><label>Lines per page <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
-  <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length)).join('')}</div>
+  <div class="row filters"><label>Layout <select id="lay"><option value="book" ${st.layout !== 'single' ? 'selected' : ''}>Paper logbook: left + right sheet</option><option value="single" ${st.layout === 'single' ? 'selected' : ''}>Compact: one sheet per page</option></select></label><label>Lines per page <select id="rpp">${[14, 16, 18, 20, 22].map(v => `<option ${v === st.rpp ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+  <div class="easa-preview" id="pv">${lastN.slice(-1).map(p => easaPageHTML(p, st.rpp, pages.length, st.layout)).join('')}</div>
   <p class="hint">Preview of the last page.</p>`;
   $('#rpp').onchange = e => { st.rpp = +e.target.value; viewPrint(main); };
+  $('#lay').onchange = e => { st.layout = e.target.value; ls.set('easaLayout', st.layout); viewPrint(main); };
   $('#pf').onchange = e => { st.from = e.target.value; viewPrint(main); };
   $('#pt').onchange = e => { st.to = e.target.value; viewPrint(main); };
   $('#lastN').onchange = e => { st.last = Math.max(1, Math.min(pages.length, parseInt(e.target.value, 10) || 1)); try { localStorage.setItem('lastPages', st.last); } catch { /* ok */ } viewPrint(main); };

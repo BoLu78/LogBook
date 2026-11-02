@@ -233,6 +233,12 @@ legend { font-weight: 650; margin-bottom: 8px; padding: 0; }
 .easa tr.tot td { font-weight: 700; height: 6mm; }
 .easa tr.tot td.lab { text-align: left; font-size: 6pt; padding-left: 4px; }
 .easa td.sig { white-space: normal; text-align: left; padding: 1px 3px; font-size: 5.6pt; font-style: italic; vertical-align: middle; line-height: 1.1; }
+.easa thead tr.num th { font-size: 5.6pt; font-weight: 400; padding: 0; height: 3mm; }
+.easa td.sig .sig-line { margin-top: 7mm; border-top: .5px solid #000; padding-top: .5mm; font-style: normal; font-size: 5.4pt; text-align: center; }
+.easa-page.book .easa { font-size: 8.6pt; }
+.easa-page.book .easa thead th { font-size: 7pt; }
+.easa-page.book .easa thead tr.sub th { font-size: 6.6pt; }
+.easa-page.book .easa td.rem, .easa-page.book .easa td.pn, .easa-page.book .easa td.sig { font-size: 7pt; }
 .easa-foot { display: flex; justify-content: space-between; font-size: 7pt; color: #555; margin-top: 1.5mm; }
 
 @media print {

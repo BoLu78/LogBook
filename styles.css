@@ -279,6 +279,12 @@ table.data tr[data-year]:hover .chev { color: var(--accent); }
 .tag.plan { border-color: var(--amber); color: var(--amber); }
 table.data tr.planned td { color: var(--muted); font-style: italic; }
 table.data tr.planned td:first-child { font-style: normal; }
+/* prossima giornata di volo: righe più alte e in evidenza */
+table.data tr.next td { padding-top: 13px; padding-bottom: 13px; font-size: 15px; font-weight: 700; font-style: normal; color: var(--ink); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+table.data tr.next td:first-child { box-shadow: inset 4px 0 0 var(--amber); }
+.next-lbl { display: inline-block; font-size: 10px; letter-spacing: .08em; color: #fff; background: var(--amber); border-radius: 4px; padding: 2px 5px; margin-right: 7px; vertical-align: middle; }
+.lockmark { width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linejoin: round; }
+.lockgap { display: inline-block; width: 12px; margin-right: 6px; }
 .plan-alert, .plan-note { border: 1px solid var(--amber); border-left-width: 4px; background: color-mix(in srgb, var(--amber) 10%, var(--sheet)); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px; line-height: 1.5; }
 .plan-alert .btn { margin-left: 8px; }
 .side a .badge { margin-left: auto; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; }
@@ -786,3 +792,4 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 .ac-edit { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--rule); color: var(--ink-2); font-size: 16px; }
 .ac-edit:hover { border-color: var(--accent); color: var(--accent); }
 .ac-q { font-style: normal; font-weight: 700; color: var(--amber); margin-left: 4px; }
+table.data td .newdot { margin-right: 10px; }

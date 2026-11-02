@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.3.1';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -514,11 +514,14 @@ function viewFlights(main) {
   const t = sum(list);
   list = list.slice().reverse();
   const shown = st.all ? list : list.slice(0, 300);
+  // prossima giornata di volo: il primo giorno da oggi in poi con voli pianificati
+  const nextDay = data.flights.filter(f => f.planned && f.kind !== 'sim' && f.date >= today()).map(f => f.date).sort()[0];
+  const LOCK = '<svg class="lockmark" viewBox="0 0 16 16" aria-label="Locked"><title>Locked</title><rect x="3" y="7" width="10" height="7.5" rx="1.6"/><path d="M5.3 7V5a2.7 2.7 0 0 1 5.4 0v2"/></svg>';
   const rows = shown.map(f => {
     const r = roleOf(f);
-    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td class="l">${esc(f.simReg || '')}</td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l"></td><td class="rem o"><div>${esc(fstdRemarks(f))}</div></td></tr>`;
-    if (f.planned) return `<tr class="click planned" data-id="${f.id}"><td class="l">${f.seen ? '' : '<i class="newdot" title="Unseen"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.change || f.flightNo || '')}</div></td></tr>`;
-    return `<tr class="click" data-id="${f.id}"><td class="l">${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td class="o">${hm(f.night)}</td><td class="o">${(f.toDay + f.toNight) || ''}</td><td class="o">${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
+    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${f.locked ? LOCK : '<i class="lockgap"></i>'}${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td class="l">${esc(f.simReg || '')}</td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l"></td><td class="rem o"><div>${esc(fstdRemarks(f))}</div></td></tr>`;
+    if (f.planned) return `<tr class="click planned${f.date === nextDay ? ' next' : ''}" data-id="${f.id}"><td class="l">${f.seen ? '<i class="lockgap"></i>' : '<i class="newdot" title="Unseen"></i>'}${f.date === nextDay ? '<b class="next-lbl">NEXT</b>' : ''}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.change || f.flightNo || '')}</div></td></tr>`;
+    return `<tr class="click" data-id="${f.id}"><td class="l">${f.locked ? LOCK : '<i class="lockgap"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td class="o">${hm(f.night)}</td><td class="o">${(f.toDay + f.toNight) || ''}</td><td class="o">${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
   }).join('');
   const nPlan = data.flights.filter(f => f.planned).length, nDot = data.flights.filter(f => f.planned && !f.seen).length;
   main.innerHTML = `<h1>Flights</h1>

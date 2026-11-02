@@ -91,12 +91,13 @@ function swxCard(form) {
     if (form.querySelector('input[name=kind]:checked')?.value === 'sim') { box.hidden = true; return; }
     try { await loadAirports(); } catch { /* senza aeroporti niente valutazione */ }
     let r;
-    try { r = await swxAssess(f); } catch (e) { if (my !== seq) return; box.hidden = false; box.innerHTML = `<h3>Space weather</h3><p class="hint rows-hint">Space weather not available: ${esc(e.message)}.</p>`; return; }
+    try { r = await swxAssess(f); } catch (e) { if (my !== seq) return; box.hidden = false; box.innerHTML = `<summary><h3>Space weather <span class="chk-tag">n/a</span></h3></summary><p class="hint rows-hint">Space weather not available: ${esc(e.message)}.</p>`; return; }
     if (my !== seq) return;
     if (!r || r.skip) { box.hidden = true; return; }
     box.hidden = false;
     const chip = (l, x) => `<span class="swx-chip ${x.n >= 3 ? 'bad' : x.n >= 1 ? 'warn' : 'ok'}" title="${esc(x.text)}">${l}${x.n}</span>`;
-    box.innerHTML = `<h3>Space weather <span class="chk-tag">NOAA SWPC${r.future ? ' · forecast' : ''}</span></h3>
+    const worst = r.alerts.some(a => a[0] === 'bad') ? 'bad' : r.alerts.length ? 'warn' : 'ok';
+    box.innerHTML = `<summary><h3>Space weather <span class="chk-tag swx-sum ${worst}">${worst === 'ok' ? 'No impact' : '⚠︎ ' + (worst === 'bad' ? 'Alert' : 'Advisory')} · Kp ${r.kp != null ? r.kp.toFixed(1) : '—'}${r.future ? ' · forecast' : ''}</span></h3></summary>
       ${r.alerts.map(([c, t]) => `<div class="swx-alert ${c}"><b>⚠︎</b> ${esc(t)}</div>`).join('') || '<div class="swx-alert ok">No space weather impact expected on this route.</div>'}
       <div class="swx-row"><span class="swx-kp ${kpCls(r.kp ?? 0)}">Kp ${r.kp != null ? r.kp.toFixed(1) : '—'}</span><span>${kpWord(r.kp ?? 0)}${r.future ? ' (max forecast for the flight)' : ''}</span>
         ${chip('R', r.R)}${chip('S', r.S)}${chip('G', r.G)}

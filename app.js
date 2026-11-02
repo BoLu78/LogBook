@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.2.9';
+const APP_VERSION = '3.3.0';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -148,6 +148,9 @@ const FAMILY = { 'Do328-110': 'Dornier 328', 'P180 Avanti 1': 'Piaggio P180', 'P
 const familyOf = t => FAMILY[t] || t || '—';
 const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
 const SUM_KEYS = ['total', 'spSe', 'spMe', 'mp', 'night', 'ifr', 'pic', 'sic', 'dual', 'instr', 'sim', 'toDay', 'toNight', 'ldgDay', 'ldgNight'];
+// riepilogo mostrato sulle sezioni chiuse del volo
+const remTagOf = (rem, signed) => [rem ? (rem.length > 28 ? rem.slice(0, 27) + '…' : rem) : '', signed ? '✓ signed' : ''].filter(Boolean).join(' · ') || 'Tap to add';
+const fuelTagOf = f => [f.pax ? `${f.pax} PAX` : '', f.payload ? `${f.payload} t payload` : '', f.fuelUsed ? `${f.fuelUsed} t fuel` : ''].filter(Boolean).join(' · ') || 'Tap to add';
 const EMPTY = () => ({ id: '', date: '', kind: 'flight', dep: '', arr: '', out: '', inn: '', type: '', reg: '', spSe: 0, spMe: 0, mp: 0, total: 0, picName: '', toDay: 0, toNight: 0, ldgDay: 0, ldgNight: 0, night: 0, ifr: 0, pic: 0, sic: 0, dual: 0, instr: 0, simType: '', sim: 0, remarks: '', src: 'app' });
 
 // ---------- archivio locale (IndexedDB) ----------
@@ -661,8 +664,8 @@ function viewEdit(main, id) {
       ${f.crew ? `<p class="hint rows-hint">NetLine crew: ${esc(f.crew)}</p>` : ''}
     </section>
 
-    <section class="sheet-card">
-      <h3>Payload · Fuel</h3>
+    <details class="sheet-card fold" id="fuelBox">
+      <summary><h3>Payload · Fuel <span class="chk-tag" id="fuelTag">${esc(fuelTagOf(f))}</span></h3></summary>
       <div class="tiles">
         <label><span>Payload</span><input id="payload" inputmode="decimal" value="${f.payload || ''}" placeholder="0"><small>t</small></label>
         <label><span>PAX</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
@@ -670,8 +673,8 @@ function viewEdit(main, id) {
         <label><span>Planned fuel burn</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
       </div>
       <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
-    </section>
-    <section class="sheet-card swx" id="swxCard" hidden></section>
+    </details>
+    <details class="sheet-card fold swx" id="swxCard" hidden></details>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
     <section class="sheet-card">
@@ -686,12 +689,13 @@ function viewEdit(main, id) {
         <div class="field w3"><label for="spic">Instructor / examiner</label><input id="spic" value="${esc(f.picName)}"></div>
       </div>
     </section></div>
-    <section class="sheet-card"><h3>Remarks · Signature</h3>
+    <details class="sheet-card fold" id="remBox">
+      <summary><h3>Remarks · Signature <span class="chk-tag" id="remTag">${esc(remTagOf(f.remarks, !!f.signature))}</span></h3></summary>
       <textarea id="remarks" class="note" rows="2" placeholder="Tap to add remarks">${esc(f.remarks)}</textarea>
       <div class="sig-wrap"><div class="sig-head"><span>Signature</span><button type="button" class="btn small" id="sigClear">Clear signature</button></div>
         <canvas id="sig" aria-label="Signature box: sign with your finger or the mouse"></canvas>
         <p class="hint" id="sigHint">${f.signature ? 'Signature saved: sign again to replace it.' : 'Sign here with your finger or the mouse.'}</p></div>
-    </section>
+    </details>
     <details class="sheet-card check-card" id="chkBox" ${f.check ? 'open' : ''}>
       <summary><h3>Check · Examiner <span class="chk-tag" id="chkTag">${f.check?.type ? esc(f.check.type) : 'Line check, OPC, LPC…'}</span></h3></summary>
       <div class="rows">
@@ -875,8 +879,15 @@ function viewEdit(main, id) {
   g('simType').addEventListener('change', () => { const v = g('simType').value.trim(); const fl = simFleet(); if (fl[v]) { g('simReg').value = v; g('simType').value = fl[v]; simRegInfo(); } });
   const autoSim = () => { const o = toMin(g('sout').value), i = toMin(g('sinn').value); if (o != null && i != null) g('sim').value = hm(((i - o) + 1440) % 1440); };
   ['sout', 'sinn'].forEach(k => g(k).addEventListener('change', autoSim));
-  const sig = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Signature ready.'; schedule(); });
-  g('sigClear').onclick = () => { if (locked) return; sig.clear(); g('sigHint').textContent = 'Signature cleared.'; schedule(); };
+  let sigPad = null, sigGone = false;
+  const sigInit = () => { if (!sigPad && g('remBox').open) sigPad = signaturePad(g('sig'), f.signature, () => { g('sigHint').textContent = 'Signature ready.'; remTag(); schedule(); }); };
+  const sig = { value: () => sigPad ? sigPad.value() : (sigGone ? null : f.signature || null) };
+  const remTag = () => { g('remTag').textContent = remTagOf(g('remarks').value, !!sig.value()); };
+  g('remBox').addEventListener('toggle', sigInit); sigInit();
+  g('remarks').addEventListener('input', remTag);
+  g('sigClear').onclick = () => { if (locked) return; if (sigPad) sigPad.clear(); else sigGone = true; g('sigHint').textContent = 'Signature cleared.'; remTag(); schedule(); };
+  const fuelTag = () => { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value) }); };
+  ['pax', 'payload', 'fuelUsed'].forEach(k => g(k).addEventListener('input', fuelTag));
   let chk = null;
   const chkInit = () => { if (!chk && g('chkBox').open) chk = signaturePad(g('chkSig'), f.check?.sig, schedule); };
   g('chkBox').addEventListener('toggle', chkInit); chkInit();

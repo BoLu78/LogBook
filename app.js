@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.4.1';
+const APP_VERSION = '3.4.2';
 const APP_DATE = '28/10/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1556,7 +1556,19 @@ async function importNetline(buf) {
   const me = roster.meta?.pilotCode || '';
   const icao = c => IATA[c] || c;
   const legs = [];
-  for (const d of roster.days || []) for (const l of d.legs || []) if (l.kind === 'flight') legs.push({ d, l });
+  // data UTC di ogni tratta: gli orari del parser sono UTC e vanno avanti nel giorno; se tornano indietro si è passata la mezzanotte UTC
+  const addDay = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const tmin = t => t ? +t.slice(0, 2) * 60 + +t.slice(2, 4) : null;
+  for (const d of roster.days || []) {
+    let date = d.utcBase || d.date, prev = tmin(d.checkIn?.time);
+    for (const l of d.legs || []) {
+      const dep = tmin(l.depTime);
+      if (dep != null && prev != null && dep < prev) date = addDay(date, 1);
+      if (dep != null) prev = dep;
+      if (l.kind === 'flight') legs.push({ d: { ...d, date }, l });
+      const arr = tmin(l.arrTime); if (arr != null) { if (prev != null && arr < prev) date = addDay(date, 1), prev = null; prev = arr; }
+    }
+  }
   if (!legs.length) throw new Error('no flights found in the PDF: is it a NetLine Individual duty plan?');
   const hhmm = t => t ? `${t.slice(0, 2)}:${t.slice(2)}` : '';
   const key = f => `${f.date}|${f.dep}|${f.arr}`;

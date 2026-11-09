@@ -382,6 +382,7 @@ async function viewBriefing(main, arg) {
   const alive = () => my === viewBriefing.seq && location.hash.startsWith('#briefing');
   let status = '';
   const ccSel = {};
+  let routeNode;
   const draw = () => {
     if (!alive()) return;
     const wx = Object.fromEntries(icaos.map(c => [c, brfRead('wx:' + c)]));
@@ -389,9 +390,19 @@ async function viewBriefing(main, arg) {
     main.innerHTML = `<div class="brf-head"><div><h1>Briefing</h1><p class="lede">${q.date ? dmy(q.date) + ' · ' : ''}${esc(q.list.map(p => p.icao).join(' → '))}</p></div>
       <div class="brf-upd"><button type="button" class="btn small" id="brfBack">← Back</button><span id="brfStatus">${status || (oldest ? 'Updated ' + brfAge(oldest) : '')}</span><button type="button" class="btn small" id="brfRefresh">Refresh</button></div></div>
       <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao), ccSel[p.icao]); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
+      <div id="brfRouteSlot"></div>
       <p class="hint">Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
       ${brfMinsHTML()}`;
     $('#brfRefresh', main).onclick = () => load(true);
+    // mappa di rotta: costruita una volta sola e rimessa al suo posto a ogni ridisegno
+    const slot = $('#brfRouteSlot', main);
+    if (slot && typeof brfRouteNode === 'function') {
+      if (routeNode === undefined) {
+        const legs = q.list.map(p => ({ icao: p.icao, at: p.at, lat: APT?.[p.icao]?.[0], lon: APT?.[p.icao]?.[1] })).filter(l => isFinite(l.lat) && isFinite(l.lon));
+        try { routeNode = legs.length >= 2 ? brfRouteNode(legs) : null; } catch (e) { console.error(e); routeNode = null; }
+      }
+      if (routeNode) slot.replaceWith(routeNode);
+    }
     main.querySelectorAll('[data-cc]').forEach(b => b.onclick = () => { const [c, n] = b.dataset.cc.split(':'); ccSel[c] = +n; draw(); });
     main.querySelectorAll('[data-min]').forEach(inp => inp.onchange = () => {
       const m = { ...brfMins() }, v = parseInt(inp.value, 10); if (isFinite(v) && v >= 0) m[inp.dataset.min] = v;

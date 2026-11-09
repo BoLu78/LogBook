@@ -906,3 +906,33 @@ table.data td .newdot { margin-right: 10px; }
 .brf-lim-g label { display: flex; align-items: center; gap: 6px; }
 .brf-lim-g input { width: 70px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; }
 .brf-lim-g small { color: var(--muted); font-size: 12px; }
+/* briefing: meteo di rotta */
+.brf-route { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; margin: 14px 0; overflow: hidden; }
+.brf-route h2 { margin: 0; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.brf-route > h2, .brf-route > .rm-wait { padding: 12px 16px; }
+.rm-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; }
+.rm-tg { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rm-tg button { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.rm-tg button.on { background: #2f5fd0; border-color: #2f5fd0; color: #fff; }
+.rm-fl { display: inline-flex; margin-left: 6px; } .rm-fl button { border-radius: 0; margin-left: -1px; } .rm-fl button:first-child { border-radius: 8px 0 0 8px; } .rm-fl button:last-child { border-radius: 0 8px 8px 0; }
+.rm-fl button.on { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
+.rm-map svg { display: block; width: 100%; height: auto; }
+.rm-sea { fill: color-mix(in srgb, #9cc4e8 35%, var(--sheet)); }
+.rm-land { fill: color-mix(in srgb, var(--rule) 70%, var(--sheet)); } .rm-bord { fill: none; stroke: var(--sheet); stroke-width: .8; }
+.rm-radar image { opacity: .75; }
+.rm-sig { fill: color-mix(in srgb, var(--c) 18%, transparent); stroke: var(--c); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.rm-sig.hit { fill: color-mix(in srgb, var(--c) 32%, transparent); stroke-width: 2.5; stroke-dasharray: none; }
+.rm-jet { fill: rgba(147, 51, 234, .10); }
+.rm-w path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rm-w.j0 path { stroke: #5b7fa8; opacity: .55; } .rm-w.j1 path { stroke: #2f5fd0; } .rm-w.j2 path { stroke: #9333ea; stroke-width: 2.6; } .rm-w.j3 path { stroke: #db2777; stroke-width: 3; }
+.rm-wt { font-size: 12px; font-weight: 700; text-anchor: middle; fill: #6d28d9; font-family: var(--font); }
+.rm-route { fill: none; stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+.rm-apt { fill: var(--sheet); stroke: var(--ink); stroke-width: 2.5; }
+.rm-at { font-family: var(--font); font-weight: 700; font-size: 15px; fill: var(--ink); paint-order: stroke; stroke: var(--sheet); stroke-width: 4px; }
+.rm-info { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--rule-soft); font-size: 14px; }
+.rm-info b.hw { color: var(--amber); } .rm-info b.tw { color: var(--ok); }
+.rm-info .ok-t { color: var(--ok); font-weight: 700; }
+.rm-sl { border-left: 4px solid var(--c); padding-left: 8px; } .rm-sl b { color: var(--c); }
+.rm-sl details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; } .rm-sl .mono { font-family: "B612 Mono", ui-monospace, monospace; font-size: 12.5px; overflow-wrap: anywhere; margin: 4px 0 0; }
+.rm-br summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.rm-br .row { display: flex; gap: 8px; flex-wrap: wrap; } .rm-br input { flex: 1; min-width: 220px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; }

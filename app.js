@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '3.6.1';
 const APP_DATE = '09/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -574,7 +574,6 @@ function viewEdit(main, id) {
   const lockBtn = cls => `<button type="button" class="lock keep ${cls}" aria-pressed="${locked}" aria-label="Lock flight" title="Grey: editable · Orange: locked">${LOCK_SVG}</button>`;
 
   main.innerHTML = `
-  ${orig?.planned && orig.change ? `<div class="plan-note"><b>Roster change${orig.flightNo ? ` · ${esc(orig.flightNo)}` : ''}</b>: ${esc(orig.change.replace(/^orario cambiato da (.*) a (.*)$/, 'times changed from $1 to $2'))}</div>` : ''}
   <form class="flight sheet" id="ff" novalidate>
     <div class="sheet-bar">
       <div class="seg keep" role="radiogroup" aria-label="Entry type">

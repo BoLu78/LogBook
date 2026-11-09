@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.4.4';
+const APP_VERSION = '3.5.0';
 const APP_DATE = '09/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -298,7 +298,7 @@ const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.rema
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), aerei: m => viewFleet(m), ftl: m => loadAirports().then(() => viewFTL(m)) };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), aerei: m => viewFleet(m), ftl: m => loadAirports().then(() => viewFTL(m)), briefing: (m, a) => viewBriefing(m, a) };
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
@@ -321,7 +321,7 @@ function route() {
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
   // Previous / Next in alto solo nella scheda di un volo
   for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !(view === 'modifica' || view === 'nuovo'); }
-  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft' }[view] || 'Logbook';
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft', briefing: 'Briefing' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
@@ -677,6 +677,7 @@ function viewEdit(main, id) {
       </div>
       <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
     </details>
+    <div class="brief-go"><button type="button" class="btn primary" id="briefGo">Briefing · METAR TAF and airport maps</button></div>
     <details class="sheet-card fold swx" id="swxCard" hidden></details>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
@@ -733,6 +734,9 @@ function viewEdit(main, id) {
   form.addEventListener('change', e => { const el = e.target; if (TIME_IDS.includes(el.id)) el.value = normTime(el.value); else if (DUR_IDS.includes(el.id)) el.value = normDur(el.value); }, true);
   const kind = () => form.kind.value;
   try { swxCard(form); } catch (e) { console.error(e); }
+  { const bg = form.querySelector('#briefGo'); if (bg) bg.onclick = () => { const v = id => form.querySelector('#' + id)?.value?.trim() || '', t = x => x.replace(':', '').padStart(4, '0').slice(0, 4);
+    const dep = v('dep').toUpperCase(), arr = v('arr').toUpperCase(); if (!dep && !arr) return;
+    location.hash = brfHash(v('date'), [{ icao: dep, hhmm: /\d/.test(v('out') || v('std')) ? t(v('out') || v('std')) : '' }, { icao: arr, hhmm: /\d/.test(v('inn') || v('sta')) ? t(v('inn') || v('sta')) : '' }]); }; }
   form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { g('fFlight').hidden = kind() === 'sim'; g('fSim').hidden = kind() !== 'sim'; });
 
   // ---------- blocco, notte, decolli e atterraggi

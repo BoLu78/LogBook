@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.7.4';
+const APP_VERSION = '3.8.0';
 const APP_DATE = '09/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1520,12 +1520,18 @@ function viewData(main) {
   ${n ? sec('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 'Lock', `
     <div class="set-row"><span class="k">Locked entries</span><span class="v">${fmtN(data.flights.filter(f => f.locked).length)} of ${fmtN(data.flights.filter(f => !f.planned).length)} completed</span></div>
     <div class="set-row act"><button class="btn" id="dLockAll">Lock all completed entries</button><span class="hint">Planned flights from the roster stay editable.</span></div>`) : ''}
+  ${sec('<path d="M12 2.5 14 9h7l-5.6 4 2.1 6.7L12 15.6l-5.5 4.1L8.6 13 3 9h7z"/>', 'Approaches (AIRAC)', `
+    <div class="set-row"><span class="k">Data</span><span class="v" id="dAirac">${typeof brfAiracLoad === 'function' && BRF_AIRAC?.apts ? `${esc(BRF_AIRAC.src || 'AIRAC')} · ${esc(BRF_AIRAC.date || '?')} · ${fmtN(Object.keys(BRF_AIRAC.apts).length)} airports` : 'Not loaded'}</span></div>
+    <div class="set-row act"><label class="btn file-btn">Import AIRAC file<input type="file" id="dAiracFile" accept=".json,application/json" hidden></label>${typeof brfAiracLoad === 'function' && BRF_AIRAC?.apts ? '<button type="button" class="btn" id="dAiracDel">Remove</button>' : ''}<span class="hint">ILS category and approaches for each runway, shown in the briefing. The file stays on this device only and is not synced.</span></div>`)}
   ${sec(I.theme, 'Theme', `
     <div class="set-row col"><div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>`)}
   <p class="hint set-ver">Logbook ${APP_VERSION} · ${APP_DATE}</p>`;
   main.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => applyTheme(r.value));
   bindDrivePanel(main);
   $('#dChoose')?.addEventListener('click', chooseFolder);
+  if (typeof brfAiracLoad === 'function' && BRF_AIRAC === undefined) brfAiracLoad().then(j => { if (j && location.hash === '#dati') viewData(main); });
+  $('#dAiracFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const j = await brfAiracImport(f); toast(`AIRAC loaded: ${fmtN(Object.keys(j.apts).length)} airports`); viewData(main); } catch (err) { toast('AIRAC import failed: ' + err.message); } e.target.value = ''; };
+  $('#dAiracDel')?.addEventListener('click', async () => { await brfAiracClear(); toast('AIRAC data removed'); viewData(main); });
   $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Import failed: ' + err.message); } e.target.value = ''; };
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');

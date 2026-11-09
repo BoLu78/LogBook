@@ -167,6 +167,28 @@ function brfTAF(raw) {
   return { icao, issue: issue.getTime(), valid, groups };
 }
 
+// ---------- avvicinamenti per pista (file AIRAC importato dal pilota; resta solo su questo dispositivo, mai su GitHub)
+// formato: { src, date, apts: { LIPE: { '12': '3|IRD' } } } → categoria ILS | tipi di avvicinamento ARINC 424, dal migliore
+let BRF_AIRAC;
+const BRF_APT_T = { I: 'ILS', J: 'GLS', G: 'IGS', L: 'LOC', B: 'LOC BC', X: 'LDA', U: 'SDF', R: 'RNP', P: 'GPS', H: 'RNP AR', T: 'TACAN', D: 'VOR/DME', S: 'VOR', V: 'VOR', Q: 'NDB/DME', N: 'NDB' };
+async function brfAiracLoad() {
+  if (BRF_AIRAC === undefined) { try { BRF_AIRAC = (typeof idb !== 'undefined' && await idb.get('airac')) || null; } catch { BRF_AIRAC = null; } }
+  return BRF_AIRAC;
+}
+async function brfAiracImport(file) {
+  let j; try { j = JSON.parse(await file.text()); } catch { throw new Error('the file is not valid JSON'); }
+  if (!j || typeof j.apts !== 'object' || !Object.keys(j.apts).length) throw new Error('this is not an AIRAC file made for the LogBook');
+  await idb.set('airac', j); BRF_AIRAC = j; return j;
+}
+async function brfAiracClear() { try { await idb.set('airac', null); } catch { /* niente */ } BRF_AIRAC = null; }
+function brfAppr(icao, rid) {
+  const r = BRF_AIRAC?.apts?.[icao]?.[rid] ?? BRF_AIRAC?.apts?.[icao]?.[String(rid).padStart(2, '0')];
+  if (!r) return null;
+  const [cat, t = ''] = r.split('|');
+  const best = cat ? (cat === '0' ? 'ILS' : 'ILS CAT ' + ['', 'I', 'II', 'III'][+cat]) : t ? BRF_APT_T[t[0]] : '';
+  return best ? { best, all: [...new Set([...t].map(c => BRF_APT_T[c]).filter(Boolean))] } : null;
+}
+
 // ---------- mappa aeroporto (OpenStreetMap)
 let BRF_RWY = null;
 async function brfRwyDB() { if (!BRF_RWY) { try { BRF_RWY = await (await fetch('data/runways.json')).json(); } catch { BRF_RWY = null; } } return BRF_RWY; }
@@ -232,7 +254,7 @@ function brfComp(rws, winds, cc) {
 }
 // direzione magnetica 001-360 da una vera e dalla variazione (E positiva)
 const brfMag = (tru, mv) => { const m = Math.round(((tru - mv) % 360 + 360) % 360); return m === 0 ? 360 : m; };
-function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null) {
+function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') {
   if (!rws.length) return '<div class="brf-map-empty">No runway data for this airport.</div>';
   const P = p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];
   const pts = rws.flatMap(r => [P(r.A), P(r.B)]);
@@ -263,8 +285,17 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null) {
       return `<g class="cmp ${c.lvl}" transform="translate(${bx.toFixed(0)},${by.toFixed(0)})"><rect x="${-w / 2}" y="${-hh / 2}" width="${w}" height="${hh}" rx="${3 * u}"/>`
         + `<text y="${-2.5 * u}" font-size="${9.5 * u}" class="${c.tw ? c.lt : ''}">${c.tw ? 'TW ' + c.tw : 'HW ' + c.hw}</text><text y="${9 * u}" font-size="${9.5 * u}" class="${c.lx}">XW ${c.xw}${c.side}</text></g>`;
     };
+    // miglior avvicinamento della testata, oltre il numero lungo l'asse pista
+    // sta di lato rispetto al numero, dalla parte opposta al riquadro delle componenti, e sempre dentro la mappa
+    const apr = (id, x, y) => {
+      const k = icao && brfAppr(icao, id); if (!k) return '';
+      const sg = (-uy) * (cx0 - x) + ux * (cy0 - y) >= 0 ? 1 : -1, px = uy * sg, py = -ux * sg, tw = k.best.length * 5.6 * u;
+      const d = 17 * u + Math.abs(px) * tw / 2 + Math.abs(py) * 6 * u;
+      const tx = Math.min(Math.max(x + px * d, x0 + tw / 2 + 4 * u), x1 - tw / 2 - 4 * u), ty = Math.min(Math.max(y + py * d + 3.5 * u, y0 + 12 * u), y1 - 4 * u);
+      return `<text class="apr" x="${tx.toFixed(0)}" y="${ty.toFixed(0)}" font-size="${9 * u}">${esc(k.best)}</text>`;
+    };
     return [[r.idA, a[0] - ux * off, a[1] - uy * off], [r.idB, b[0] + ux * off, b[1] + uy * off]]
-      .map(([id, x, y]) => `<g class="rwl" transform="translate(${x.toFixed(0)},${y.toFixed(0)})"><circle r="${13 * u}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(id)}</text></g>${box(id, x, y)}`);
+      .map(([id, x, y]) => `<g class="rwl" transform="translate(${x.toFixed(0)},${y.toFixed(0)})"><circle r="${13 * u}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(id)}</text></g>${apr(id, x, y)}${box(id, x, y)}`);
   }).join('');
   // scala
   const sc = [250, 500, 1000, 2000].find(m => m / VW * 400 >= 55) || 2000;
@@ -361,7 +392,7 @@ function brfCard(p, wx, mapRec, ccSel) {
   };
   const mv = a && typeof magVar === 'function' ? magVar(a[0], a[1], ref) : null;   // variazione WMM2025
   const map = !a ? '<div class="brf-map-empty">Airport not in the database.</div>'
-    : brfMapSVG(rws, ways, a[0], a[1], winds[0] || null, comps, mv);
+    : brfMapSVG(rws, ways, a[0], a[1], winds[0] || null, comps, mv, p.icao);
   const metAge = metRaw ? (() => { const m = metRaw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/); return m ? brfDay(new Date(), +m[1], +m[2], +m[3]) : null; })() : null;
   return `<section class="brf-card">
     <header><b>${esc(p.icao)}</b><span>${esc(brfIataOf(p.icao))}</span><span class="nm">${esc(a?.[2] || '')}</span><em>${p.role}${p.at ? ' · ' + (p.role === 'DEP' ? 'ETD ' : 'ETA ') + brfHM(p.at) : ''}</em></header>
@@ -369,7 +400,7 @@ function brfCard(p, wx, mapRec, ccSel) {
     ${alerts.length ? `<div class="brf-alerts">${alerts.map(([l, k, v]) => `<span class="${l}"><b>${esc(k)}</b> ${esc(v)}</span>`).join('')}</div>` : (pool.length ? '<div class="brf-alerts"><span class="ok"><b>No weather alerts</b> around ' + esc(refLab) + '</span></div>' : '')}
     <div class="brf-rw">
       <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${ccSel ? '' : ' · auto'}</small></div>
-      ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i></span>`).join('')}</div>
+      ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i>${(k => k ? ` <small>${esc(k.all.join(' · '))}</small>` : '')(brfAppr(p.icao, c.id))}</span>`).join('')}</div>
       <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction${mv == null ? '' : ` (on the map in magnetic, VAR ${magVarTxt(mv)})`}. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
     </div>
     <div class="brf-sec"><h4>METAR ${metAge ? `<small>${brfHM(metAge)} · ${brfAge(metAge)}</small>` : ''}</h4>
@@ -395,7 +426,7 @@ function brfMinsHTML() {
 async function viewBriefing(main, arg) {
   const q = brfParse(arg);
   if (!q.list.length) { main.innerHTML = '<h1>Briefing</h1><p class="lede">No airports given. Open the briefing from a flight or from Next days.</p>'; return; }
-  try { await Promise.all([loadAirports(), brfRwyDB()]); } catch { /* senza database aeroporti solo meteo */ }
+  try { await Promise.all([loadAirports(), brfRwyDB(), brfAiracLoad()]); } catch { /* senza database aeroporti solo meteo */ }
   if (typeof IATA !== 'undefined' && !IATA) { try { IATA = await (await fetch('data/iata.json')).json(); } catch { /* niente IATA */ } }
   const icaos = [...new Set(q.list.map(p => p.icao))];
   const seen = new Set(), cards = q.list.filter(p => !seen.has(p.icao + p.role) && seen.add(p.icao + p.role));
@@ -415,7 +446,7 @@ async function viewBriefing(main, arg) {
       <div class="brf-upd"><button type="button" class="btn small" id="brfBack">← Back</button><span id="brfStatus">${status || (oldest ? 'Updated ' + brfAge(oldest) : '')}</span><button type="button" class="btn small" id="brfRefresh">Refresh</button></div></div>
       <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao), ccSel[p.icao]); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
       <div id="brfRouteSlot"></div>
-      <p class="hint">Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
+      <p class="hint">${BRF_AIRAC?.apts ? `Approaches: ${esc(BRF_AIRAC.src || 'imported AIRAC')}, data ${esc(BRF_AIRAC.date || '?')} – simulator data, check the charts. ` : ''}Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
       ${brfMinsHTML()}`;
     $('#brfRefresh', main).onclick = () => { if (done) { done = false; routeNode = undefined; } load(true); };
     // mappa di rotta: costruita una volta sola e rimessa al suo posto a ogni ridisegno

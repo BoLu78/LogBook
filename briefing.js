@@ -22,6 +22,22 @@ function brfSave(k, v) {
     localStorage.setItem('brf:' + k, s);
   } catch { /* pazienza: si lavora senza copia locale */ }
 }
+// pulizia dei dati meteo vecchi (le mappe degli aeroporti restano: si riusano a ogni volo)
+// route = 'LIPE-HEMA' (volo appena chiuso col lucchetto): via anche i suoi venti di rotta già passati
+function brfCleanup(route) {
+  try {
+    const now = Date.now(), keys = Object.keys(localStorage).filter(k => k.startsWith('brf:'));
+    for (const k of keys) {
+      if (k.startsWith('brf:rmw:')) { localStorage.removeItem(k); continue; }   // formato vecchio dei venti
+      if (k.startsWith('brf:rmw2:')) {
+        const [legs, h] = k.slice(9).split(':'), at = +h * 3600e3;
+        if (!(at > now - 864e5) || (route && at < now && ('-' + legs + '-').includes('-' + route + '-'))) localStorage.removeItem(k);
+        continue;
+      }
+      if (k.startsWith('brf:wx:') || k.startsWith('brf:mapfail:')) { const t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; if (now - t > 2 * 864e5) localStorage.removeItem(k); }
+    }
+  } catch { /* pulizia non essenziale */ }
+}
 function brfRead(k) { try { return JSON.parse(localStorage.getItem('brf:' + k)); } catch { return null; } }
 
 async function brfText(url, ms = 12000) {
@@ -388,6 +404,9 @@ async function viewBriefing(main, arg) {
   let status = '';
   const ccSel = {};
   let routeNode;
+  // volo concluso (un'ora dopo l'arrivo, o data passata da più di un giorno): niente download, si vede quello che è salvato
+  const lastAt = q.list.at(-1)?.at;
+  let done = lastAt ? Date.now() > lastAt + 3600e3 : !!(q.date && Date.parse(q.date + 'T00:00:00Z') + 2 * 864e5 < Date.now());
   const draw = () => {
     if (!alive()) return;
     const wx = Object.fromEntries(icaos.map(c => [c, brfRead('wx:' + c)]));
@@ -398,10 +417,11 @@ async function viewBriefing(main, arg) {
       <div id="brfRouteSlot"></div>
       <p class="hint">Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
       ${brfMinsHTML()}`;
-    $('#brfRefresh', main).onclick = () => load(true);
+    $('#brfRefresh', main).onclick = () => { if (done) { done = false; routeNode = undefined; } load(true); };
     // mappa di rotta: costruita una volta sola e rimessa al suo posto a ogni ridisegno
     const slot = $('#brfRouteSlot', main);
-    if (slot && typeof brfRouteNode === 'function') {
+    if (slot && done) slot.innerHTML = '<p class="hint">Route weather not loaded: the flight is completed. Refresh downloads current data.</p>';
+    else if (slot && typeof brfRouteNode === 'function') {
       if (routeNode === undefined) {
         const legs = q.list.map(p => ({ icao: p.icao, at: p.at, lat: APT?.[p.icao]?.[0], lon: APT?.[p.icao]?.[1] })).filter(l => isFinite(l.lat) && isFinite(l.lon));
         try { routeNode = legs.length >= 2 ? brfRouteNode(legs) : null; } catch (e) { console.error(e); routeNode = null; }
@@ -429,6 +449,5 @@ async function viewBriefing(main, arg) {
       draw();
     }
   };
-  draw();
-  load(false);
+  if (done) { status = 'Flight completed · weather not updated'; draw(); } else { draw(); load(false); }
 }

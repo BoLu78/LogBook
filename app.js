@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.7.3';
+const APP_VERSION = '3.7.4';
 const APP_DATE = '09/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1009,6 +1009,7 @@ function viewEdit(main, id) {
       const r = await commit();
       if (r.err) { locked = false; toast(`Cannot lock: ${r.err}`); r.el?.scrollIntoView({ block: 'center' }); applyLock(); return; }
       toast('Flight locked');
+      if (typeof brfCleanup === 'function') { const v = id => (form.querySelector('#' + id)?.value || '').trim().toUpperCase(); brfCleanup(v('dep') && v('arr') ? v('dep') + '-' + v('arr') : ''); }
     } else {
       locked = false; await commit(); toast('Flight unlocked');
     }
@@ -1877,6 +1878,7 @@ function driveStartup() {
   renderBackupState();
   route();
   updateBadge();
+  if (typeof brfCleanup === 'function') setTimeout(() => brfCleanup(), 3000);
   driveStartup();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').then(reg => {

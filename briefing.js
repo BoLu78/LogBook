@@ -2,8 +2,10 @@
 /* Briefing partenza/arrivo: METAR e TAF da aviationweather.gov (NOAA), mappa dell'aeroporto da OpenStreetMap (Overpass).
    Modulo separato: se qui qualcosa non va, il resto dell'app non ne risente.
    Meteo e mappe restano salvati in localStorage (non nel logbook sincronizzato), così il briefing si apre anche offline. */
-const BRF_AWC = 'https://aviationweather.gov/api/data';
-const BRF_OVP = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const BRF_METNO = 'https://api.met.no/weatherapi/tafmetar/1.0/';   // METAR e TAF mondiali, leggibili dal browser
+const BRF_VATSIM = 'https://metar.vatsim.net/';                     // METAR di riserva
+const BRF_OVP = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const BRF_OVP_RETRY = 30 * 60e3;     // se OpenStreetMap non risponde, riprova tra 30'
 const BRF_WX_FRESH = 10 * 60e3;      // meteo: scarica di nuovo se il dato salvato ha più di 10'
 const BRF_MAP_FRESH = 60 * 864e5;    // mappa aeroporto: 60 giorni
 // soglie generiche, NON le minime della compagnia
@@ -21,33 +23,28 @@ function brfSave(k, v) {
   } catch { /* pazienza: si lavora senza copia locale */ }
 }
 function brfRead(k) { try { return JSON.parse(localStorage.getItem('brf:' + k)); } catch { return null; } }
-async function brfJSON(url, opt = {}, ms = 15000) {
+
+async function brfText(url, ms = 12000) {
   const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ms);
-  try { const r = await fetch(url, { ...opt, signal: ctl.signal, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+  try { const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.text(); }
   finally { clearTimeout(to); }
 }
-
-// ---------- meteo: download
+// ---------- meteo: download (met.no restituisce i bollettini delle ultime 24 h, l'ultimo è il più recente)
+const brfLast = txt => String(txt || '').split('=').map(x => x.replace(/\s+/g, ' ').trim())
+  .filter(x => /^[A-Z0-9]{4} \d{6}Z/.test(x.replace(/^(METAR|SPECI|TAF)( AMD| COR)* /, ''))).at(-1) || '';
 async function brfWeather(icaos, force) {
   const now = Date.now(), need = icaos.filter(c => force || !brfRead('wx:' + c) || now - brfRead('wx:' + c).t > BRF_WX_FRESH);
-  let err = null;
-  if (need.length) {
-    const ids = need.join(',');
-    const [m, t] = await Promise.allSettled([brfJSON(`${BRF_AWC}/metar?ids=${ids}&format=json&hours=3`), brfJSON(`${BRF_AWC}/taf?ids=${ids}&format=json`)]);
-    if (m.status === 'rejected' && t.status === 'rejected') err = m.reason;
-    for (const c of need) {
-      const old = brfRead('wx:' + c)?.v || {};
-      const id = r => String(r.icaoId || r.station_id || r.stationId || '').toUpperCase();
-      const met = m.status === 'fulfilled' && Array.isArray(m.value) ? m.value.filter(r => id(r) === c).sort((a, b) => (b.obsTime || 0) - (a.obsTime || 0))[0] : undefined;
-      const taf = t.status === 'fulfilled' && Array.isArray(t.value) ? t.value.filter(r => id(r) === c).sort((a, b) => String(b.issueTime || '').localeCompare(String(a.issueTime || '')))[0] : undefined;
-      if (m.status === 'rejected' && t.status === 'rejected') continue;
-      brfSave('wx:' + c, {
-        metar: m.status === 'fulfilled' ? (met ? String(met.rawOb || met.raw_text || '') : '') : old.metar || '',
-        taf: t.status === 'fulfilled' ? (taf ? String(taf.rawTAF || taf.raw_text || '') : '') : old.taf || ''
-      });
-    }
-  }
-  return { err, wx: Object.fromEntries(icaos.map(c => [c, brfRead('wx:' + c)])) };
+  let fails = 0;
+  await Promise.all(need.map(async c => {
+    const old = brfRead('wx:' + c)?.v || {};
+    const [m, t] = await Promise.allSettled([brfText(`${BRF_METNO}metar.txt?icao=${c}`), brfText(`${BRF_METNO}taf.txt?icao=${c}`)]);
+    let metar = m.status === 'fulfilled' ? brfLast(m.value) : null;
+    if (!metar) { try { const v = brfLast(await brfText(BRF_VATSIM + c, 8000)); if (v) metar = v; } catch { /* riserva non disponibile */ } }
+    const taf = t.status === 'fulfilled' ? brfLast(t.value) : null;
+    if (metar == null && taf == null) { fails++; return; }
+    brfSave('wx:' + c, { metar: metar ?? old.metar ?? '', taf: taf ?? old.taf ?? '' });
+  }));
+  return { err: need.length && fails === need.length ? new Error('weather not reachable') : null };
 }
 
 // ---------- meteo: lettura dei gruppi METAR/TAF
@@ -133,24 +130,31 @@ function brfTAF(raw) {
 }
 
 // ---------- mappa aeroporto (OpenStreetMap)
-async function brfMap(icao, lat, lon, force) {
+let BRF_RWY = null;
+async function brfRwyDB() { if (!BRF_RWY) { try { BRF_RWY = await (await fetch('data/runways.json')).json(); } catch { BRF_RWY = null; } } return BRF_RWY; }
+function brfRunwaysOf(icao) {
+  return (BRF_RWY?.[icao] || []).map(([i1, a1, o1, i2, a2, o2, len, w]) => ({ A: [a1, o1], B: [a2, o2], idA: i1, idB: i2, len, w: w || 45, brg: brfBearing([a1, o1], [a2, o2]) }));
+}
+async function brfMap(icao, lat, lon) {
   const c = brfRead('map:' + icao);
-  if (c && !force && Date.now() - c.t < BRF_MAP_FRESH) return c;
-  const R = 6000, q = `[out:json][timeout:25];(way["aeroway"~"^(runway|taxiway|apron|terminal)$"](around:${R},${lat},${lon}););out tags geom;`;
-  let last;
+  if (c && Date.now() - c.t < BRF_MAP_FRESH) return c;
+  const miss = brfRead('mapfail:' + icao);
+  if (miss && Date.now() - miss.t < BRF_OVP_RETRY) return c;
+  const q = `[out:json][timeout:20];(way["aeroway"~"^(taxiway|apron|terminal|runway)$"](around:5000,${lat},${lon}););out tags geom;`;
   for (const u of BRF_OVP) {
     try {
-      const j = await brfJSON(u, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, 30000);
+      const j = JSON.parse(await brfText(u + '?data=' + encodeURIComponent(q), 15000));
       const ways = (j.elements || []).filter(e => e.geometry?.length > 1).map(e => ({
         a: e.tags.aeroway, r: e.tags.ref || '', w: parseFloat(e.tags.width) || 0,
         g: e.geometry.map(p => [Math.round(p.lat * 1e5) / 1e5, Math.round(p.lon * 1e5) / 1e5])
       }));
+      if (!ways.length) continue;
       brfSave('map:' + icao, ways);
       return brfRead('map:' + icao) || { t: Date.now(), v: ways };
-    } catch (e) { last = e; }
+    } catch { /* server occupato: si prova il successivo */ }
   }
-  if (c) return c;
-  throw last || new Error('map not available');
+  brfSave('mapfail:' + icao, 1);
+  return c;
 }
 const brfRad = d => d * Math.PI / 180;
 function brfBearing(a, b) {
@@ -181,9 +185,8 @@ function brfWindOnRwy(rws, wind) {
     return { ...e, len: r.len, lvl: e.xw >= BRF_LIM.xwRed || e.hw < -10 ? 'bad' : e.xw >= BRF_LIM.xwAmb || e.hw < -5 ? 'warn' : 'ok' };
   });
 }
-function brfMapSVG(ways, lat, lon, wind) {
-  const rws = brfRunways(ways, lat, lon);
-  if (!rws.length) return '<div class="brf-map-empty">No runway data in OpenStreetMap for this airport.</div>';
+function brfMapSVG(rws, ways, lat, lon, wind) {
+  if (!rws.length) return '<div class="brf-map-empty">No runway data for this airport.</div>';
   const P = p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];
   const pts = rws.flatMap(r => [P(r.A), P(r.B)]);
   let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
@@ -270,7 +273,9 @@ function brfCard(p, wx, mapRec) {
   for (const w of wxs.slice(0, 3)) alerts.push([pool.flatMap(g => g.items).find(i => i.txt === w).lvl, BRF_WX_NAME.find(([k]) => w.includes(k))?.[1] || 'Weather', w]);
   if (pool.some(g => g.cb)) alerts.push(['warn', 'Convective', pool.find(g => g.cb).cb]);
   // vento sulle piste: METAR se vicino, altrimenti il vento del TAF
-  const rws = mapRec?.v && a ? brfRunways(mapRec.v, a[0], a[1]) : [];
+  const ways = mapRec?.v || [];
+  let rws = brfRunwaysOf(p.icao);
+  if (!rws.length && a && ways.length) rws = brfRunways(ways, a[0], a[1]);
   const wRef = (metNear && met.wind) || active.find(g => g.wind)?.wind || null;
   const rwWind = brfWindOnRwy(rws, wRef);
   const xw = rwWind.slice().sort((x, y) => x.xw - y.xw)[0];
@@ -287,8 +292,7 @@ function brfCard(p, wx, mapRec) {
     return `<li class="${cur ? 'cur' : ''} ${near(g) ? '' : 'far'}"><i class="dot ${g.lvl}"></i><span class="per">${brfT(g.from)}–${brfT(g.to)}</span>${lab ? `<b>${lab}</b>` : ''} ${items || '<span class="muted">no change</span>'}${cur ? ` <em>${p.at ? (p.role === 'DEP' ? 'ETD' : 'ETA') : 'NOW'}</em>` : ''}</li>`;
   };
   const map = !a ? '<div class="brf-map-empty">Airport not in the database.</div>'
-    : mapRec?.v ? brfMapSVG(mapRec.v, a[0], a[1], metNear && met.wind ? met.wind : wRef)
-    : `<div class="brf-map-empty" data-mapwait="${p.icao}">${navigator.onLine ? 'Loading the airport map…' : 'Map not saved yet: open the briefing once with internet.'}</div>`;
+    : brfMapSVG(rws, ways, a[0], a[1], metNear && met.wind ? met.wind : wRef);
   const metAge = metRaw ? (() => { const m = metRaw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/); return m ? brfDay(new Date(), +m[1], +m[2], +m[3]) : null; })() : null;
   return `<section class="brf-card">
     <header><b>${esc(p.icao)}</b><span>${esc(brfIataOf(p.icao))}</span><span class="nm">${esc(a?.[2] || '')}</span><em>${p.role}${p.at ? ' · ' + (p.role === 'DEP' ? 'ETD ' : 'ETA ') + brfHM(p.at) : ''}</em></header>
@@ -304,7 +308,7 @@ function brfCard(p, wx, mapRec) {
 async function viewBriefing(main, arg) {
   const q = brfParse(arg);
   if (!q.list.length) { main.innerHTML = '<h1>Briefing</h1><p class="lede">No airports given. Open the briefing from a flight or from Next days.</p>'; return; }
-  try { await loadAirports(); } catch { /* senza database aeroporti solo meteo */ }
+  try { await Promise.all([loadAirports(), brfRwyDB()]); } catch { /* senza database aeroporti solo meteo */ }
   if (typeof IATA !== 'undefined' && !IATA) { try { IATA = await (await fetch('data/iata.json')).json(); } catch { /* niente IATA */ } }
   const icaos = [...new Set(q.list.map(p => p.icao))];
   const seen = new Set(), cards = q.list.filter(p => !seen.has(p.icao + p.role) && seen.add(p.icao + p.role));
@@ -318,7 +322,7 @@ async function viewBriefing(main, arg) {
     main.innerHTML = `<div class="brf-head"><div><h1>Briefing</h1><p class="lede">${q.date ? dmy(q.date) + ' · ' : ''}${esc(q.list.map(p => p.icao).join(' → '))}</p></div>
       <div class="brf-upd"><button type="button" class="btn small" id="brfBack">← Back</button><span id="brfStatus">${status || (oldest ? 'Updated ' + brfAge(oldest) : '')}</span><button type="button" class="btn small" id="brfRefresh">Refresh</button></div></div>
       <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao)); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
-      <p class="hint">Weather: NOAA Aviation Weather Center. Airport maps: © OpenStreetMap contributors, not for navigation. Colours use generic thresholds (visibility ${BRF_LIM.visAmb}/${BRF_LIM.visRed} m, ceiling ${BRF_LIM.ceilAmb}/${BRF_LIM.ceilRed} ft, crosswind ${BRF_LIM.xwAmb}/${BRF_LIM.xwRed} kt), not company minima. For awareness only: the official briefing package is the reference.</p>`;
+      <p class="hint">Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. Colours use generic thresholds (visibility ${BRF_LIM.visAmb}/${BRF_LIM.visRed} m, ceiling ${BRF_LIM.ceilAmb}/${BRF_LIM.ceilRed} ft, crosswind ${BRF_LIM.xwAmb}/${BRF_LIM.xwRed} kt), not company minima. For awareness only: the official briefing package is the reference.</p>`;
     $('#brfRefresh', main).onclick = () => load(true);
     $('#brfBack', main).onclick = () => { if (history.length > 1) history.back(); else location.hash = 'riepilogo'; };
   };

@@ -223,13 +223,15 @@ function viewFTL(main) {
   const rr = recoveryRests(model), now = Date.now();
   const lastRR = rr.filter(r => r[1] <= now).at(-1), nextRR = rr.find(r => r[1] > now && r[0] > now - DAY);
   const due = lastRR ? lastRR[1] + 168 * H : null;
+  const tmw = addDays(td, 1);
   const shown = model.duties.filter(d => d.end >= utcMs(td, '0000') - 14 * DAY && d.factor >= 0);
   const row = d => {
     const tz = tzOf(d.ap), past = d.end < now;
     const fdpCls = d.fdp != null ? lvl(d.fdp, d.maxFdp) : '';
     const restCls = d.rest != null ? (d.rest < d.minRest ? 'bad' : 'ok') : '';
     const what = d.kind === 'standby' ? (d.code === 'RESERVE' ? 'Reserve' : 'Stand-by') : d.kind === 'sim' ? 'Simulator' : d.kind === 'transport' ? 'Positioning' : d.kind === 'ground' ? 'Ground' : (d.legs.filter(l => l.k === 'flight').map(l => icaoOf(l.dep)).concat(icaoOf(d.legs.filter(l => l.k === 'flight').at(-1)?.arr)).join('–') || 'Duty');
-    return `<tr class="${past ? 'past' : ''}"><td class="l">${dmy(d.date)}</td><td class="l">${esc(what)}${d.src === 'logbook' ? ' <span class="tag est" title="Rebuilt from the logbook: no roster for this day">est.</span>' : ''}</td>
+    const day = d.date === td ? 'today' : d.date === tmw ? 'tomorrow' : '';
+    return `<tr class="${[past && !day ? 'past' : '', day ? 'day-' + day : ''].join(' ').trim()}"><td class="l">${dmy(d.date)}${day ? `<small class="day-lbl">${day === 'today' ? 'Today' : 'Tomorrow'}</small>` : ''}</td><td class="l">${esc(what)}${d.src === 'logbook' ? ' <span class="tag est" title="Rebuilt from the logbook: no roster for this day">est.</span>' : ''}</td>
       <td>${hhmmUTC(d.start)}<small>${hhmmLocal(d.start, tz)} LT</small></td><td>${hhmmUTC(d.end)}</td>
       <td>${d.factor === 1 ? durHM(d.dp) : d.factor ? `${durHM(d.dp * d.factor)}<small>25%</small>` : '—'}</td>
       <td class="${fdpCls}">${d.fdp != null ? `${durHM(d.fdp)}<small>max ${durHM(d.maxFdp)}${d.unknown ? ' (X)' : d.refTz !== tz ? ' (B)' : ''}</small>` : ''}</td>

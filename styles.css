@@ -732,6 +732,12 @@ form.sheet .actions #del { margin-left: auto; }
 table.ftl-t td small { display: block; font-size: 11px; color: var(--muted); }
 table.ftl-t td.ok { color: var(--ok); } table.ftl-t td.warn { color: var(--amber); } table.ftl-t td.bad { color: var(--red); font-weight: 700; }
 table.ftl-t tr.past { opacity: .72; }
+table.ftl-t tr.day-today td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+table.ftl-t tr.day-tomorrow td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+table.ftl-t tr.day-today td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+table.ftl-t tr.day-tomorrow td:first-child { box-shadow: inset 4px 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+table.ftl-t tr.day-today td:first-child, table.ftl-t tr.day-tomorrow td:first-child { font-weight: 700; }
+table.ftl-t td small.day-lbl { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .tag.fl { font-size: 10.5px; color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .tag.ok { font-size: 10.5px; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); border-radius: 4px; padding: 0 5px; }
 .tag.est { font-size: 10.5px; color: var(--muted); border: 1px dashed var(--rule); border-radius: 4px; padding: 0 4px; }

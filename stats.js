@@ -64,14 +64,18 @@ function viewStats(main) {
   {
     const yEnd = +to.slice(0, 4), ys = [];
     for (let y = yEnd; y > yEnd - 5; y--) if (all.some(f => f.date.startsWith(y))) ys.push(y);
-    const grey = cssv('--muted'), series = ys.reverse().map((y, i) => {
+    // un colore per anno: corrente = accento, precedente = fam3, gli altri dalla palette (escluso il colore dell'accento)
+    const acc0 = cssv('--accent').trim().toLowerCase();
+    const older = ['--fam2', '--fam1', '--fam5', '--fam4'].map(cssv).filter(c => c.trim().toLowerCase() !== acc0);
+    const series = ys.reverse().map((y, i) => {
       let acc = 0; const pts = [[0, 0, `${y}-01-01`]];
       for (let m = 1; m <= 12; m++) {
         const mm = String(m).padStart(2, '0'); if (`${y}-${mm}` > to.slice(0, 7)) break;
         acc += sum(all.filter(f => f.date.startsWith(`${y}-${mm}`))).total; pts.push([m, acc, `${y}-${mm}`]);
       }
       const cur = y === yEnd, prev = y === yEnd - 1;
-      return { name: String(y), color: cur ? cssv('--accent') : prev ? cssv('--fam3') : grey, width: cur ? 3 : 2, dim: !cur && !prev, pts, label: `${y} ${hShort(acc)}` };
+      const color = cur ? cssv('--accent') : prev ? cssv('--fam3') : older[(yEnd - 2 - y) % older.length];
+      return { name: String(y), color, width: cur ? 3 : 2, pts, label: `${y} ${hShort(acc)}` };
     });
     lineChart($('#chYears'), series, { x0: 0, x1: 12, ticks: [...Array(12)].map((_, i) => [i + 0.5, 'JFMAMJJASOND'[i]]), xTip: x => ['Start', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.round(x)], legend: true });
   }

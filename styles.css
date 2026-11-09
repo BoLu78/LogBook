@@ -915,7 +915,7 @@ table.data td .newdot { margin-right: 10px; }
 .rm-tg { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .rm-tg button { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .rm-tg button.on { background: #2f5fd0; border-color: #2f5fd0; color: #fff; }
-.rm-fl { display: inline-flex; margin-left: 6px; } .rm-fl button { border-radius: 0; margin-left: -1px; } .rm-fl button:first-child { border-radius: 8px 0 0 8px; } .rm-fl button:last-child { border-radius: 0 8px 8px 0; }
+.rm-fl { display: inline-flex; margin-left: 6px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; } .rm-fl button { border-radius: 0; margin-left: -1px; } .rm-fl button:first-child { border-radius: 8px 0 0 8px; } .rm-fl button:last-child { border-radius: 0 8px 8px 0; }
 .rm-fl button.on { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
 .rm-map svg { display: block; width: 100%; height: auto; }
 .rm-sea { fill: color-mix(in srgb, #9cc4e8 35%, var(--sheet)); }

@@ -3,7 +3,7 @@
    Modulo separato: se qualcosa non va qui, la parte aeroporti del briefing e il resto dell'app restano intatti.
    La rotta è il cerchio massimo tra gli aeroporti, non il piano di volo con le aerovie. */
 const RM_W = 1000, RM_H = 620;
-const RM_FL = { 300: '300hPa', 340: '250hPa', 390: '200hPa' };   // livello di volo → superficie di pressione
+const RM_FL = { 50: '850hPa', 100: '700hPa', 180: '500hPa', 240: '400hPa', 300: '300hPa', 340: '250hPa', 390: '200hPa' };   // livello di volo → superficie di pressione
 const RM_BRIDGE_DEF = 'https://sigmet-bridge.bortolotluca.workers.dev';                                       // indirizzo del ponte Cloudflare, quando c'è
 const RM_HAZ = { TS: ['#e11d48', 'Thunderstorm'], TURB: ['#f59e0b', 'Turbulence'], ICE: ['#0ea5e9', 'Icing'], MTW: ['#a855f7', 'Mountain wave'], VA: ['#78716c', 'Volcanic ash'], TC: ['#dc2626', 'Tropical cyclone'], SS: ['#b45309', 'Sandstorm'], DS: ['#b45309', 'Duststorm'], RDOACT: ['#16a34a', 'Radioactive cloud'] };
 let rmLibs = null, rmWorld = null, rmRadarMeta = null;
@@ -35,7 +35,7 @@ async function rmRadar() {
 }
 // venti: griglia sulla mappa + punti lungo la rotta, all'ora più vicina a metà volo
 async function rmWinds(key, grid, samples, hourMs) {
-  const c = brfRead('rmw:' + key);
+  const c = brfRead('rmw2:' + key);
   if (c && Date.now() - c.t < 60 * 60e3) return c.v;
   const locs = [...grid, ...samples];
   const vars = Object.values(RM_FL).flatMap(h => [`wind_speed_${h}`, `wind_direction_${h}`]).join(',');
@@ -46,7 +46,7 @@ async function rmWinds(key, grid, samples, hourMs) {
   let hi = 0; times.forEach((t, i) => { if (Math.abs(t - hourMs) < Math.abs(times[hi] - hourMs)) hi = i; });
   const out = { hour: times[hi], n: grid.length };
   for (const [fl, h] of Object.entries(RM_FL)) out[fl] = arr.map((r, i) => [locs[i][0], locs[i][1], r.hourly?.[`wind_speed_${h}`]?.[hi], r.hourly?.[`wind_direction_${h}`]?.[hi]]);
-  brfSave('rmw:' + key, out);
+  brfSave('rmw2:' + key, out);
   return out;
 }
 const rmTime = v => typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : Date.parse(String(v || '').replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(String(v || '')) ? '' : 'Z'));
@@ -101,7 +101,7 @@ async function rmBuild(node, legs) {
   for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 11; gx++) { const p = inv(45 + gx * (RM_W - 90) / 10, 45 + gy * (RM_H - 90) / 6); if (p) grid.push([Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100]); }
   const wSamples = samples.filter((_, i) => i % 5 === 0);
   const key = legs.map(l => l.icao).join('-') + ':' + Math.round(hourMs / 3600e3);
-  const st = { set: rmSettings(), radar: null, winds: brfRead('rmw:' + key)?.v || null, sig: brfRead('sig')?.v || null, err: {} };
+  const st = { set: rmSettings(), radar: null, winds: brfRead('rmw2:' + key)?.v || null, sig: brfRead('sig')?.v || null, err: {} };
 
   const render = () => {
     const S = st.set, onRoute = [];
@@ -149,7 +149,7 @@ async function rmBuild(node, legs) {
       }).filter(v => v != null);
       if (along.length) {
         const avg = along.reduce((s, v) => s + v, 0) / along.length, mx = Math.max(...W.slice(st.winds.n).map(w => w[2] || 0));
-        comp = `<span><b>FL${S.fl}</b> average ${avg >= 0 ? 'tailwind' : 'headwind'} <b class="${avg >= 0 ? 'tw' : 'hw'}">${Math.abs(Math.round(avg))} kt</b> · max wind on route ${Math.round(mx)} kt · forecast for ${brfHM(st.winds.hour)}</span>`;
+        comp = `<span><b>FL${String(S.fl).padStart(3, '0')}</b> average ${avg >= 0 ? 'tailwind' : 'headwind'} <b class="${avg >= 0 ? 'tw' : 'hw'}">${Math.abs(Math.round(avg))} kt</b> · max wind on route ${Math.round(mx)} kt · forecast for ${brfHM(st.winds.hour)}</span>`;
       }
     }
     const route = `<path d="${path({ type: 'LineString', coordinates: pts })}" class="rm-route"/>` + legs.map(l => { const p = proj([l.lon, l.lat]); return `<circle cx="${p[0].toFixed(0)}" cy="${p[1].toFixed(0)}" r="6" class="rm-apt"/><text x="${(p[0] + 10).toFixed(0)}" y="${(p[1] - 8).toFixed(0)}" class="rm-at">${esc(l.icao)}</text>`; }).join('');
@@ -161,7 +161,7 @@ async function rmBuild(node, legs) {
       : onRoute.length ? onRoute.map(s => `<span class="rm-sl" style="--c:${(RM_HAZ[s.h] || ['#64748b'])[0]}"><b>${esc((RM_HAZ[s.h] || [, s.h || 'SIGMET'])[1])}</b> ${esc(s.q)} · ${esc(s.fir)} ${esc(s.name)} · ${s.base != null || s.top != null ? `${s.base ? 'FL' + Math.round(s.base / 100) : 'SFC'}–${s.top ? 'FL' + Math.round(s.top / 100) : '?'} · ` : ''}${brfHM(s.from)}–${brfHM(s.to)}${s.raw ? `<details><summary>text</summary><p class="mono">${esc(s.raw)}</p></details>` : ''}</span>`).join('')
       : '<span class="ok-t">No SIGMET on the route during the flight.</span>';
     node.innerHTML = `<div class="rm-head"><h2>Route weather</h2><div class="rm-tg">${tg('radar', 'Radar')}${tg('wind', 'Winds · jet')}${tg('sig', 'SIGMET')}
-        <span class="rm-fl">${Object.keys(RM_FL).map(f => `<button type="button" data-fl="${f}" class="${+f === S.fl ? 'on' : ''}">FL${f}</button>`).join('')}</span></div></div>
+        <span class="rm-fl">${Object.keys(RM_FL).map(f => `<button type="button" data-fl="${f}" class="${+f === S.fl ? 'on' : ''}">FL${String(f).padStart(3, '0')}</button>`).join('')}</span></div></div>
       <div class="rm-map"><svg viewBox="0 0 ${RM_W} ${RM_H}" role="img" aria-label="Route weather map"><rect width="${RM_W}" height="${RM_H}" class="rm-sea"/>${land}${radar}${sig}${wind}${route}</svg></div>
       <div class="rm-info">${comp}${sigInfo}
         <small class="muted">${S.radar ? (st.radar ? `Radar ${brfHM(st.radar.time)} (RainViewer, only where ground radar exists). ` : st.err.radar ? 'Radar not reachable. ' : '') : ''}Winds: Open-Meteo forecast${st.err.wind ? ' not reachable' : ''}. Route drawn as a great circle, not the filed route. For awareness only.</small>

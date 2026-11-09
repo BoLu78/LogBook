@@ -353,7 +353,7 @@ function brfCard(p, wx, mapRec, ccSel) {
     ${alerts.length ? `<div class="brf-alerts">${alerts.map(([l, k, v]) => `<span class="${l}"><b>${esc(k)}</b> ${esc(v)}</span>`).join('')}</div>` : (pool.length ? '<div class="brf-alerts"><span class="ok"><b>No weather alerts</b> around ' + esc(refLab) + '</span></div>' : '')}
     <div class="brf-rw">
       <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${ccSel ? '' : ' · auto'}</small></div>
-      ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i> <small>${c.len} m</small></span>`).join('')}</div>
+      ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i></span>`).join('')}</div>
       <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction${mv == null ? '' : ` (on the map in magnetic, VAR ${magVarTxt(mv)})`}. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
     </div>
     <div class="brf-sec"><h4>METAR ${metAge ? `<small>${brfHM(metAge)} · ${brfAge(metAge)}</small>` : ''}</h4>

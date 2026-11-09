@@ -838,6 +838,7 @@ table.data td .newdot { margin-right: 10px; }
 .brf-svg .twl rect { fill: var(--ink); } .brf-svg .twl text { fill: var(--amber); }
 .brf-svg .scl path { stroke: var(--ink); } .brf-svg .scl text { fill: var(--ink); font-family: var(--font); }
 .brf-svg .nrt path { fill: var(--ink); } .brf-svg .nrt text { fill: var(--ink); text-anchor: middle; font-weight: 700; }
+.brf-svg .nrt .var { font-family: var(--font); text-anchor: end; }
 .brf-svg .wnd path { stroke: var(--accent); } .brf-svg .wnd text { fill: var(--accent); text-anchor: middle; font-family: var(--font); font-weight: 700; }
 .brf-svg .wnd.warn path { stroke: var(--amber); } .brf-svg .wnd.warn text { fill: var(--amber); }
 .brf-svg .wnd.bad path { stroke: var(--red); } .brf-svg .wnd.bad text { fill: var(--red); }

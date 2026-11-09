@@ -214,7 +214,9 @@ function brfComp(rws, winds, cc) {
     return { id, rw, hw, tw, xw, side, lt, lx, lvl: lvlMax(lt, lx), len: rw.len };
   }));
 }
-function brfMapSVG(rws, ways, lat, lon, wind, comps = []) {
+// direzione magnetica 001-360 da una vera e dalla variazione (E positiva)
+const brfMag = (tru, mv) => { const m = Math.round(((tru - mv) % 360 + 360) % 360); return m === 0 ? 360 : m; };
+function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null) {
   if (!rws.length) return '<div class="brf-map-empty">No runway data for this airport.</div>';
   const P = p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];
   const pts = rws.flatMap(r => [P(r.A), P(r.B)]);
@@ -251,13 +253,15 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = []) {
   // scala
   const sc = [250, 500, 1000, 2000].find(m => m / VW * 400 >= 55) || 2000;
   const scale = `<g class="scl" transform="translate(${x0 + 14 * u},${y1 - 14 * u})"><path d="M0,0H${sc}" stroke-width="${2 * u}"/><text y="${-6 * u}" font-size="${10 * u}">${sc >= 1000 ? sc / 1000 + ' km' : sc + ' m'}</text></g>`;
-  const north = `<g class="nrt" transform="translate(${x1 - 18 * u},${y0 + 22 * u})"><path d="M0,${-12 * u}L${6 * u},${8 * u}L0,${3 * u}L${-6 * u},${8 * u}Z"/><text y="${20 * u}" font-size="${9 * u}">N</text></g>`;
+  const north = `<g class="nrt" transform="translate(${x1 - 18 * u},${y0 + 22 * u})"><path d="M0,${-12 * u}L${6 * u},${8 * u}L0,${3 * u}L${-6 * u},${8 * u}Z"/><text y="${20 * u}" font-size="${9 * u}">N</text>${mv == null ? '' : `<text class="var" x="${8 * u}" y="${31 * u}" font-size="${8.5 * u}">VAR ${magVarTxt(mv)}</text>`}</g>`;
   // freccia del vento: la coda indica da dove viene, la punta dove va
   let wnd = '';
   if (wind) {
     const cx = x1 - 50 * u, cy = y0 + 70 * u;
     const arrow = wind.dir == null ? '' : `<g transform="rotate(${wind.dir})"><path d="M0,${-16 * u}V${16 * u}" stroke-width="${2.5 * u}"/><path d="M${-6 * u},${8 * u}L0,${17 * u}L${6 * u},${8 * u}" stroke-width="${2.5 * u}" fill="none"/></g>`;
-    wnd = `<g class="wnd ${wind.lvl}" transform="translate(${cx},${cy})">${arrow}<text y="${34 * u}" font-size="${10.5 * u}">${esc(wind.txt)}</text></g>`;
+    // la mappa è orientata al nord vero, quindi la freccia resta vera; l'etichetta è in magnetico, come la dà la torre
+    const txt = wind.dir == null || mv == null ? wind.txt : wind.txt.replace(/^\d{3}/, String(brfMag(wind.dir, mv)).padStart(3, '0') + '°M');
+    wnd = `<g class="wnd ${wind.lvl}" transform="translate(${cx},${cy})">${arrow}<text y="${34 * u}" font-size="${10.5 * u}">${esc(txt)}</text></g>`;
   }
   return `<svg class="brf-svg" viewBox="${x0.toFixed(0)} ${y0.toFixed(0)} ${VW.toFixed(0)} ${VH.toFixed(0)}" role="img" aria-label="Airport diagram">${aprons}${terms}${twys}${runways}${twLab}${rwLab}${scale}${north}${wnd}</svg>`;
 }
@@ -339,8 +343,9 @@ function brfCard(p, wx, mapRec, ccSel) {
     const items = g.items.map(i => `<span class="${i.lvl !== 'ok' ? 'u ' + i.lvl : ''}">${esc(i.txt)}</span>`).join(' ');
     return `<li class="${cur ? 'cur' : ''} ${near(g) ? '' : 'far'}"><i class="dot ${g.lvl}"></i><span class="per">${brfT(g.from)}–${brfT(g.to)}</span>${lab ? `<b>${lab}</b>` : ''} ${items || '<span class="muted">no change</span>'}${cur ? ` <em>${p.at ? (p.role === 'DEP' ? 'ETD' : 'ETA') : 'NOW'}</em>` : ''}</li>`;
   };
+  const mv = a && typeof magVar === 'function' ? magVar(a[0], a[1], ref) : null;   // variazione WMM2025
   const map = !a ? '<div class="brf-map-empty">Airport not in the database.</div>'
-    : brfMapSVG(rws, ways, a[0], a[1], winds[0] || null, comps);
+    : brfMapSVG(rws, ways, a[0], a[1], winds[0] || null, comps, mv);
   const metAge = metRaw ? (() => { const m = metRaw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/); return m ? brfDay(new Date(), +m[1], +m[2], +m[3]) : null; })() : null;
   return `<section class="brf-card">
     <header><b>${esc(p.icao)}</b><span>${esc(brfIataOf(p.icao))}</span><span class="nm">${esc(a?.[2] || '')}</span><em>${p.role}${p.at ? ' · ' + (p.role === 'DEP' ? 'ETD ' : 'ETA ') + brfHM(p.at) : ''}</em></header>
@@ -349,7 +354,7 @@ function brfCard(p, wx, mapRec, ccSel) {
     <div class="brf-rw">
       <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${ccSel ? '' : ' · auto'}</small></div>
       ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i> <small>${c.len} m</small></span>`).join('')}</div>
-      <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
+      <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction${mv == null ? '' : ` (on the map in magnetic, VAR ${magVarTxt(mv)})`}. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
     </div>
     <div class="brf-sec"><h4>METAR ${metAge ? `<small>${brfHM(metAge)} · ${brfAge(metAge)}</small>` : ''}</h4>
       ${metRaw ? `<p class="mono ${metAge && Date.now() - metAge > 3 * 3600e3 ? 'old' : ''}">${metRaw.trim().split(/\s+/).map(tok).join(' ')}</p>` : '<p class="muted">No METAR available.</p>'}</div>

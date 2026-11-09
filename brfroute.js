@@ -4,7 +4,7 @@
    La rotta è il cerchio massimo tra gli aeroporti, non il piano di volo con le aerovie. */
 const RM_W = 1000, RM_H = 620;
 const RM_FL = { 300: '300hPa', 340: '250hPa', 390: '200hPa' };   // livello di volo → superficie di pressione
-const RM_BRIDGE_DEF = '';                                       // indirizzo del ponte Cloudflare, quando c'è
+const RM_BRIDGE_DEF = 'https://sigmet-bridge.bortolotluca.workers.dev';                                       // indirizzo del ponte Cloudflare, quando c'è
 const RM_HAZ = { TS: ['#e11d48', 'Thunderstorm'], TURB: ['#f59e0b', 'Turbulence'], ICE: ['#0ea5e9', 'Icing'], MTW: ['#a855f7', 'Mountain wave'], VA: ['#78716c', 'Volcanic ash'], TC: ['#dc2626', 'Tropical cyclone'], SS: ['#b45309', 'Sandstorm'], DS: ['#b45309', 'Duststorm'], RDOACT: ['#16a34a', 'Radioactive cloud'] };
 let rmLibs = null, rmWorld = null, rmRadarMeta = null;
 

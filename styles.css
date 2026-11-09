@@ -807,14 +807,18 @@ form.sheet input:not([type=date]):not([type=number]):not([type=radio]):not([type
 table.data td .newdot { margin-right: 10px; }
 
 /* ---------- Briefing */
-.brief-go { margin: 0 0 14px; }
-.brief-go .btn { width: 100%; justify-content: center; }
+.brief-go { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; width: 100%; margin: 0 0 14px; padding: 16px 18px; border: 0; border-radius: 12px; cursor: pointer;
+  background: linear-gradient(90deg, #2f5fd0, #4b8ae6); color: #fff; font: inherit; box-shadow: 0 2px 8px rgba(47, 95, 208, .25); }
+.brief-go b { font-family: var(--font); font-size: 16px; letter-spacing: .14em; text-transform: uppercase; }
+.brief-go span { font-size: 13px; opacity: .9; }
+.brief-go svg { width: 22px; height: 22px; fill: #fff; order: -1; }
+.brief-go:active { transform: scale(.99); }
 .nd-brf { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: none; }
 .brf-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .brf-head h1 { margin-bottom: 2px; } .brf-head .lede { margin: 0; }
 .brf-upd { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
 .brf-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-@media (max-width: 900px) { .brf-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .brf-grid { grid-template-columns: 1fr; } }
 .brf-card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; min-width: 0; }
 .brf-card header { display: flex; align-items: baseline; gap: 8px; background: var(--accent); color: var(--on-accent); padding: 11px 16px; flex-wrap: wrap; }
 .brf-card header b { font-family: var(--font); font-size: 19px; letter-spacing: .04em; }
@@ -866,3 +870,39 @@ table.data td .newdot { margin-right: 10px; }
 .brf-taf .dot.warn { background: var(--amber); } .brf-taf .dot.bad { background: var(--red); }
 .brf-sec details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 6px; }
 .brf-sec .muted, .brf-card .muted { color: var(--muted); }
+/* briefing: categorie di avvicinamento e limiti vento */
+:root { --cat2: #c99a06; --cat3a: #e0620d; --cat3b: #9333ea; }
+:root[data-theme="dark"] { --cat2: #f2c94c; --cat3a: #ff8a3d; --cat3b: #c084fc; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --cat2: #f2c94c; --cat3a: #ff8a3d; --cat3b: #c084fc; } }
+.brf-sec u.cat2, .brf-taf .u.cat2 { text-decoration: underline 2px var(--cat2); text-underline-offset: 3px; }
+.brf-sec u.cat3a, .brf-taf .u.cat3a { text-decoration: underline 2px var(--cat3a); text-underline-offset: 3px; font-weight: 700; }
+.brf-sec u.cat3b, .brf-taf .u.cat3b { text-decoration: underline 2px var(--cat3b); text-underline-offset: 3px; font-weight: 700; }
+.brf-taf .dot.cat2 { background: var(--cat2); } .brf-taf .dot.cat3a { background: var(--cat3a); } .brf-taf .dot.cat3b { background: var(--cat3b); }
+.brf-alerts .cat2 { border-left-color: var(--cat2); } .brf-alerts .cat2 b { color: var(--cat2); }
+.brf-alerts .cat3a { border-left-color: var(--cat3a); } .brf-alerts .cat3a b { color: var(--cat3a); }
+.brf-alerts .cat3b { border-left-color: var(--cat3b); } .brf-alerts .cat3b b { color: var(--cat3b); }
+.brf-alerts .bad { background: color-mix(in srgb, var(--red) 8%, var(--sheet)); }
+.brf-rw { display: block; padding: 10px 16px 0; }
+.brf-cc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.brf-cc > span { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin-right: 2px; }
+.brf-cc button { min-width: 34px; height: 30px; border: 1px solid var(--rule); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.brf-cc button.on { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+.brf-cc small { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+.brf-cmp { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; margin-bottom: 4px; }
+.brf-cmp span { border-left: 4px solid var(--ok); padding-left: 7px; }
+.brf-cmp span.warn { border-left-color: var(--cat2); } .brf-cmp span.bad { border-left-color: var(--red); }
+.brf-cmp i { font-style: normal; } .brf-cmp i.warn { color: var(--cat2); font-weight: 700; } .brf-cmp i.bad { color: var(--red); font-weight: 700; }
+.brf-cmp small { color: var(--muted); }
+.brf-svg .cmp rect { fill: var(--sheet); stroke: var(--ok); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.brf-svg .cmp.warn rect { stroke: var(--cat2); } .brf-svg .cmp.bad rect { stroke: var(--red); fill: color-mix(in srgb, var(--red) 10%, var(--sheet)); }
+.brf-svg .cmp text { text-anchor: middle; font-family: var(--font); font-weight: 700; fill: var(--ink); }
+.brf-svg .cmp text.warn { fill: var(--cat2); } .brf-svg .cmp text.bad { fill: var(--red); }
+.brf-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 8px; }
+.brf-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--ok); }
+.brf-legend .cat2 i { background: var(--cat2); } .brf-legend .cat3a i { background: var(--cat3a); } .brf-legend .cat3b i { background: var(--cat3b); } .brf-legend .bad i { background: var(--red); }
+.brf-lim { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 16px; margin-bottom: 20px; }
+.brf-lim summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--ink-2); }
+.brf-lim-g { display: grid; grid-template-columns: minmax(150px, auto) repeat(2, minmax(90px, 140px)); gap: 8px 12px; align-items: center; margin-top: 12px; }
+.brf-lim-g label { display: flex; align-items: center; gap: 6px; }
+.brf-lim-g input { width: 70px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; }
+.brf-lim-g small { color: var(--muted); font-size: 12px; }

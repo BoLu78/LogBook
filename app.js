@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.5.2';
+const APP_VERSION = '3.6.0';
 const APP_DATE = '09/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -652,6 +652,8 @@ function viewEdit(main, id) {
       <input type="hidden" id="ldgDay" value="${f.ldgDay || ''}"><input type="hidden" id="ldgNight" value="${f.ldgNight || ''}">
     </section>
 
+    <button type="button" class="brief-go" id="briefGo"><b>Briefing</b><span>METAR · TAF · airport maps · runway wind</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 13.5 10 11V5.2c0-1 .9-2 2-2s2 1 2 2V11l7.5 2.5v2l-7.5-2v4l2.5 1.8V21L12 20l-4.5 1v-1.7l2.5-1.8v-4l-7.5 2z"/></svg></button>
+
     <section class="sheet-card">
       <h3>Function</h3>
       <div class="rows">
@@ -677,7 +679,6 @@ function viewEdit(main, id) {
       </div>
       <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
     </details>
-    <div class="brief-go"><button type="button" class="btn primary" id="briefGo">Briefing · METAR TAF and airport maps</button></div>
     <details class="sheet-card fold swx" id="swxCard" hidden></details>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>

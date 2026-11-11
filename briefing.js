@@ -29,8 +29,8 @@ function brfCleanup(route) {
     const now = Date.now(), keys = Object.keys(localStorage).filter(k => k.startsWith('brf:'));
     for (const k of keys) {
       if (k.startsWith('brf:rmw:')) { localStorage.removeItem(k); continue; }   // formato vecchio dei venti
-      if (k.startsWith('brf:rmw2:')) {
-        const [legs, h] = k.slice(9).split(':'), at = +h * 3600e3;
+      if (k.startsWith('brf:rmw2:') || k.startsWith('brf:rmh:')) {   // venti e rischi della mappa meteo, per tratta e ora
+        const [legs, h] = k.slice(k.indexOf(':', 4) + 1).split(':'), at = +h * 3600e3;
         if (!(at > now - 864e5) || (route && at < now && ('-' + legs + '-').includes('-' + route + '-'))) localStorage.removeItem(k);
         continue;
       }

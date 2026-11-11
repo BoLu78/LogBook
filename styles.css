@@ -592,7 +592,8 @@ table.data td.rem > div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-b
 form.locked #chkSig { pointer-events: none; border-style: solid; }
 .easa .chk-rem { font-weight: 700; margin-top: .3mm; }
 .easa .chk-rem .sig-img { height: 4mm; }
-.actions #nextLeg { min-width: 150px; }
+.leg-new { display: flex; gap: 10px; }
+.leg-new .btn { min-width: 150px; }
 
 /* ---------- 2.9: Settings a gruppi ---------- */
 .set-sec { margin: 0 0 22px; max-width: 860px; }
@@ -657,7 +658,7 @@ form.locked #chkSig { pointer-events: none; border-style: solid; }
 @media (max-width: 760px) { .chart-two { grid-template-columns: minmax(0, 1fr); } .hb { grid-template-columns: 90px 1fr 64px; } .hb-n { display: none; } }
 #chkName, #dPilot { text-transform: uppercase; }
 .leg-nav { display: flex; gap: 10px; }
-.leg-nav #prevLeg, .leg-nav #nextLeg { min-width: 150px; }
+.leg-nav #prevLeg, .leg-nav #nextEntry { min-width: 150px; }
 .leg-nav #prevLeg:disabled { opacity: .45; }
 form.sheet .actions { align-items: center; }
 form.sheet .actions #del { margin-left: auto; }

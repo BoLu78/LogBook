@@ -1,6 +1,6 @@
 'use strict';
-const APP_VERSION = '3.8.0';
-const APP_DATE = '09/11/2026';
+const APP_VERSION = '3.8.1';
+const APP_DATE = '11/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
 // ---------- utilità ----------
@@ -320,7 +320,10 @@ function route() {
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
   // Previous / Next in alto solo nella scheda di un volo
-  for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !(view === 'modifica' || view === 'nuovo'); }
+  // nella scheda: solo le frecce e la nuvola; altrove: roster, nuvola e +
+  const inSheet = view === 'modifica' || view === 'nuovo';
+  for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !inSheet; }
+  for (const id of ['tbRoster', 'tbNew']) { const b = $('#' + id); if (b) b.hidden = inSheet; }
   const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft', briefing: 'Briefing' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
@@ -714,7 +717,11 @@ function viewEdit(main, id) {
     <div class="actions">
       <div class="leg-nav keep">
         <button class="btn keep" type="button" id="prevLeg"><span aria-hidden="true">←</span> Previous</button>
-        <button class="btn primary keep" type="button" id="nextLeg">Next leg <span aria-hidden="true">→</span></button>
+        <button class="btn keep" type="button" id="nextEntry">Next <span aria-hidden="true">→</span></button>
+      </div>
+      <div class="leg-new keep">
+        <button class="btn primary keep" type="button" id="nextLeg" title="New flight from this arrival, same aircraft">Next leg <span aria-hidden="true">→</span></button>
+        <button class="btn primary keep" type="button" id="retLeg" title="Return flight: same aircraft, back to this departure">Return <span aria-hidden="true">⇄</span></button>
       </div>
       <button class="btn danger" type="button" id="del">Delete</button>
     </div>
@@ -905,7 +912,8 @@ function viewEdit(main, id) {
     const d = viewEdit.dup; viewEdit.dup = null;
     g('reg').value = d.reg || ''; g('type').value = d.type || ''; g('acType').textContent = d.type || '';
     g('picName').value = d.picName || ''; g('mpOn').checked = d.mp > 0 || !(d.spSe || d.spMe);
-    g('dep').value = d.arr; g('date').value = legDate(d); form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
+    g('dep').value = d.arr; if (d.ret) g('arr').value = d.dep; g('date').value = legDate(d); form.role.value = roleOf(d) === 'SIM' ? 'PIC' : roleOf(d); hint(); aptInfo();
+    if (d.ret) runNight();
   }
 
   // ---------- salvataggio automatico e lucchetto
@@ -1038,17 +1046,20 @@ function viewEdit(main, id) {
     const p = neighbour(-1), n = neighbour(1);
     const what = x => x.kind === 'sim' ? `SIM ${x.simReg || x.simType || ''}`.trim() : `${x.dep}–${x.arr}`;
     g('prevLeg').disabled = !p; const tp = $('#tbPrev'), tn = $('#tbNext'); if (tp) { tp.disabled = !p; tp.title = p ? `Previous: ${dmy(p.date)} ${what(p)}` : 'No earlier entry'; } if (tn) tn.title = n ? `Next: ${dmy(n.date)} ${what(n)}` : 'New next leg from this arrival'; g('prevLeg').title = p ? `${dmy(p.date)} ${what(p)}` : 'No earlier entry';
-    g('nextLeg').innerHTML = n ? 'Next <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
-    g('nextLeg').title = n ? `${dmy(n.date)} ${what(n)}` : 'Create a new leg from this arrival';
+    g('nextEntry').innerHTML = n ? 'Next <span aria-hidden="true">→</span>' : 'New next leg <span aria-hidden="true">+</span>';
+    g('nextEntry').title = n ? `${dmy(n.date)} ${what(n)}` : 'Create a new leg from this arrival';
   };
   navBtns();
   g('prevLeg').onclick = () => { flush(); const p = neighbour(-1); if (p) location.hash = 'modifica/' + p.id; };
-  g('nextLeg').onclick = () => {
-    flush(); const n = neighbour(1);
-    if (n) { location.hash = 'modifica/' + n.id; return; }
+  // nuova tratta da questo arrivo (ret: ritorno, l'arrivo diventa la partenza di questo volo)
+  const newLeg = ret => {
+    flush();
     if (!created) { const r = collect(); if (r.err) { toast(`Complete this leg first: ${r.err}`); r.el?.focus(); return; } }
-    nextLeg(data.flights.find(x => x.id === recId) || f);
+    nextLeg(data.flights.find(x => x.id === recId) || f, ret);
   };
+  g('nextEntry').onclick = () => { flush(); const n = neighbour(1); if (n) location.hash = 'modifica/' + n.id; else newLeg(false); };
+  g('nextLeg').onclick = () => newLeg(false);
+  g('retLeg').onclick = () => newLeg(true);
 }
 
 const CHECKS = ['LINE CHECK', 'OPC', 'LPC', 'OPC/LPC', 'ROUTE CHECK', 'LIFUS', 'LINE TRAINING', 'SKILL TEST', 'FINAL LINE CHECK', 'COMMAND CHECK'];
@@ -1058,12 +1069,12 @@ function lastLeg() {
   const td = today();
   return data.flights.filter(f => f.kind === 'flight' && f.date <= td && (!f.planned || f.date === td)).sort((a, b) => (a.date + a.out).localeCompare(b.date + b.out)).at(-1);
 }
-function nextLeg(base) {
+function nextLeg(base, ret = false) {
   if (!data) return;
   const [v, id] = location.hash.slice(1).split('/');
   base ||= (v === 'modifica' && data.flights.find(f => f.id === id)) || lastLeg();
   if (!base || !base.arr) { location.hash = 'nuovo'; return; }
-  viewEdit.dup = base;
+  viewEdit.dup = ret && base.dep ? { ...base, ret: true } : base;
   if (location.hash === '#nuovo') route(); else location.hash = 'nuovo';
 }
 const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2" fill="currentColor"/><path class="shackle" d="M8 10.5V7.5a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
@@ -1799,7 +1810,7 @@ document.addEventListener('DOMContentLoaded', () => {});
     e.target.value = '';
   };
   document.getElementById('tbPrev').onclick = () => { const b = document.getElementById('prevLeg'); if (b && !b.disabled) b.click(); };
-  document.getElementById('tbNext').onclick = () => document.getElementById('nextLeg')?.click();
+  document.getElementById('tbNext').onclick = () => document.getElementById('nextEntry')?.click();
   document.getElementById('tbSync').onclick = () => { if (gdClientId()) syncNow(true); else location.hash = 'dati'; };
 })();
 function renderSyncState() {

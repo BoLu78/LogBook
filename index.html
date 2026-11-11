@@ -20,10 +20,9 @@
   <span class="tb-title" id="pageTitle">Logbook</span>
   <button type="button" class="tb-btn tb-leg" id="tbPrev" aria-label="Previous entry" title="Previous entry" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
   <button type="button" class="tb-btn tb-leg" id="tbNext" aria-label="Next entry" title="Next entry" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-  <button type="button" class="tb-btn" data-act="roster" aria-label="Import roster" title="Import NetLine roster"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg></button>
-  <button type="button" class="tb-btn" data-act="next" aria-label="Next leg" title="Next leg: new flight from the last arrival"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h15M13 6.5 18.5 12 13 17.5M21 5v14"/></svg></button>
+  <button type="button" class="tb-btn" id="tbRoster" data-act="roster" aria-label="Import roster" title="Import NetLine roster"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg></button>
   <button type="button" class="tb-btn" id="tbSync" aria-label="Sync with Google Drive" title="Google Drive"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/></svg></button>
-  <a class="tb-btn tb-new" href="#nuovo" aria-label="New flight"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
+  <a class="tb-btn tb-new" id="tbNew" href="#nuovo" aria-label="New flight"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></a>
 </header>
 <div class="scrim" id="scrim" hidden></div>
 <div class="app">

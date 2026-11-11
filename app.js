@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.9.0';
+const APP_VERSION = '3.10.0';
 const APP_DATE = '11/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -338,6 +338,46 @@ const fmtN = n => Math.round(n).toLocaleString('en-GB');
 const parseDec = v => { const n = parseFloat(String(v || '').replace(',', '.')); return n > 0 ? n : 0; };
 
 // ---------- calcoli ----------
+// ---------- recency EASA FCL.060(b)(1): 3 decolli e 3 atterraggi da PF nei 90 giorni precedenti, stesso tipo o FFS del tipo ----------
+const simFamily = t => /737/.test(t) ? 'Boeing 737' : /787|777/.test(t) ? 'Boeing 787' : /747/.test(t) ? 'Boeing 747' : /P180|AVANTI/i.test(t) ? 'Piaggio P180' : '';
+function recencyAll(td = today()) {
+  const ev = {};   // famiglia -> { to: [date...], ldg: [date...], lastUse }
+  const add = (fam, date, to, ldg) => {
+    if (!fam || fam === '—') return;
+    const e = ev[fam] ||= { to: [], ldg: [], lastUse: '' };
+    for (let i = 0; i < to; i++) e.to.push(date);
+    for (let i = 0; i < ldg; i++) e.ldg.push(date);
+    if (date > e.lastUse) e.lastUse = date;
+  };
+  for (const f of data.flights) {
+    if (f.date > td || f.planned) continue;
+    if (f.kind === 'sim') add(simFamily(`${f.simType} ${simFleet()[f.simReg] || ''}`), f.date, f.recTo || 0, f.recLdg || 0);
+    else add(familyOf(f.type), f.date, (f.toDay || 0) + (f.toNight || 0), (f.ldgDay || 0) + (f.ldgNight || 0));
+  }
+  const from = addDays(td, -89), cutoff = addDays(td, -365);
+  const out = [];
+  for (const [fam, e] of Object.entries(ev)) {
+    if (e.lastUse < cutoff) continue;                // tipi non più usati nell'ultimo anno
+    e.to.sort().reverse(); e.ldg.sort().reverse();
+    const nTo = e.to.filter(d => d >= from).length, nLdg = e.ldg.filter(d => d >= from).length;
+    const k = [e.to[2], e.ldg[2]].filter(Boolean).sort()[0];
+    const until = e.to.length >= 3 && e.ldg.length >= 3 ? addDays(k, 89) : '';
+    const valid = !!until && until >= td;
+    const left = valid ? Math.round((Date.parse(until) - Date.parse(td)) / 864e5) : -1;
+    out.push({ fam, nTo, nLdg, until, valid, left, lastUse: e.lastUse });
+  }
+  return out.sort((a, b) => b.lastUse.localeCompare(a.lastUse));
+}
+// avviso in alto nel Summary: solo per il tipo che stai volando ora
+function recBanner(rec, nextPl) {
+  const r = rec[0]; if (!r) return '';
+  const late = r.valid && nextPl && r.until < nextPl;
+  if (r.valid && r.left > 14 && !late) return '';
+  const msg = !r.valid ? `<b>${esc(r.fam)} recency lapsed</b> (${r.nTo} takeoffs / ${r.nLdg} landings in the last 90 days). An FFS session or a flight under supervision is needed before flying.`
+    : late ? `<b>${esc(r.fam)} recency ends ${dmy(r.until)}</b>, before your next planned flight on ${dmy(nextPl)}.`
+    : `<b>${esc(r.fam)} recency ends ${dmy(r.until)}</b>: ${r.left} day${r.left === 1 ? '' : 's'} left.`;
+  return `<div class="rec-banner ${r.valid ? 'caution' : 'warn'}">${msg}</div>`;
+}
 function sum(list, withOpening) {
   const t = Object.fromEntries(SUM_KEYS.map(k => [k, 0])); t.legs = 0; t.sims = 0;
   if (withOpening && data.opening) for (const k of SUM_KEYS) t[k] += data.opening[k] || 0;
@@ -459,9 +499,15 @@ function viewSummary(main) {
   const last = (from) => sum(fl.filter(f => f.date >= from && f.date <= td));
   const d28 = last(addDays(td, -27)), y = last(td.slice(0, 4) + '-01-01'), m12 = last(addDays(td, -364)), d90 = last(addDays(td, -89));
   const lastFlight = fl[fl.length - 1];
-  const curType = lastFlight ? lastFlight.type : '';
-  const typ90 = sum(fl.filter(f => f.type === curType && f.date >= addDays(td, -89)));
-  const ok90 = (typ90.toDay + typ90.toNight) >= 3 && (typ90.ldgDay + typ90.ldgNight) >= 3;
+  const rec = recencyAll(td);
+  const nextPl = data.flights.filter(f => f.planned && f.kind === 'flight' && f.date >= td).map(f => f.date).sort()[0] || '';
+  const recCard = r => {
+    const late = r.valid && nextPl && r.until < nextPl && r === rec[0];
+    const cls = !r.valid ? (r === rec[0] ? 'warn' : '') : (r.left <= 14 || late) ? 'caution' : '';
+    const txt = !r.valid ? 'recency lapsed: FFS session or flight under supervision required'
+      : `valid until ${dmy(r.until)} (${r.left} day${r.left === 1 ? '' : 's'})${late ? ` · lapses before the next planned flight ${dmy(nextPl)}` : ''}`;
+    return `<div class="${cls}"><b>${r.nTo} / ${r.nLdg}</b><span>${esc(r.fam)} takeoffs / landings, last 90 days · ${txt}</span></div>`;
+  };
 
   // miglia
   if (!APT) loadAirports().then(j => { if (j && location.hash.replace('#', '') in { '': 1, riepilogo: 1 }) viewSummary(main); });
@@ -488,6 +534,7 @@ function viewSummary(main) {
     <label class="row filters" style="margin:0">Period
     <select id="per"><option value="all">Whole career</option><option value="12m">Last 12 months</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></label></div></div>
   ${plannedBanner()}
+  ${recBanner(rec, nextPl)}
   ${(() => { try { return nextDaysHTML(); } catch (e) { console.error(e); return ''; } })()}
   <p class="lede">${fmtN(t.legs)} sectors and ${t.sims} simulator sessions ${label}. Average sector ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
   <div class="hero">
@@ -516,7 +563,7 @@ function viewSummary(main) {
     <div><b>${hm0(y.total)}</b><span>calendar year ${td.slice(0, 4)}, limit 900 h</span>${gauge(y.total, 54000)}</div>
     <div><b>${hm0(m12.total)}</b><span>last 12 months, limit 1000 h</span>${gauge(m12.total, 60000)}</div>
     <div><b>${d90.toDay + d90.toNight} / ${d90.ldgDay + d90.ldgNight}</b><span>takeoffs / landings, last 90 days</span></div>
-    <div class="${ok90 ? '' : 'warn'}"><b>${typ90.toDay + typ90.toNight} / ${typ90.ldgDay + typ90.ldgNight}</b><span>${esc(curType)} takeoffs / landings, last 90 days${ok90 ? '' : ': fewer than 3, recency required'}</span></div>
+    ${rec.map(recCard).join('')}
     <div><b>${lastFlight ? dmy(lastFlight.date) : '—'}</b><span>last flight${lastFlight ? `, ${esc(lastFlight.dep)}–${esc(lastFlight.arr)}` : ''}</span></div>
   </div>
   <h2>By family</h2>
@@ -745,6 +792,9 @@ function viewEdit(main, id) {
         <div class="field"><label for="sinn">End</label><input id="sinn" value="${esc(f.inn)}"></div>
         <div class="field"><label for="sim">Duration</label><input id="sim" value="${hm(f.sim)}" placeholder="4:00"></div>
         <div class="field w3"><label for="spic">Instructor / examiner</label><input id="spic" value="${esc(f.picName)}"></div>
+        <div class="field"><label for="recTo">Takeoffs</label><input id="recTo" inputmode="numeric" value="${f.recTo || ''}" placeholder="0"></div>
+        <div class="field"><label for="recLdg">Landings</label><input id="recLdg" inputmode="numeric" value="${f.recLdg || ''}" placeholder="0"></div>
+        <small class="hint w3">Takeoffs and landings as pilot flying: they count for the 90-day recency (EASA FCL.060), not in the flight totals.</small>
       </div>
     </section></div>
     <details class="sheet-card fold" id="remBox">
@@ -979,6 +1029,9 @@ function viewEdit(main, id) {
       if (!sim || isNaN(sim)) return { err: 'duration missing', el: g('sim') };
       Object.assign(rec, EMPTY(), { id: rec.id, src: rec.src || 'app', kind: 'sim', date: g('sdate').value, simReg: g('simReg').value.trim().toUpperCase(), simType: g('simType').value.trim(), out: normTime(g('sout').value), inn: normTime(g('sinn').value), sim, picName: g('spic').value.trim(), remarks });
       delete rec.planned;
+      const rt = Math.min(99, parseInt(g('recTo').value, 10) || 0), rl = Math.min(99, parseInt(g('recLdg').value, 10) || 0);
+      if (rt) rec.recTo = rt; else delete rec.recTo;
+      if (rl) rec.recLdg = rl; else delete rec.recLdg;
       if (!rec.simReg) delete rec.simReg;
       else if (!simFleet()[rec.simReg] && rec.simType) { (data.simulators ||= {})[rec.simReg] = { type: rec.simType }; data.metaMt = Date.now(); }
     } else {
@@ -1067,6 +1120,11 @@ function viewEdit(main, id) {
   form.querySelectorAll('.lock').forEach(b => b.onclick = async () => {
     clearTimeout(timer); timer = null;
     if (!locked) {
+      const pre = collect();
+      if (!pre.err) {
+        const w = lockChecks(pre.rec);
+        if (w.length && !confirm(`Before locking, check:\n\n• ${w.join('\n• ')}\n\nLock anyway?`)) return;
+      }
       locked = true; confirmed = true;
       const r = await commit();
       if (r.err) { locked = false; toast(`Cannot lock: ${r.err}`); r.el?.scrollIntoView({ block: 'center' }); applyLock(); return; }
@@ -1581,7 +1639,9 @@ function viewData(main) {
   ${sec(I.cloud, 'Google Drive', cid ? `
     <div class="set-row"><span class="k">Status</span><span class="v">${gdConnected() ? (last ? `Synced ${new Date(last).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Connected, not synced yet') : 'Not connected'}${GD.state === 'err' ? ` · <span class="bad">${esc(GD.msg)}</span>` : ''}</span></div>
     <div class="set-row"><span class="k">File</span><span class="v">Logbook/logbook.json</span></div>
+    ${gdConnected() ? `<div class="set-row act"><span class="k">Stay signed in</span><span class="v">${ls.get('gdRefresh') ? 'Active on this device: no Google sign-in needed' : GD.bridge ? 'Available' : 'Not set up (Cloudflare logbook-auth)'}</span>${GD.bridge && !ls.get('gdRefresh') ? '<button class="btn" id="gdStay">Activate</button>' : ''}</div>` : ''}
     <div class="set-row act"><button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}</div>
+    ${gdConnected() ? `<div class="set-row act"><button class="btn" id="gdPdf">Save EASA PDF to Drive now</button><label class="row" style="margin:0;gap:6px;align-items:center"><input type="checkbox" id="gdPdfAuto" ${ls.get('pdfAuto') === '0' ? '' : 'checked'}> every week</label><span class="hint">Whole logbook in EASA format, in Logbook/EASA PDF, last ${PDF_KEEP} copies kept.${data?.lastPdf ? ` Last saved ${new Date(data.lastPdf).toLocaleDateString('en-GB')}.` : ' Not saved yet.'}</span></div>` : ''}
     ${gdConnected() ? '<div class="set-row act"><button class="btn" id="gdRecover">Recover lost data from Drive history</button><span class="hint">Brings back names, remarks, signatures and other fields that were emptied by a sync, from the versions Drive kept in the last 30 days.</span></div>' : ''}`
     : `<div class="set-row col"><span class="k">Google OAuth client ID</span><div class="row" style="margin:0"><input id="gdCid" style="flex:1;min-width:240px" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div></div>`)}
   ${sec(I.folder, 'Backup folder', `
@@ -1718,6 +1778,30 @@ function plannedLate() {
   return data.flights.filter(f => f.planned && Date.parse(`${f.date}T${f.inn || '23:59'}:00Z`) + (toMin(f.inn) < toMin(f.out) ? 86400000 : 0) < now);
 }
 // coerenza: la somma PIC + copilota + dual deve essere uguale al tempo totale del volo
+// controlli prima del lucchetto: avvisi, non blocchi (decidi tu)
+function lockChecks(f) {
+  const w = [];
+  if (f.date > today()) w.push(`the date ${dmy(f.date)} is in the future`);
+  if (f.kind === 'sim') {
+    if (!f.simReg) w.push('FSTD registration missing');
+    if (!f.simType) w.push('FSTD type missing');
+    return w;
+  }
+  if (!f.reg) w.push('aircraft registration missing');
+  if (!f.type) w.push('aircraft type missing');
+  if (!f.picName) w.push('PIC name missing');
+  const blk = f.out && f.inn ? ((toMin(f.inn) - toMin(f.out)) + 1440) % 1440 : null;
+  if (blk != null && f.total && Math.abs(blk - f.total) > 1) w.push(`block time ${hm(f.total)} does not match OUT–IN (${hm(blk)})`);
+  if (f.off && f.on && f.total) { const ft = ((toMin(f.on) - toMin(f.off)) + 1440) % 1440; if (ft > f.total) w.push(`flight time OFF–ON (${hm(ft)}) is longer than block time`); }
+  if (!f.off || !f.on) w.push('OFF or ON time missing');
+  if ((f.night || 0) > f.total) w.push('night time is longer than block time');
+  if ((f.ifr || 0) > f.total) w.push('IFR time is longer than block time');
+  if (fnMismatch(f)) w.push(`function time (PIC + SIC + Dual ${hm((f.pic || 0) + (f.sic || 0) + (f.dual || 0))}) differs from block time ${hm(f.total)}`);
+  const to = (f.toDay || 0) + (f.toNight || 0), ld = (f.ldgDay || 0) + (f.ldgNight || 0);
+  if (!to && !ld) w.push('no takeoff or landing logged (fine if you were pilot monitoring)');
+  if ((f.toNight || f.ldgNight) && !f.night) w.push('night takeoff or landing but no night time');
+  return w;
+}
 const fnMismatch = f => f.kind === 'flight' && !f.planned && f.total > 0 && (f.pic || 0) + (f.sic || 0) + (f.dual || 0) !== f.total;
 function fixFunctionTime(f) {
   const r = roleOf(f) || (/picus/i.test(f.remarks) ? 'PICUS' : /lifus/i.test(f.remarks) ? 'LIFUS' : f.pic ? 'PIC' : f.sic ? 'SIC' : f.dual ? 'DUAL' : 'PIC'), t = f.total;
@@ -1750,15 +1834,57 @@ const GD = { token: ss.get('gdTok'), exp: +ss.get('gdExp') || 0, state: '', msg:
 const gdClientId = () => GD_CLIENT_ID || ls.get('gdClient') || '';
 const gdConnected = () => !!gdClientId() && ls.get('gdOn') === '1';
 const gdTokenOk = () => GD.token && Date.now() < GD.exp - 60000;
+const gdLive = () => gdTokenOk() || !!ls.get('gdRefresh');   // collegato: token valido o rinnovabile dal Worker
 
 let gisLoading = null;
 function gisLoad() {
   return gisLoading ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.onload = res; s.onerror = () => { gisLoading = null; rej(new Error('Google unreachable, check the connection')); }; document.head.append(s); });
 }
+// ---------- accesso che non scade: Cloudflare Worker "logbook-auth" (vedi cloudflare/logbook-auth.js) ----------
+const GD_BRIDGE = 'https://logbook-auth.bortolotluca.workers.dev';
+function gdSetTok(j) {
+  GD.token = j.access_token; GD.exp = Date.now() + (j.expires_in || 3600) * 1000; ss.set('gdTok', GD.token); ss.set('gdExp', GD.exp);
+  if (j.refresh_token) ls.set('gdRefresh', j.refresh_token);
+}
+async function gdBridge(path, body) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(GD_BRIDGE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error || !j.access_token) throw Object.assign(new Error(j.error_description || j.error || `sign-in service ${r.status}`), { revoked: j.error === 'invalid_grant' });
+    return j;
+  } finally { clearTimeout(t); }
+}
+// all'avvio: il Worker c'è? (deciso prima del tocco su "Connect", perché Safari blocca la finestra Google se si aspetta la rete)
+function gdBridgeProbe() {
+  if (GD.bridge !== undefined) return;
+  GD.bridge = null;
+  fetch(GD_BRIDGE + '/ping', { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).then(j => { GD.bridge = !!j.ok; }).catch(() => { GD.bridge = false; });
+}
 async function gdToken(interactive) {
   if (gdTokenOk()) return GD.token;
+  const rt = ls.get('gdRefresh');
+  if (rt) {
+    try { gdSetTok(await gdBridge('/refresh', { refresh_token: rt })); return GD.token; }
+    catch (e) { if (e.revoked) ls.set('gdRefresh', null); if (!interactive) throw Object.assign(new Error('Google sign-in needs renewing'), { auth: true }); }
+  }
   if (!interactive) throw Object.assign(new Error('Google sign-in needs renewing'), { auth: true });
   await gisLoad();
+  if (GD.bridge) return new Promise((res, rej) => {
+    const cc = google.accounts.oauth2.initCodeClient({
+      client_id: gdClientId(), scope: GD_SCOPE, ux_mode: 'popup',
+      callback: async r => {
+        if (r.error) return rej(new Error(r.error_description || r.error));
+        try {
+          const j = await gdBridge('/exchange', { code: r.code }); gdSetTok(j);
+          if (!j.refresh_token && !ls.get('gdRefresh')) toast('Connected, but Google did not allow staying signed in: see Settings › Google Drive');
+          res(GD.token);
+        } catch (e) { rej(e); }
+      },
+      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'sign-in cancelled' : e.type === 'popup_failed_to_open' ? 'the browser blocked the Google window' : (e.message || e.type)))
+    });
+    cc.requestCode();
+  });
   return new Promise((res, rej) => {
     const tc = google.accounts.oauth2.initTokenClient({
       client_id: gdClientId(), scope: GD_SCOPE,
@@ -1831,10 +1957,10 @@ function mergeData(local, remote) {
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote, other = meta === local ? remote : local;
   // le chiavi che questa versione non conosce restano (non si perde niente scritto da una versione più nuova)
-  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), lastPdf: Math.max(local.lastPdf || 0, remote.lastPdf || 0), deleted: del, flights };
 }
 const fmtSum = f => f.fmt ? Object.values(f.fmt).reduce((s, v) => s + v, 0) : 0;
-const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}|${d.lastPdf || 0}` : '';
 async function syncNow(interactive) {
   if (!gdClientId()) return;
   if (GD.busy) { GD.again = true; return; }   // una modifica durante la sincronizzazione: si ripete subito dopo
@@ -1860,6 +1986,7 @@ async function syncNow(interactive) {
     }
     if (merged && remoteChanged) await gdUpload(id, merged);
     GD.state = 'ok'; GD.msg = ''; ls.set('gdLast', new Date().toISOString());
+    setTimeout(() => weeklyPdf(false), 4000);
   } catch (e) {
     GD.state = e.auth ? 'login' : 'err'; GD.msg = e.message;
     if (interactive) toast('Sync failed: ' + e.message);
@@ -1868,12 +1995,47 @@ async function syncNow(interactive) {
     if (GD.again && GD.state === 'ok') { GD.again = false; setTimeout(() => syncNow(false), 500); }
   }
 }
+// ---------- PDF EASA su Drive: una volta a settimana (da un solo dispositivo), cartella Logbook/EASA PDF, ultime 8 copie ----------
+const PDF_EVERY = 7 * 864e5, PDF_KEEP = 8;
+let pdfBusy = false;
+async function gdSubFolder(name, parent) {
+  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parent}' in parents and trashed=false`);
+  const j = await (await gdFetch(`${GAPI}?q=${q}&fields=files(id)`)).json();
+  if (j.files?.[0]) return j.files[0].id;
+  const c = await (await gdFetch(GAPI, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parents: [parent], mimeType: 'application/vnd.google-apps.folder' }) })).json();
+  return c.id;
+}
+async function gdUploadPdf(name, blob, parent) {
+  const meta = JSON.stringify({ name, parents: [parent], mimeType: 'application/pdf' }), bnd = 'lbpdf' + Date.now();
+  const body = new Blob([`--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${bnd}\r\nContent-Type: application/pdf\r\n\r\n`, blob, `\r\n--${bnd}--`]);
+  await gdFetch(`${GUP}?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + bnd }, body });
+}
+async function weeklyPdf(force) {
+  if (pdfBusy || !data?.flights.length || !gdConnected()) return;
+  if (!force && (ls.get('pdfAuto') === '0' || !gdLive() || Date.now() - (data.lastPdf || 0) < PDF_EVERY || Date.now() - (+ls.get('pdfFail') || 0) < 6 * 3600e3 || /nuovo|modifica/.test(location.hash) || document.visibilityState !== 'visible')) return;
+  pdfBusy = true;
+  const btn = $('#gdPdf'); if (btn) { btn.disabled = true; btn.textContent = 'Creating PDF…'; }
+  try {
+    await gdToken(!!force);
+    const ps = easaPages(18);
+    const blob = await easaPdf(ps, 18, ps.length, ls.get('easaLayout') || 'book');
+    const sub = await gdSubFolder('EASA PDF', await gdFolder());
+    await gdUploadPdf(`Logbook_EASA_${today()}.pdf`, blob, sub);
+    const q = encodeURIComponent(`'${sub}' in parents and trashed=false and name contains 'Logbook_EASA_'`);
+    const j = await (await gdFetch(`${GAPI}?q=${q}&fields=files(id,name,createdTime)&orderBy=createdTime desc&pageSize=100`)).json();
+    for (const f of (j.files || []).slice(PDF_KEEP)) await gdFetch(`${GAPI}/${f.id}`, { method: 'DELETE' }).catch(() => {});
+    data.lastPdf = Date.now(); await save();
+    if (force) toast(`EASA PDF saved to Drive: Logbook/EASA PDF (${ps.length} pages)`);
+    ls.set('pdfFail', null);
+  } catch (e) { console.warn('weekly pdf', e); ls.set('pdfFail', String(Date.now())); if (force) toast('PDF not saved: ' + e.message); }
+  finally { pdfBusy = false; if (location.hash === '#dati') route(); }
+}
 let syncTimer;
-function scheduleSync() { if (gdConnected() && gdTokenOk()) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
+function scheduleSync() { if (gdConnected() && (gdTokenOk() || ls.get('gdRefresh'))) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
 // aggiornamento forzato: salva su Drive se possibile, toglie la copia offline dell'app e ricarica l'ultima versione (il logbook resta nell'archivio locale)
 async function forceUpdate() {
   toast('Updating the app…');
-  try { if (gdConnected() && gdTokenOk()) await Promise.race([syncNow(false), new Promise(r => setTimeout(r, 6000))]); } catch { /* si aggiorna comunque */ }
+  try { if (gdConnected() && gdLive()) await Promise.race([syncNow(false), new Promise(r => setTimeout(r, 6000))]); } catch { /* si aggiorna comunque */ }
   try { for (const r of await navigator.serviceWorker?.getRegistrations?.() || []) await r.unregister(); } catch { /* ok */ }
   try { for (const k of await caches.keys()) await caches.delete(k); } catch { /* ok */ }
   location.replace(location.pathname + '?v=' + Date.now() + (location.hash || ''));
@@ -1906,7 +2068,7 @@ document.addEventListener('DOMContentLoaded', () => {});
 })();
 function renderSyncState() {
   const tb = $('#tbSync');
-  if (tb) { const ok = gdConnected() && GD.state !== 'err' && GD.state !== 'login' && gdTokenOk(); tb.classList.toggle('ok', ok); tb.classList.toggle('busy', GD.state === 'sync'); tb.classList.toggle('warn', gdConnected() && !ok && GD.state !== 'sync'); tb.title = ok ? `Google Drive synced${ls.get('gdLast') ? ' ' + new Date(ls.get('gdLast')).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : gdConnected() ? 'Tap to sync with Google Drive' : 'Google Drive not connected'; }
+  if (tb) { const ok = gdConnected() && GD.state !== 'err' && GD.state !== 'login' && gdLive(); tb.classList.toggle('ok', ok); tb.classList.toggle('busy', GD.state === 'sync'); tb.classList.toggle('warn', gdConnected() && !ok && GD.state !== 'sync'); tb.title = ok ? `Google Drive synced${ls.get('gdLast') ? ' ' + new Date(ls.get('gdLast')).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''}` : gdConnected() ? 'Tap to sync with Google Drive' : 'Google Drive not connected'; }
   let el = $('#syncState');
   if (!el) { el = document.createElement('div'); el.id = 'syncState'; el.className = 'sync-state'; $('#backupState').before(el); }
   if (!gdClientId()) { el.innerHTML = ''; el.hidden = true; return; }
@@ -1916,7 +2078,7 @@ function renderSyncState() {
   if (!gdConnected()) el.innerHTML = `Google Drive not connected.<br><button class="btn small" id="sySync">Connect Google Drive</button>`;
   else if (GD.state === 'sync') el.innerHTML = 'Google Drive: syncing…';
   else if (GD.state === 'err') el.innerHTML = `Google Drive: ${esc(GD.msg)}<br><button class="btn small" id="sySync">Retry</button>`;
-  else if (GD.state === 'login' || !gdTokenOk()) el.innerHTML = `Google Drive${when ? `: last sync ${when}` : ''}.<br><button class="btn small" id="sySync">Sync</button>`;
+  else if (GD.state === 'login' || !gdLive()) el.innerHTML = `Google Drive${when ? `: last sync ${when}` : ''}.<br><button class="btn small" id="sySync">Sync</button>`;
   else el.innerHTML = `Google Drive synced${when ? ` at ${when}` : ''}`;
   const b = $('#sySync'); if (b) b.onclick = () => syncNow(true);
 }
@@ -1963,15 +2125,25 @@ async function recoverFromDrive(btn) {
 }
 function bindDrivePanel(main) {
   const rc = main.querySelector('#gdRecover'); if (rc) rc.onclick = () => recoverFromDrive(rc);
+  const gs = main.querySelector('#gdStay'); if (gs) gs.onclick = async () => {
+    GD.token = null; GD.exp = 0; ss.set('gdTok', null);
+    try { await gdToken(true); toast(ls.get('gdRefresh') ? 'Stay signed in active on this device' : 'Google did not allow staying signed in: remove Logbook from your Google account permissions and try again'); syncNow(false); }
+    catch (e) { toast('Not activated: ' + e.message); }
+    route();
+  };
+  const pb = main.querySelector('#gdPdf'); if (pb) pb.onclick = () => weeklyPdf(true);
+  const pa = main.querySelector('#gdPdfAuto'); if (pa) pa.onchange = () => ls.set('pdfAuto', pa.checked ? null : '0');
   const s = main.querySelector('#gdSync'); if (s) s.onclick = () => syncNow(true);
-  const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Disconnect Google Drive from this device? Data stays both here and on Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
+  const o = main.querySelector('#gdOff'); if (o) o.onclick = () => { if (!confirm('Disconnect Google Drive from this device? Data stays both here and on Drive.')) return; ls.set('gdOn', null); ls.set('gdFile', null); ls.set('gdRefresh', null); GD.token = null; ss.set('gdTok', null); renderSyncState(); route(); };
   const c = main.querySelector('#gdCidSave'); if (c) c.onclick = () => { const v = main.querySelector('#gdCid').value.trim(); if (!/\.apps\.googleusercontent\.com$/.test(v)) return toast('This does not look like a Google client ID'); ls.set('gdClient', v); renderSyncState(); route(); };
 }
 function driveStartup() {
+  gdBridgeProbe();
   renderSyncState();
-  if (gdConnected() && gdTokenOk()) syncNow(false);
-  window.addEventListener('online', () => { if (gdConnected() && gdTokenOk()) syncNow(false); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && gdConnected() && gdTokenOk()) syncNow(false); });
+  const canSync = () => gdConnected() && (gdTokenOk() || !!ls.get('gdRefresh'));
+  if (canSync()) syncNow(false);
+  window.addEventListener('online', () => { if (canSync()) syncNow(false); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && canSync()) syncNow(false); });
 }
 
 // ---------- avvio ----------

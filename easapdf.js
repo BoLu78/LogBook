@@ -14,6 +14,7 @@ async function easaPdf(pages, rpp, totalPages, layout) {
   const headH = compact ? 17 : 21, totH = compact ? 5.2 : 6.6, footH = 8, rowH = Math.max(5, (210 - MT - footH - headH - 3 * totH) / rpp - 0.6);
   let first = true;
   for (const p of pages) for (const sheet of sheets) {
+    await new Promise(r => setTimeout(r));   // l'app resta usabile mentre il PDF si crea
     if (!first) doc.addPage(); first = false;
     const cols = sheet.cols, remIdx = cols.findIndex(c => c.key === 'rem');
     const fixed = cols.reduce((a, c) => a + c.w, 0);

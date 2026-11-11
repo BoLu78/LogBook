@@ -928,7 +928,20 @@ table.data td .newdot { margin-right: 10px; }
 .rm-tg button.on { background: #2f5fd0; border-color: #2f5fd0; color: #fff; }
 .rm-fl { display: inline-flex; margin-left: 6px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; } .rm-fl button { border-radius: 0; margin-left: -1px; } .rm-fl button:first-child { border-radius: 8px 0 0 8px; } .rm-fl button:last-child { border-radius: 0 8px 8px 0; }
 .rm-fl button.on { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
-.rm-map svg { display: block; width: 100%; height: auto; }
+.rm-map { position: relative; overflow: hidden; }
+.rm-map svg { display: block; width: 100%; height: auto; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.rm-map.zoomed svg { cursor: grab; } .rm-map.zoomed svg:active { cursor: grabbing; }
+.rm-zc { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+.rm-zc button, .rm-rp button { height: 34px; min-width: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--rule); border-radius: 8px; background: color-mix(in srgb, var(--sheet) 88%, transparent); color: var(--ink); font: inherit; font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.rm-zc [data-z="fit"] { display: none; font-size: 13px; }
+.rm-map.zoomed .rm-zc [data-z="fit"] { display: inline-flex; }
+.rm-rp { position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.rm-rp:empty { display: none; }
+.rm-rt { padding: 5px 8px; border-radius: 8px; background: color-mix(in srgb, var(--sheet) 88%, transparent); color: var(--ink); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rm-sp { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--ink); border-radius: 50%; animation: rm-spin .8s linear infinite; }
+@keyframes rm-spin { to { transform: rotate(360deg); } }
+.rm-fr { opacity: 0; } .rm-fr.on { opacity: 1; }
+@media (max-width: 520px) { .rm-zc button, .rm-rp button { height: 30px; min-width: 30px; padding: 0 8px; } .rm-zc [data-z="out"] { display: none; } }
 .rm-sea { fill: color-mix(in srgb, #9cc4e8 35%, var(--sheet)); }
 .rm-land { fill: color-mix(in srgb, var(--rule) 70%, var(--sheet)); } .rm-bord { fill: none; stroke: var(--sheet); stroke-width: .8; }
 .rm-radar image { opacity: .75; }

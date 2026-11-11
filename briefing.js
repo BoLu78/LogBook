@@ -34,7 +34,7 @@ function brfCleanup(route) {
         if (!(at > now - 864e5) || (route && at < now && ('-' + legs + '-').includes('-' + route + '-'))) localStorage.removeItem(k);
         continue;
       }
-      if (k.startsWith('brf:wx:') || k.startsWith('brf:mapfail:')) { const t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; if (now - t > 2 * 864e5) localStorage.removeItem(k); }
+      if (k.startsWith('brf:wx:') || k.startsWith('brf:mapfail:') || k.startsWith('brf:mdl:')) { const t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; if (now - t > 2 * 864e5) localStorage.removeItem(k); }
     }
   } catch { /* pulizia non essenziale */ }
 }
@@ -61,6 +61,25 @@ async function brfWeather(icaos, force) {
     brfSave('wx:' + c, { metar: metar ?? old.metar ?? '', taf: taf ?? old.taf ?? '' });
   }));
   return { err: need.length && fails === need.length ? new Error('weather not reachable') : null };
+}
+
+// ---------- meteo: previsione del modello per l'orario, quando nessun TAF lo copre ancora (Open-Meteo, punto dell'aeroporto)
+// Serve per il vento sulle piste e per capire se la pista sarà bagnata. Non sostituisce il TAF: lo dice sempre.
+const BRF_WMO_WET = c => (c >= 51 && c <= 67) || (c >= 71 && c <= 77) || (c >= 80 && c <= 86) || c >= 95;
+const BRF_WMO_TXT = c => c >= 95 ? 'thunderstorm' : c >= 85 ? 'snow showers' : c >= 80 ? 'rain showers' : c >= 71 ? 'snow' : c >= 61 ? 'rain' : c >= 51 ? 'drizzle' : c >= 45 ? 'fog' : '';
+async function brfModel(icao, lat, lon, at) {
+  const key = 'mdl:' + icao + ':' + Math.round(at / 3600e3), c = brfRead(key);
+  if (c && Date.now() - c.t < 60 * 60e3) return c.v;
+  const iso = ms => new Date(ms).toISOString().slice(0, 13) + ':00';
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,weather_code,visibility&wind_speed_unit=kn&timezone=GMT&start_hour=${iso(at - 3600e3)}&end_hour=${iso(at + 3600e3)}`;
+  const h = JSON.parse(await brfText(url, 15000)).hourly;
+  if (!h?.time?.length) throw new Error('no model data');
+  const T = h.time.map(t => Date.parse(t + 'Z'));
+  let i = 0; T.forEach((t, k) => { if (Math.abs(t - at) < Math.abs(T[i] - at)) i = k; });
+  const v = { at: T[i], dir: h.wind_direction_10m[i], spd: Math.round(h.wind_speed_10m[i] ?? 0), gst: Math.round(Math.max(...h.wind_gusts_10m.filter(x => x != null), 0)),
+    pr: Math.round(Math.max(...h.precipitation.filter(x => x != null), 0) * 10) / 10, code: Math.max(...h.weather_code.filter(x => x != null), 0), vis: h.visibility?.[i] ?? null };
+  brfSave(key, v);
+  return v;
 }
 
 // ---------- meteo: lettura dei gruppi METAR/TAF
@@ -259,7 +278,7 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
   const P = p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];
   const pts = rws.flatMap(r => [P(r.A), P(r.B)]);
   let x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
-  const pad = Math.max(comps.length ? 900 : 450, Math.max(x1 - x0, y1 - y0) * (comps.length ? 0.34 : 0.14)); x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+  const pad = Math.max(comps.length ? 900 : 450, Math.max(x1 - x0, y1 - y0) * (comps.length ? (rws.length > 1 ? 0.42 : 0.34) : 0.14)); x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;   // più piste, più etichette: più margine
   // proporzioni fisse 4:3
   const W = x1 - x0, H = y1 - y0, want = 4 / 3;
   if (W / H < want) { const d = (H * want - W) / 2; x0 -= d; x1 += d; } else { const d = (W / want - H) / 2; y0 -= d; y1 += d; }
@@ -276,27 +295,56 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
   const twLab = Object.entries(twRef).filter(([, v]) => v.len > 150).map(([r, v]) => `<g class="twl" transform="translate(${v.p[0].toFixed(0)},${v.p[1].toFixed(0)})"><rect x="${-7 * u - (r.length - 1) * 3 * u}" y="${-7 * u}" width="${14 * u + (r.length - 1) * 6 * u}" height="${14 * u}" rx="${2 * u}"/><text y="${4 * u}" font-size="${10 * u}">${esc(r)}</text></g>`).join('');
   const runways = rws.map(r => `<path d="${path([r.A, r.B])}" class="rw" stroke-width="${Math.max(5 * u, r.w)}"/><path d="${path([r.A, r.B])}" class="rwc" stroke-width="${0.8 * u}" stroke-dasharray="${6 * u} ${5 * u}"/>`).join('');
   const cx0 = (x0 + x1) / 2, cy0 = (y0 + y1) / 2;   // i riquadri vanno verso il centro della mappa
-  const rwLab = rws.flatMap(r => {
-    const a = P(r.A), b = P(r.B), L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, off = 22 * u;
-    // riquadro delle componenti accanto al numero di pista, spostato di lato rispetto all'asse
-    const box = (id, x, y) => {
-      const c = comps.find(k => k.id === id && k.rw === r); if (!c) return '';
-      const sg = (-uy) * (cx0 - x) + ux * (cy0 - y) >= 0 ? 1 : -1, px = -uy * sg, py = ux * sg, w = 50 * u, hh = 28 * u, dd = 17 * u + Math.abs(px) * w / 2 + Math.abs(py) * hh / 2, bx = x + px * dd, by = y + py * dd;
-      return `<g class="cmp ${c.lvl}" transform="translate(${bx.toFixed(0)},${by.toFixed(0)})"><rect x="${-w / 2}" y="${-hh / 2}" width="${w}" height="${hh}" rx="${3 * u}"/>`
-        + `<text y="${-2.5 * u}" font-size="${9.5 * u}" class="${c.tw ? c.lt : ''}">${c.tw ? 'TW ' + c.tw : 'HW ' + c.hw}</text><text y="${9 * u}" font-size="${9.5 * u}" class="${c.lx}">XW ${c.xw}${c.side}</text></g>`;
-    };
-    // miglior avvicinamento della testata, oltre il numero lungo l'asse pista
-    // sta di lato rispetto al numero, dalla parte opposta al riquadro delle componenti, e sempre dentro la mappa
-    const apr = (id, x, y) => {
-      const k = icao && brfAppr(icao, id); if (!k) return '';
-      const sg = (-uy) * (cx0 - x) + ux * (cy0 - y) >= 0 ? 1 : -1, px = uy * sg, py = -ux * sg, tw = k.best.length * 5.6 * u;
-      const d = 17 * u + Math.abs(px) * tw / 2 + Math.abs(py) * 6 * u;
-      const tx = Math.min(Math.max(x + px * d, x0 + tw / 2 + 4 * u), x1 - tw / 2 - 4 * u), ty = Math.min(Math.max(y + py * d + 3.5 * u, y0 + 12 * u), y1 - 4 * u);
-      return `<text class="apr" x="${tx.toFixed(0)}" y="${ty.toFixed(0)}" font-size="${9 * u}">${esc(k.best)}</text>`;
-    };
-    return [[r.idA, a[0] - ux * off, a[1] - uy * off], [r.idB, b[0] + ux * off, b[1] + uy * off]]
-      .map(([id, x, y]) => `<g class="rwl" transform="translate(${x.toFixed(0)},${y.toFixed(0)})"><circle r="${13 * u}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(id)}</text></g>${apr(id, x, y)}${box(id, x, y)}`);
-  }).join('');
+  // etichette senza sovrapposizioni (piste parallele vicine): prima i numeri, poi i riquadri delle componenti, poi gli avvicinamenti.
+  // Ogni etichetta prova più posizioni e prende la prima libera da altre etichette e dalle piste; se non ce n'è una libera, la meno affollata.
+  const segs = rws.map(r => [P(r.A), P(r.B), Math.max(5 * u, r.w) / 2 + 3 * u]);
+  // spazi già occupati: freccia del vento con la sua scritta, nord con la variazione, scala
+  const placed = [[x1 - 50 * u, y0 + 4 * u, x1, y0 + 40 * u, 5], [x0 + 8 * u, y1 - 30 * u, x0 + 90 * u, y1 - 8 * u, 5], ...(wind ? [[x1 - 100 * u, y0 + 50 * u, x1 - 2 * u, y0 + 112 * u, 5]] : [])];   // il 5 pesa di più: nord, scala e vento non si coprono
+  const ovl = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const segHit = (rc, [a, b, hw]) => {   // la pista (segmento con spessore) tocca il rettangolo? campioni lungo l'asse
+    for (let t = 0; t <= 1; t += 0.02) { const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t; if (x > rc[0] - hw && x < rc[2] + hw && y > rc[1] - hw && y < rc[3] + hw) return 1; }
+    return 0;
+  };
+  const cost = (rc, withRw) => placed.reduce((s, q) => s + ovl(rc, q) * (q[4] || 1), 0) + (withRw ? segs.reduce((s, g) => s + segHit(rc, g) * 400 * u * u, 0) : 0)
+    + (rc[0] < x0 || rc[1] < y0 || rc[2] > x1 || rc[3] > y1 ? 3000 * u * u + 4 * ((rc[2] - rc[0]) * (rc[3] - rc[1]) - ovl(rc, [x0, y0, x1, y1])) : 0);   // fuori dalla mappa: peggio di tutto
+  const pick = (cands, w, h, withRw) => {
+    let best = null;
+    for (const [x, y] of cands) { const rc = [x - w / 2, y - h / 2, x + w / 2, y + h / 2], c = cost(rc, withRw); if (!best || c < best.c - 1e-6) best = { x, y, rc, c }; if (c === 0) break; }
+    placed.push(best.rc); return best;
+  };
+  const heads = rws.flatMap(r => {
+    const a = P(r.A), b = P(r.B), L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+    return [{ r, id: r.idA, p: a, dx: -ux, dy: -uy }, { r, id: r.idB, p: b, dx: ux, dy: uy }];
+  });
+  const R = 13 * u;
+  // numeri di pista: oltre la testata lungo l'asse; se due si toccano, il secondo va un po' più in là o di lato
+  for (const h of heads) {
+    const cands = [22, 34, 48, 62].flatMap(d => [[0, d], [9, d], [-9, d]]).map(([s, d]) => [h.p[0] + h.dx * d * u - h.dy * s * u, h.p[1] + h.dy * d * u + h.dx * s * u]);
+    const b = pick(cands, 2 * R + 2 * u, 2 * R + 2 * u, false); h.x = b.x; h.y = b.y;
+  }
+  // riquadro delle componenti: di lato rispetto all'asse, verso il centro, poi le altre posizioni intorno al numero
+  const BW = 50 * u, BH = 28 * u;
+  for (const h of heads) {
+    const c = comps.find(k => k.id === h.id && k.rw === h.r); if (!c) continue;
+    const sg = h.dy * (cx0 - h.x) - h.dx * (cy0 - h.y) >= 0 ? 1 : -1;
+    const dirs = [[-h.dy * sg, h.dx * sg], [h.dy * sg, -h.dx * sg], [h.dx, h.dy], [(-h.dy * sg + h.dx) * 0.7071, (h.dx * sg + h.dy) * 0.7071], [(h.dy * sg + h.dx) * 0.7071, (-h.dx * sg + h.dy) * 0.7071], [(-h.dy * sg - h.dx) * 0.7071, (h.dx * sg - h.dy) * 0.7071], [(h.dy * sg - h.dx) * 0.7071, (-h.dx * sg - h.dy) * 0.7071]];
+    const cands = [];
+    for (const k of [1, 1.6, 2.3, 3]) for (const [px, py] of dirs) { const dd = (17 * u + Math.abs(px) * BW / 2 + Math.abs(py) * BH / 2) * k; cands.push([h.x + px * dd, h.y + py * dd]); }
+    const b = pick(cands, BW, BH, true);
+    h.box = `<g class="cmp ${c.lvl}" transform="translate(${b.x.toFixed(0)},${b.y.toFixed(0)})"><rect x="${-BW / 2}" y="${-BH / 2}" width="${BW}" height="${BH}" rx="${3 * u}"/>`
+      + `<text y="${-2.5 * u}" font-size="${9.5 * u}" class="${c.tw ? c.lt : ''}">${c.tw ? 'TW ' + c.tw : 'HW ' + c.hw}</text><text y="${9 * u}" font-size="${9.5 * u}" class="${c.lx}">XW ${c.xw}${c.side}</text></g>`;
+  }
+  // miglior avvicinamento della testata: accanto al numero, dove c'è posto
+  for (const h of heads) {
+    const k = icao && brfAppr(icao, h.id); if (!k) continue;
+    const tw = k.best.length * 5.6 * u + 4 * u, th = 11 * u, cands = [];
+    for (const d of [1, 1.5, 2.1]) for (const [px, py] of [[h.dy, -h.dx], [-h.dy, h.dx], [h.dx, h.dy], [-h.dx * 0.6 + h.dy * 0.8, -h.dy * 0.6 - h.dx * 0.8]]) {
+      const dd = (R + 4 * u + Math.abs(px) * tw / 2 + Math.abs(py) * th / 2) * d; cands.push([h.x + px * dd, h.y + py * dd]);
+    }
+    const b = pick(cands, tw, th, true);
+    h.apr = `<text class="apr" x="${b.x.toFixed(0)}" y="${(b.y + 3.5 * u).toFixed(0)}" font-size="${9 * u}">${esc(k.best)}</text>`;
+  }
+  const rwLab = heads.map(h => `<g class="rwl" transform="translate(${h.x.toFixed(0)},${h.y.toFixed(0)})"><circle r="${R}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(h.id)}</text></g>${h.apr || ''}${h.box || ''}`).join('');
   // scala
   const sc = [250, 500, 1000, 2000].find(m => m / VW * 400 >= 55) || 2000;
   const scale = `<g class="scl" transform="translate(${x0 + 14 * u},${y1 - 14 * u})"><path d="M0,0H${sc}" stroke-width="${2 * u}"/><text y="${-6 * u}" font-size="${10 * u}">${sc >= 1000 ? sc / 1000 + ' km' : sc + ' m'}</text></g>`;
@@ -339,7 +387,7 @@ function brfIataOf(icao) {
   if (!brfIata) { brfIata = {}; for (const [k, v] of Object.entries(IATA)) if (!brfIata[v]) brfIata[v] = k; }
   return brfIata[icao] || '';
 }
-function brfCard(p, wx, mapRec, ccSel) {
+function brfCard(p, wx, mapRec, ccSel, mdl) {
   const a = APT?.[p.icao];
   const ref = p.at || Date.now(), refLab = p.at ? (p.role === 'DEP' ? 'ETD' : 'ETA') + ' ' + brfHM(p.at) : 'now';
   const metRaw = wx?.v?.metar || '', tafRaw = wx?.v?.taf || '';
@@ -347,7 +395,10 @@ function brfCard(p, wx, mapRec, ccSel) {
   const taf = tafRaw ? brfTAF(tafRaw) : null;
   // gruppi del TAF attivi all'orario di riferimento (±1 h)
   const near = g => g.from < ref + 3600e3 && g.to > ref - 3600e3;
-  const active = taf ? taf.groups.filter(near) : [];
+  // il TAF copre l'orario? se no, non se ne usano vento e fenomeni: valgono il METAR (se vicino) o la previsione del modello
+  const covered = !!taf && (!p.at || (ref >= taf.valid[0] && ref <= taf.valid[1]));
+  const active = covered ? taf.groups.filter(near) : [];
+  const useMdl = !covered && !!mdl && !(met && Math.abs(ref - Date.now()) < 3 * 3600e3);
   const metNear = met && Math.abs(ref - Date.now()) < 3 * 3600e3;
   const pool = [...(metNear ? [met] : []), ...active];
   // avvisi sintetici
@@ -361,20 +412,29 @@ function brfCard(p, wx, mapRec, ccSel) {
   const wxs = [...new Set(pool.flatMap(g => g.items.filter(i => i.k === 'wx' && i.lvl !== 'ok').map(i => i.txt)))];
   for (const w of wxs.slice(0, 3)) alerts.push([pool.flatMap(g => g.items).find(i => i.txt === w).lvl, BRF_WX_NAME.find(([k]) => w.includes(k))?.[1] || 'Weather', w]);
   if (pool.some(g => g.cb)) alerts.push(['warn', 'Convective', pool.find(g => g.cb).cb]);
+  if (useMdl && mdl.code >= 95) alerts.push(['warn', 'Convective', 'thunderstorm in the model forecast']);
+  else if (useMdl && BRF_WMO_WET(mdl.code)) alerts.push(['warn', 'Model', `${BRF_WMO_TXT(mdl.code)} forecast${mdl.pr ? ', ' + mdl.pr + ' mm/h' : ''}`]);
   // vento per le piste: METAR se l'orario è vicino, altrimenti TAF (gruppo prevalente + TEMPO/PROB attivi, vale il peggiore)
   const ways = mapRec?.v || [];
   let rws = brfRunwaysOf(p.icao);
   if (!rws.length && a && ways.length) rws = brfRunways(ways, a[0], a[1]);
   let winds = [], wSrc = '';
   if (metNear && met.wind) { winds = [met.wind]; wSrc = 'METAR'; }
-  else if (taf) {
+  else if (useMdl) {
+    const g = mdl.gst >= mdl.spd + 10 ? mdl.gst : 0;
+    winds = [{ k: 'wind', dir: mdl.dir, spd: mdl.spd, gst: g, txt: `${String(Math.round(mdl.dir)).padStart(3, '0')}/${pad2(mdl.spd)}${g ? 'G' + g : ''}KT` }]; wSrc = 'the model forecast (no TAF covers the ' + (p.role === 'DEP' ? 'ETD' : 'ETA') + ' yet)';
+  }
+  else if (taf && covered) {
     const mainW = taf.groups.filter(g => g.wind && (g.type === 'BASE' || g.type === 'FM' || g.type === 'BECMG') && g.from <= ref).at(-1)?.wind;
     const temp = active.filter(g => g.wind && (g.type === 'TEMPO' || g.type === 'PROB')).map(g => g.wind);
     winds = [mainW, ...temp].filter(Boolean); wSrc = 'TAF' + (temp.length ? ' incl. TEMPO/PROB' : '');
   }
   // condizione pista: scelta dal pilota, altrimenti 5 (wet) se ci sono precipitazioni, 6 (dry) se no
-  const wet = pool.some(g => g.items.some(i => i.k === 'wx' && !/^VC/.test(i.txt) && /(RA|DZ|SN|SG|PL|GS|GR|UP)/.test(i.txt)));
+  const wetMdl = useMdl && (BRF_WMO_WET(mdl.code) || mdl.pr >= 0.2);
+  const wet = wetMdl || pool.some(g => g.items.some(i => i.k === 'wx' && !/^VC/.test(i.txt) && /(RA|DZ|SN|SG|PL|GS|GR|UP)/.test(i.txt)));
   const cc = ccSel || (wet ? 5 : 6), [xl, tl, ccTxt] = BRF_RWYCC[cc];
+  // da dove viene la scelta automatica: senza TAF, METAR vicino o modello è solo un'ipotesi e va detto
+  const ccWhy = ccSel ? '' : useMdl ? ' · auto from the model' : (covered || metNear) ? ' · auto' : ' · assumed, no forecast for the ' + (p.role === 'DEP' ? 'ETD' : 'ETA');
   const comps = winds.length ? brfComp(rws, winds, cc) : [];
   // la testata più favorevole: se anche quella è vicina ai limiti, va segnalato
   const best = comps.slice().sort((x, y) => (BRF_RANK[x.lvl] - BRF_RANK[y.lvl]) || (y.hw - x.hw) || (x.tw - y.tw))[0];
@@ -399,12 +459,15 @@ function brfCard(p, wx, mapRec, ccSel) {
     <div class="brf-map">${map}</div>
     ${alerts.length ? `<div class="brf-alerts">${alerts.map(([l, k, v]) => `<span class="${l}"><b>${esc(k)}</b> ${esc(v)}</span>`).join('')}</div>` : (pool.length ? '<div class="brf-alerts"><span class="ok"><b>No weather alerts</b> around ' + esc(refLab) + '</span></div>' : '')}
     <div class="brf-rw">
-      <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${ccSel ? '' : ' · auto'}</small></div>
+      <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${esc(ccWhy)}</small></div>
       ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i>${(k => k ? ` <small>${esc(k.all.join(' · '))}</small>` : '')(brfAppr(p.icao, c.id))}</span>`).join('')}</div>
       <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction${mv == null ? '' : ` (on the map in magnetic, VAR ${magVarTxt(mv)})`}. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
     </div>
     <div class="brf-sec"><h4>METAR ${metAge ? `<small>${brfHM(metAge)} · ${brfAge(metAge)}</small>` : ''}</h4>
       ${metRaw ? `<p class="mono ${metAge && Date.now() - metAge > 3 * 3600e3 ? 'old' : ''}">${metRaw.trim().split(/\s+/).map(tok).join(' ')}</p>` : '<p class="muted">No METAR available.</p>'}</div>
+    ${useMdl ? `<div class="brf-sec brf-mdl"><h4>Model forecast <small>${brfHM(mdl.at)} · Open-Meteo · no TAF covers the ${p.role === 'DEP' ? 'ETD' : 'ETA'} yet</small></h4>
+      <p class="mono">${esc(winds[0]?.txt || '')}${mdl.vis != null && mdl.vis < 9999 ? ' ' + (mdl.vis >= 1000 ? Math.round(mdl.vis / 100) * 100 : Math.round(mdl.vis)) + 'm' : ''} ${BRF_WMO_WET(mdl.code) || mdl.code >= 45 ? `<u class="warn">${esc(BRF_WMO_TXT(mdl.code).toUpperCase())}</u>` : 'NO PRECIP'}${mdl.pr ? ' ' + mdl.pr + ' mm/h' : ''}</p>
+      <p class="hint">Model point forecast for ${brfHM(ref)} ±1 h, used for the runway wind and the runway condition until a TAF covers this time. Check the TAF when it is issued.</p></div>` : ''}
     <div class="brf-sec"><h4>TAF ${taf ? `<small>issued ${brfHM(taf.issue)}</small>` : ''}</h4>
       ${taf ? `<ul class="brf-taf">${taf.groups.map(tafRow).join('')}</ul><details><summary>raw</summary><p class="mono">${esc(tafRaw)}</p></details>` : tafRaw ? `<p class="mono">${esc(tafRaw)}</p>` : '<p class="muted">No TAF available.</p>'}</div>
   </section>`;
@@ -444,7 +507,7 @@ async function viewBriefing(main, arg) {
     const oldest = Math.min(...icaos.map(c => wx[c]?.t || 0));
     main.innerHTML = `<div class="brf-head"><div><h1>Briefing</h1><p class="lede">${q.date ? dmy(q.date) + ' · ' : ''}${esc(q.list.map(p => p.icao).join(' → '))}</p></div>
       <div class="brf-upd"><button type="button" class="btn small" id="brfBack">← Back</button><span id="brfStatus">${status || (oldest ? 'Updated ' + brfAge(oldest) : '')}</span><button type="button" class="btn small" id="brfRefresh">Refresh</button></div></div>
-      <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao), ccSel[p.icao]); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
+      <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao), ccSel[p.icao], p.at ? brfRead('mdl:' + p.icao + ':' + Math.round(p.at / 3600e3))?.v : null); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
       <div id="brfRouteSlot"></div>
       <p class="hint">${BRF_AIRAC?.apts ? `Approaches: ${esc(BRF_AIRAC.src || 'imported AIRAC')}, data ${esc(BRF_AIRAC.date || '?')} – simulator data, check the charts. ` : ''}Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
       ${brfMinsHTML()}`;
@@ -472,6 +535,14 @@ async function viewBriefing(main, arg) {
     status = navigator.onLine ? 'Updating…' : 'Offline · saved data'; draw();
     const r = await brfWeather(icaos, force).catch(e => ({ err: e }));
     status = r.err ? (navigator.onLine ? 'Weather not reachable · saved data' : 'Offline · saved data') : ''; draw();
+    // previsione del modello per gli orari che nessun TAF copre ancora
+    await Promise.all(cards.map(async p => {
+      const a = APT?.[p.icao]; if (!a || !p.at) return;
+      const tr = brfRead('wx:' + p.icao)?.v?.taf, t = tr ? brfTAF(tr) : null;
+      if (t && p.at >= t.valid[0] && p.at <= t.valid[1]) return;
+      try { await brfModel(p.icao, a[0], a[1], p.at); } catch (e) { console.warn('model', p.icao, e); }
+    }));
+    draw();
     for (const p of cards) {
       const a = APT?.[p.icao]; if (!a) continue;
       const mc = brfRead('map:' + p.icao);

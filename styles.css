@@ -593,7 +593,11 @@ form.locked #chkSig { pointer-events: none; border-style: solid; }
 .easa .chk-rem { font-weight: 700; margin-top: .3mm; }
 .easa .chk-rem .sig-img { height: 4mm; }
 .leg-new { display: flex; gap: 10px; }
-.leg-new .btn { min-width: 150px; }
+.leg-new .btn { min-width: 150px; font-weight: 700; letter-spacing: .03em; border: 0; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+.leg-new #nextLeg { background: linear-gradient(135deg, #2f55c8, #4f86e0); }
+.leg-new #retLeg { background: linear-gradient(135deg, #a8650f, #d39a2c); }
+.leg-new .btn:hover { filter: brightness(1.08); }
+.leg-new .btn:active { filter: brightness(.92); }
 
 /* ---------- 2.9: Settings a gruppi ---------- */
 .set-sec { margin: 0 0 22px; max-width: 860px; }

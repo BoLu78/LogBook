@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.8.2';
+const APP_VERSION = '3.9.0';
 const APP_DATE = '11/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -67,7 +67,19 @@ function dedupe(d) {
   d.flights = d.flights.filter(f => !gone.has(f.id));
   return gone.size;
 }
+// campi mancanti (file vecchi, import, altro dispositivo): valori vuoti, così nessuna schermata si blocca
+function sanitize(d) {
+  if (!d || typeof d !== 'object') return;
+  if (!Array.isArray(d.flights)) d.flights = [];
+  d.flights = d.flights.filter(f => f && typeof f === 'object' && f.id && /^\d{4}-\d\d-\d\d$/.test(f.date || ''));
+  const base = EMPTY();
+  for (const f of d.flights) {
+    if (f.kind !== 'sim') f.kind = 'flight';
+    for (const [k, v] of Object.entries(base)) if (f[k] == null || typeof f[k] !== typeof v) f[k] = typeof v === 'number' ? (+f[k] || 0) : (f[k] == null ? v : String(f[k]));
+  }
+}
 function normalizeTypes(d) {
+  sanitize(d);
   let n = dedupe(d);
   for (const f of d?.flights || []) if (f.kind === 'sim' && !f.simReg && SIM_SESSIONS[f.date] && !d.simRegDone) { f.simReg = SIM_SESSIONS[f.date]; n++; }
   if (d && !d.simRegDone) { d.simRegDone = 1; n++; }
@@ -164,7 +176,9 @@ const idb = {
     }));
   },
   async get(k) { const db = await this.open(); return new Promise((res, rej) => { const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
-  async set(k, v) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+  async set(k, v) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); },
+  async keys() { const db = await this.open(); return new Promise((res, rej) => { const r = db.transaction('kv').objectStore('kv').getAllKeys(); r.onsuccess = () => res(r.result.map(String)); r.onerror = () => rej(r.error); }); },
+  async del(k) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = res; t.onerror = () => rej(t.error); }); },
 };
 
 let data = null;           // { version, pilot, opening, flights }
@@ -175,10 +189,47 @@ function sortFlights() { data.flights.sort((a, b) => (a.date + (a.out || '99:99'
 // id unici anche tra dispositivi diversi (Mac, iPhone, iPad)
 function nextId() { return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
+// ogni campo modificato riceve la sua ora (f.fmt): così Drive unisce i dispositivi campo per campo
+// e una copia vecchia non può più svuotare quello che hai scritto altrove
+let snap = new Map();
+const fkey = f => { const { mt, fmt, ...r } = f; return JSON.stringify(r); };
+function takeSnap() { snap = new Map((data?.flights || []).map(f => [f.id, fkey(f)])); }
+// vuoto, zero, assente: per l'unione sono la stessa cosa (aprire un volo non deve 'cambiare' i campi vuoti)
+const fval = v => v == null || v === '' || v === 0 || v === false ? null : JSON.stringify(v);
+function stampFields() {
+  if (!data) return; const now = Date.now();
+  for (const f of data.flights) {
+    const old = snap.get(f.id); if (old == null || old === fkey(f)) continue;
+    const o = JSON.parse(old);
+    for (const k of new Set([...Object.keys(o), ...Object.keys(f)])) {
+      if (k === 'mt' || k === 'fmt' || k === 'id') continue;
+      if (fval(o[k]) !== fval(f[k])) (f.fmt ||= {})[k] = now;
+    }
+    f.mt = Math.max(f.mt || 0, now);
+  }
+}
+// copie sul dispositivo: una al giorno, le ultime 7, indipendenti da Drive e dalla cartella di backup
+const COPY_KEEP = 7;
+let copyDay = '';
+async function dailyCopy(tag) {
+  try {
+    const key = 'copy-' + (tag || today());
+    if (!tag && copyDay === key) return;
+    const ks = await idb.keys();
+    if (tag || !ks.includes(key)) await idb.set(key, JSON.parse(JSON.stringify(data)));
+    copyDay = tag ? copyDay : key;
+    const old = ks.filter(k => /^copy-\d{4}-\d\d-\d\d$/.test(k)).sort().reverse().slice(COPY_KEEP);
+    for (const k of old) await idb.del(k);
+  } catch (e) { console.warn('daily copy', e); }
+}
 async function save(msg) {
   sortFlights();
+  stampFields();
   data.updated = new Date().toISOString();
-  await idb.set('data', data);
+  try { await idb.set('data', data); }
+  catch (e) { toast('NOT SAVED on this device: ' + (e?.message || e)); throw e; }
+  takeSnap();
+  dailyCopy();
   if (msg) toast(msg);
   scheduleBackup();
   scheduleSync();
@@ -472,7 +523,7 @@ function viewSummary(main) {
   <table class="data"><thead><tr><th class="l">Family</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${frows}</tbody></table>
   <h2>By aircraft type</h2>
   <table class="data"><thead><tr><th class="l">Type</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Last flight</th></tr></thead><tbody>${trows}</tbody></table>
-  ${withOpen ? `<p class="hint">Hours brought forward before 2007 (${hm(data.opening.total)}) are included in the totals but not in the tables by type and year.</p>` : ''}
+  ${withOpen && data.opening?.total ? `<p class="hint">Hours brought forward before 2007 (${hm(data.opening.total)}) are included in the totals but not in the tables by type and year.</p>` : ''}
   <h2>By year</h2>
   <table class="data"><thead><tr><th class="l">Year</th><th class="l">PIC · SIC · Dual</th><th>Sectors</th><th>Total</th><th>Avg</th><th>PIC</th><th>SIC</th><th>Night</th><th>LDG</th><th>NM</th><th>Sim</th></tr></thead><tbody>${yrows}</tbody></table>`;
   const per = $('#per'); per.value = sel; per.onchange = () => { viewSummary.period = per.value; viewSummary(main); };
@@ -999,9 +1050,12 @@ function viewEdit(main, id) {
     const i = data.flights.findIndex(x => x.id === recId); if (i >= 0) data.flights[i] = r.rec; else data.flights.push(r.rec);
     save(); updateBadge();
   };
-  const leave = () => { flush(); ro.disconnect(); window.removeEventListener('pagehide', flush); };
+  // iPad/iPhone: passando a un'altra app iOS può chiudere la PWA senza avviso, quindi si salva subito
+  const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+  const leave = () => { flush(); ro.disconnect(); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHide); };
   window.addEventListener('hashchange', leave, { once: true });
   window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', onHide);
   form.onsubmit = e => { e.preventDefault(); clearTimeout(timer); timer = null; commit(); };
 
   const applyLock = () => {
@@ -1436,6 +1490,7 @@ async function importFile(file) {
     if (Array.isArray(d) && d[0] && 'sessiontype' in d[0]) return enrichFromFlightLog(d);
     if (!d.flights || !Array.isArray(d.flights)) throw new Error('the file does not contain a logbook');
     if (data && data.flights.length && !confirm(`Replace the current logbook (${data.flights.length} entries) with the one in the file (${d.flights.length} entries)?`)) return;
+    if (data?.flights.length) await dailyCopy('before-import');
     normalizeTypes(d); d.forcePush = true; data = d; await save(`${d.flights.length} entries imported`); route(); return;
   }
   // CSV FlightLog: aggiunge solo le righe nuove
@@ -1491,6 +1546,20 @@ function applyTheme(t) {
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   try { t ? localStorage.setItem('theme', t) : localStorage.removeItem('theme'); } catch { /* preferenza non salvata */ }
 }
+async function renderCopies(main) {
+  const box = main.querySelector('#dCopies'); if (!box) return;
+  let ks = []; try { ks = (await idb.keys()).filter(k => k.startsWith('copy-')).sort().reverse(); } catch { /* ok */ }
+  if (!ks.length) { box.innerHTML = '<span class="hint">A copy of the logbook is kept here once a day (last 7 days). None yet.</span>'; return; }
+  const rows = [];
+  for (const k of ks) { const d = await idb.get(k).catch(() => null); if (d?.flights) rows.push(`<div class="row" style="margin:0;align-items:center;justify-content:space-between"><span>${k === 'copy-before-import' ? 'Before the last file import' : dmy(k.slice(5))} · ${fmtN(d.flights.length)} entries</span><button type="button" class="btn small" data-copy="${esc(k)}">Restore</button></div>`); }
+  box.innerHTML = rows.join('') + '<span class="hint">One copy a day, last 7 days, kept only on this device. Restoring replaces the logbook here and on Google Drive.</span>';
+  box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    const d = await idb.get(b.dataset.copy); if (!d?.flights) return;
+    if (!confirm(`Restore this copy (${d.flights.length} entries)?\n\nThe current logbook (${data?.flights.length || 0} entries) is replaced here and on Google Drive.`)) return;
+    await dailyCopy('before-import');
+    normalizeTypes(d); d.forcePush = true; data = d; takeSnap(); await save('Copy restored'); route();
+  });
+}
 function viewData(main) {
   const n = data?.flights.length || 0;
   const cur = document.documentElement.dataset.theme || '';
@@ -1513,12 +1582,12 @@ function viewData(main) {
     <div class="set-row"><span class="k">Status</span><span class="v">${gdConnected() ? (last ? `Synced ${new Date(last).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'Connected, not synced yet') : 'Not connected'}${GD.state === 'err' ? ` · <span class="bad">${esc(GD.msg)}</span>` : ''}</span></div>
     <div class="set-row"><span class="k">File</span><span class="v">Logbook/logbook.json</span></div>
     <div class="set-row act"><button class="btn primary" id="gdSync">${gdConnected() ? 'Sync now' : 'Connect Google Drive'}</button>${gdConnected() ? '<button class="btn" id="gdOff">Disconnect this device</button>' : ''}</div>
-    ${gdConnected() ? '<div class="set-row act"><button class="btn" id="gdRecover">Recover lost data</button><span class="hint">Brings back names, remarks, signatures and other fields emptied by a sync, from the versions Drive kept (last 30 days).</span></div>' : ''}
     ${gdConnected() ? '<div class="set-row act"><button class="btn" id="gdRecover">Recover lost data from Drive history</button><span class="hint">Brings back names, remarks, signatures and other fields that were emptied by a sync, from the versions Drive kept in the last 30 days.</span></div>' : ''}`
     : `<div class="set-row col"><span class="k">Google OAuth client ID</span><div class="row" style="margin:0"><input id="gdCid" style="flex:1;min-width:240px" placeholder="123456-abc.apps.googleusercontent.com"><button class="btn" id="gdCidSave">Save</button></div></div>`)}
   ${sec(I.folder, 'Backup folder', `
     <div class="set-row"><span class="k">Folder</span><span class="v">${dirHandle ? esc(dirHandle.name) : fsSupported ? 'None' : 'Needs Chrome on the Mac'}</span></div>
     ${fsSupported ? `<div class="set-row act"><button class="btn" id="dChoose">${dirHandle ? 'Change folder' : 'Choose folder'}</button><span class="hint">logbook.json on every change, daily copy in “storico”.</span></div>` : '<div class="set-row"><span class="hint">Safari cannot write to a folder. Google Drive keeps the copy in the cloud.</span></div>'}`)}
+  ${sec(I.folder, 'Copies on this device', `<div class="set-row col" id="dCopies"><span class="hint">Loading…</span></div>`)}
   ${sec(I.imp, 'Import', `
     <div class="set-row act"><label class="btn primary file-btn">Choose file<input type="file" id="dFile" hidden></label><button type="button" class="btn" data-act="roster">Import roster</button></div>
     <details class="set-row col more"><summary>What can be imported</summary>
@@ -1543,6 +1612,7 @@ function viewData(main) {
   if (typeof brfAiracLoad === 'function' && BRF_AIRAC === undefined) brfAiracLoad().then(j => { if (j && location.hash === '#dati') viewData(main); });
   $('#dAiracFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const j = await brfAiracImport(f); toast(`AIRAC loaded: ${fmtN(Object.keys(j.apts).length)} airports`); viewData(main); } catch (err) { toast('AIRAC import failed: ' + err.message); } e.target.value = ''; };
   $('#dAiracDel')?.addEventListener('click', async () => { await brfAiracClear(); toast('AIRAC data removed'); viewData(main); });
+  renderCopies(main);
   $('#dFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { await importFile(f); } catch (err) { toast('Import failed: ' + err.message); } e.target.value = ''; };
   if (n) {
     $('#dJson').onclick = () => download(`logbook-${today()}.json`, JSON.stringify(data, null, 1), 'application/json');
@@ -1739,19 +1809,36 @@ async function gdUpload(id, obj) {
 }
 // unione riga per riga: vince la modifica più recente, le cancellazioni restano cancellate
 function mergeRoster(a = {}, b = {}) { const r = { ...b }; for (const [k, v] of Object.entries(a)) if (!r[k] || (v.mt || 0) >= (r[k].mt || 0)) r[k] = v; return r; }
+function mergeFlight(a, b) {
+  const [n, o] = (a.mt || 0) >= (b.mt || 0) ? [a, b] : [b, a];
+  if (!a.fmt && !b.fmt) return n;
+  const r = { ...n }, fn = n.fmt || {}, fo = o.fmt || {};
+  for (const k of new Set([...Object.keys(n), ...Object.keys(o)])) {
+    if (k === 'id' || k === 'mt' || k === 'fmt') continue;
+    if ((fo[k] || 0) > (fn[k] || 0)) { if (k in o) r[k] = o[k]; else delete r[k]; }
+  }
+  r.fmt = { ...fo }; for (const [k, v] of Object.entries(fn)) r.fmt[k] = Math.max(v, r.fmt[k] || 0);
+  r.mt = Math.max(a.mt || 0, b.mt || 0);
+  return r;
+}
+const pickMap = (meta, other, k) => ({ ...(other[k] || {}), ...(meta[k] || {}) });
 function mergeData(local, remote) {
   const del = { ...(remote.deleted || {}) };
   for (const [k, v] of Object.entries(local.deleted || {})) del[k] = Math.max(v, del[k] || 0);
   const m = new Map();
   for (const f of remote.flights) m.set(f.id, f);
-  for (const f of local.flights) { const o = m.get(f.id); if (!o || (f.mt || 0) >= (o.mt || 0)) m.set(f.id, f); }
+  for (const f of local.flights) { const o = m.get(f.id); m.set(f.id, o ? mergeFlight(f, o) : f); }
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
-  const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote;
-  return { version: meta.version || 1, aircraft: { ...(remote.aircraft || {}), ...(local.aircraft || {}) }, simulators: { ...(remote.simulators || {}), ...(local.simulators || {}) }, roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(remote.acModel || {}), ...(local.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
+  const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote, other = meta === local ? remote : local;
+  // le chiavi che questa versione non conosce restano (non si perde niente scritto da una versione più nuova)
+  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), deleted: del, flights };
 }
-const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
+const fmtSum = f => f.fmt ? Object.values(f.fmt).reduce((s, v) => s + v, 0) : 0;
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}` : '';
 async function syncNow(interactive) {
-  if (!gdClientId() || GD.busy) return;
+  if (!gdClientId()) return;
+  if (GD.busy) { GD.again = true; return; }   // una modifica durante la sincronizzazione: si ripete subito dopo
+  GD.again = false;
   GD.busy = true; GD.state = 'sync'; renderSyncState();
   try {
     await gdToken(interactive);
@@ -1759,6 +1846,7 @@ async function syncNow(interactive) {
     const id = await gdFindFile();
     const remote = id ? await (await gdFetch(`${GAPI}/${id}?alt=media`)).json() : null;
     let merged;
+    stampFields();
     if (!remote) merged = data;
     else if (!data || !data.flights.length) merged = remote;
     else if (data.forcePush) merged = data;
@@ -1766,7 +1854,7 @@ async function syncNow(interactive) {
     if (merged) delete merged.forcePush;
     const localChanged = sig(merged) !== sig(data), remoteChanged = !remote || sig(merged) !== sig(remote) || data?.forcePush;
     if (merged && (localChanged || data?.forcePush)) {
-      data = merged; normalizeTypes(data); sortFlights(); await idb.set('data', data); scheduleBackup();
+      data = merged; normalizeTypes(data); sortFlights(); takeSnap(); await idb.set('data', data); scheduleBackup();
       if (localChanged && !/nuovo|modifica/.test(location.hash)) route();
       updateBadge();
     }
@@ -1775,7 +1863,10 @@ async function syncNow(interactive) {
   } catch (e) {
     GD.state = e.auth ? 'login' : 'err'; GD.msg = e.message;
     if (interactive) toast('Sync failed: ' + e.message);
-  } finally { GD.busy = false; renderSyncState(); if (location.hash === '#dati') route(); }
+  } finally {
+    GD.busy = false; renderSyncState(); if (location.hash === '#dati') route();
+    if (GD.again && GD.state === 'ok') { GD.again = false; setTimeout(() => syncNow(false), 500); }
+  }
 }
 let syncTimer;
 function scheduleSync() { if (gdConnected() && gdTokenOk()) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(false), 1500); } else if (gdConnected()) { GD.state = 'login'; renderSyncState(); } }
@@ -1885,8 +1976,11 @@ function driveStartup() {
 
 // ---------- avvio ----------
 (async () => {
+  // chiede al browser di non cancellare mai l'archivio locale per liberare spazio
+  try { navigator.storage?.persist?.(); } catch { /* ok */ }
   try { data = await idb.get('data') || null; } catch (e) { toast('Local storage not available: ' + e.message); }
-  if (data && normalizeTypes(data)) await save('Logbook updated');
+  try { if (data && normalizeTypes(data)) await save('Logbook updated'); } catch (e) { console.error(e); }
+  takeSnap();
   try {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }

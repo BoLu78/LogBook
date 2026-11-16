@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.14.3';
+const APP_VERSION = '3.15.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -389,13 +389,19 @@ const roleOf = f => f.kind === 'sim' ? 'SIM' : f.pic > 0 ? (/picus/i.test(f.rema
 function flightsIn(from, to) { return data.flights.filter(f => (!from || f.date >= from) && (!to || f.date <= to)); }
 
 // ---------- router ----------
-const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), aerei: m => viewFleet(m), ftl: m => loadAirports().then(() => viewFTL(m)), briefing: (m, a) => viewBriefing(m, a) };
+const views = { riepilogo: viewSummary, voli: viewFlights, mappa: m => loadMap().then(() => viewMap(m)), nuovo: viewEdit, modifica: viewEdit, stampa: viewPrint, dati: viewData, stat: m => viewStats(m), aerei: m => viewFleet(m), ftl: m => loadAirports().then(() => viewFTL(m)), briefing: (m, a) => viewBriefing(m, a), aeroporto: (m, a) => loadAirportPage().then(() => viewAirport(m, a)) };
 // librerie della mappa caricate solo quando serve
 let mapLoading = null;
 function loadMap() {
   const js = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('file ' + src + ' not available')); document.head.append(s); });
   return mapLoading ||= js('lib/d3-array.min.js').then(() => js('lib/d3-geo.min.js')).then(() => js('lib/topojson-client.min.js')).then(() => js('map.js'))
     .catch(e => { mapLoading = null; $('#main').innerHTML = `<h1>Map</h1><p class="lede">${esc(e.message)}. Open the app once while online.</p>`; throw e; });
+}
+// pagina aeroporto: file separato, caricato alla prima apertura
+let aptPageLoading = null;
+function loadAirportPage() {
+  return aptPageLoading ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'airport.js'; s.onload = res; s.onerror = () => rej(new Error('file airport.js not available')); document.head.append(s); })
+    .catch(e => { aptPageLoading = null; $('#main').innerHTML = `<h1>Airport</h1><p class="lede">${esc(e.message)}. Open the app once while online.</p>`; throw e; });
 }
 // se una pagina si rompe, al posto della pagina bianca mostra l'errore e un modo per uscirne
 function showCrash(main, e) {
@@ -419,7 +425,7 @@ function route() {
   const inSheet = view === 'modifica' || view === 'nuovo';
   for (const id of ['tbPrev', 'tbNext']) { const b = $('#' + id); if (b) b.hidden = !inSheet; }
   for (const id of ['tbRoster', 'tbNew']) { const b = $('#' + id); if (b) b.hidden = inSheet; }
-  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft', briefing: 'Briefing' }[view] || 'Logbook';
+  const pt = $('#pageTitle'); if (pt) pt.textContent = { riepilogo: 'Summary', voli: 'Flights', mappa: 'Map', nuovo: 'New flight', modifica: 'Flight', stampa: 'EASA print', dati: 'Settings', stat: 'Statistics', ftl: 'FTL', aerei: 'Aircraft', briefing: 'Briefing', aeroporto: 'Airport' }[view] || 'Logbook';
   closeMenu();
   const main = $('#main');
   if ((!data || !data.flights.length) && view !== 'dati' && view !== 'nuovo') { main.innerHTML = emptyState(); return; }
@@ -698,11 +704,11 @@ function viewEdit(main, id) {
       </div>
       <div class="route">
         <div class="apt"><input id="dep" class="icao" value="${esc(f.dep)}" maxlength="4" placeholder="ICAO" aria-label="Departure" autocapitalize="characters">
-          <div class="apt-sub" id="depSub"></div><div class="tz" id="depTz"></div>
+          <div class="apt-sub" id="depSub"></div><div class="tz" id="depTz"></div><button type="button" class="apt-go dep" id="depGo" data-go="dep" aria-label="Departure airport page" title="Airport page" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18M5 7h14"/><path d="M12 9.5c.7 0 1 .8 1 1.6v3l5 2.6v1.4l-5-1.4v2.4l1.6 1.1v1l-2.6-.6-2.6.6v-1l1.6-1.1v-2.4l-5 1.4v-1.4l5-2.6v-3c0-.8.3-1.6 1-1.6z"/></svg></button>
           <label class="sch"><span>STD</span><input id="std" value="${esc(f.sched?.out || '')}" placeholder="--:--" aria-label="Scheduled time of departure"></label></div>
         <div class="mid"><input id="flightNo" class="fno" value="${esc(f.flightNo || '')}" placeholder="FLT NO" aria-label="Flight number"></div>
         <div class="apt"><input id="arr" class="icao" value="${esc(f.arr)}" maxlength="4" placeholder="ICAO" aria-label="Arrival" autocapitalize="characters">
-          <div class="apt-sub" id="arrSub"></div><div class="tz" id="arrTz"></div>
+          <div class="apt-sub" id="arrSub"></div><div class="tz" id="arrTz"></div><button type="button" class="apt-go arr" id="arrGo" data-go="arr" aria-label="Arrival airport page" title="Airport page" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18M5 7h14"/><path d="M12 9.5c.7 0 1 .8 1 1.6v3l5 2.6v1.4l-5-1.4v2.4l1.6 1.1v1l-2.6-.6-2.6.6v-1l1.6-1.1v-2.4l-5 1.4v-1.4l5-2.6v-3c0-.8.3-1.6 1-1.6z"/></svg></button>
           <label class="sch"><span>STA</span><input id="sta" value="${esc(f.sched?.inn || '')}" placeholder="--:--" aria-label="Scheduled time of arrival"></label></div>
       </div>
       <div class="actual">
@@ -849,6 +855,9 @@ function viewEdit(main, id) {
   { const bg = form.querySelector('#briefGo'); if (bg) bg.onclick = () => { const v = id => form.querySelector('#' + id)?.value?.trim() || '', t = x => x.replace(':', '').padStart(4, '0').slice(0, 4);
     const dep = v('dep').toUpperCase(), arr = v('arr').toUpperCase(); if (!dep && !arr) return;
     location.hash = brfHash(v('date'), [{ icao: dep, hhmm: /\d/.test(v('out') || v('std')) ? t(v('out') || v('std')) : '' }, { icao: arr, hhmm: /\d/.test(v('inn') || v('sta')) ? t(v('inn') || v('sta')) : '' }]); }; }
+  form.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const v = id => form.querySelector('#' + id)?.value?.trim() || '', t = x => x.replace(':', '').padStart(4, '0').slice(0, 4);
+    const dep = b.dataset.go === 'dep', c = v(b.dataset.go).toUpperCase(), tm = dep ? (v('out') || v('std')) : (v('inn') || v('sta'));
+    if (/^[A-Z0-9]{4}$/.test(c)) location.hash = 'aeroporto/' + c + (v('date') ? '_' + v('date') + (/\d/.test(tm) ? '.' + t(tm) : '') : ''); });
   form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { g('fFlight').hidden = kind() === 'sim'; g('fSim').hidden = kind() !== 'sim'; });
 
   // ---------- blocco, notte, decolli e atterraggi
@@ -923,6 +932,7 @@ function viewEdit(main, id) {
     for (const [inp, sub, tz, time] of [['dep', 'depSub', 'depTz', 'out'], ['arr', 'arrSub', 'arrTz', 'inn']]) {
       const c = g(inp).value.trim().toUpperCase(), p = apt(c);
       g(sub).innerHTML = p ? `<b>${esc(rev(AP_FIX[c] || c))}</b> ${esc(cleanAptName(p[2]))}` : '';
+      { const b = g(inp + 'Go'); if (b) b.hidden = !p || !/^[A-Z0-9]{4}$/.test(c); }
       g(tz).textContent = p?.[4] ? utcLabel(p[4], g('date').value, g(time).value || g(inp === 'dep' ? 'std' : 'sta').value) : '';
     }
     drawWorld(g('worldbg'), apt(g('dep').value.trim().toUpperCase()), apt(g('arr').value.trim().toUpperCase()));
@@ -1961,10 +1971,10 @@ function mergeData(local, remote) {
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote, other = meta === local ? remote : local;
   // le chiavi che questa versione non conosce restano (non si perde niente scritto da una versione più nuova)
-  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), lastPdf: Math.max(local.lastPdf || 0, remote.lastPdf || 0), deleted: del, flights };
+  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), aptNotes: mergeRoster(local.aptNotes, remote.aptNotes), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), lastPdf: Math.max(local.lastPdf || 0, remote.lastPdf || 0), deleted: del, flights };
 }
 const fmtSum = f => f.fmt ? Object.values(f.fmt).reduce((s, v) => s + v, 0) : 0;
-const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}|${d.lastPdf || 0}` : '';
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}|${d.lastPdf || 0}|${Object.values(d.aptNotes || {}).reduce((s, x) => s + (x.mt || 0), 0)}` : '';
 async function syncNow(interactive) {
   if (!gdClientId()) return;
   if (GD.busy) { GD.again = true; return; }   // una modifica durante la sincronizzazione: si ripete subito dopo

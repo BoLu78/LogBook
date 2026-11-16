@@ -29,3 +29,8 @@ assert.equal(k.futureKey,42); assert.deepEqual(k.acModel,{});
 const A={flights:[{id:'z',date:'2026-01-01',remarks:'x',mt:1}]}; SD(A); TS(); const B=JSON.parse(JSON.stringify(A));
 A.flights[0].remarks=''; SF(); assert.equal(M(B,A).flights[0].remarks,'');
 console.log('merge tests ok');
+// 6. warning note degli aeroporti: per aeroporto vince la più recente, nessuna si perde
+const n=M({flights:[],aptNotes:{GCLP:{txt:'a',mt:5},LIBD:{txt:'x',mt:9}}},{flights:[],aptNotes:{GCLP:{txt:'b',mt:7},LIMC:{txt:'m',mt:1}}});
+assert.equal(n.aptNotes.GCLP.txt,'b'); assert.equal(n.aptNotes.LIBD.txt,'x'); assert.equal(n.aptNotes.LIMC.txt,'m');
+assert.notEqual(S({flights:[],aptNotes:{GCLP:{txt:'a',mt:5}}}),S({flights:[],aptNotes:{GCLP:{txt:'b',mt:7}}}));
+console.log('apt notes merge ok');

@@ -15,7 +15,7 @@ while d<datetime.date(2026,11,10):
 fl.append(dict(id='sim1',kind='sim',date='2026-05-02',simReg='SIM737',simType='B737-8',sim=240,out='08:00',inn='12:00',picName='SELF',src='app',mt=1))
 fl.append(dict(id='pl1',kind='flight',date='2026-11-12',planned=True,dep='LIPE',arr='HEMA',out='08:00',inn='12:05',total=245,reg='',type='',mp=245,pic=245,picName='SELF',src='app',mt=1))
 DATA=dict(version=1,pilot='BORTOLOT',flights=fl)
-views=['riepilogo','voli','ftl','stat','mappa','aerei','stampa','dati','nuovo','modifica/f100','modifica/pl1','modifica/sim1']
+views=['riepilogo','voli','ftl','stat','mappa','aerei','stampa','dati','nuovo','modifica/f100','modifica/pl1','modifica/sim1','aeroporto/GCLP']
 sizes=[(1024,1366),(390,844),(1440,900)]
 themes=['carta','neutro','cockpit']
 with sync_playwright() as p:

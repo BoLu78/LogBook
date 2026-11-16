@@ -1,0 +1,68 @@
+{
+ "_note": "Dati dall'AIP ufficiale (AD 2.12 e AD 2.13). Solo dati verificati: un aeroporto che manca qui non ha distanze nella pagina aeroporto.",
+ "GCLP": {
+  "src": "AIP España AD 2-GCLP",
+  "eff": "2026-10-01",
+  "amdt": "AIRAC AMDT 09/26",
+  "rwy": {
+   "03L": {
+    "thr": [
+     27.918872,
+     -15.392339
+    ],
+    "brg": 21.43,
+    "elev": 77,
+    "tora": 3100,
+    "toda": 3100,
+    "asda": 3100,
+    "lda": 3100
+   },
+   "21R": {
+    "thr": [
+     27.944917,
+     -15.380828
+    ],
+    "brg": 201.43,
+    "elev": 32,
+    "tora": 3100,
+    "toda": 3160,
+    "asda": 3100,
+    "lda": 3100
+   },
+   "03R": {
+    "thr": [
+     27.918189,
+     -15.390347
+    ],
+    "brg": 21.42,
+    "elev": 69,
+    "tora": 3099,
+    "toda": 3099,
+    "asda": 3099,
+    "lda": 3099
+   },
+   "21L": {
+    "thr": [
+     27.944225,
+     -15.378844
+    ],
+    "brg": 201.43,
+    "elev": 26,
+    "tora": 3099,
+    "toda": 3159,
+    "asda": 3099,
+    "lda": 3099
+   }
+  },
+  "int": [
+   {
+    "rwy": "21L",
+    "from": "Cable barrier GCLP-02-C-B",
+    "note": "506 m from THR 21L, bidirectional; notify ATC before taxiing beyond it",
+    "tora": 2593,
+    "toda": 2653,
+    "asda": 2593
+   }
+  ]
+ }
+}

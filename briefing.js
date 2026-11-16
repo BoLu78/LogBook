@@ -200,13 +200,27 @@ async function brfAiracImport(file) {
   await idb.set('airac', j); BRF_AIRAC = j; return j;
 }
 async function brfAiracClear() { try { await idb.set('airac', null); } catch { /* niente */ } BRF_AIRAC = null; }
+// avvicinamenti militari: non si usano in linea, non si mostrano
+const BRF_APT_MIL = 'T';
+// correzioni dall'AIP dove il file Navigraph non ha la procedura (solo dati ufficiali)
+const BRF_APT_FIX = {
+  GCLP: { '03R': 'R' },   // AIP España AD 2 GCLP IAC 9: RNP RWY 03R (LPV ONLY)
+};
+// preferenza tra le testate: ILS, poi RNP, poi LOC, VOR, NDB
+const BRF_APT_RANK = { I: 0, J: 0, G: 0, R: 1, H: 1, P: 1, L: 2, B: 2, X: 2, U: 2, D: 3, S: 3, V: 3, Q: 4, N: 4 };
 function brfAppr(icao, rid) {
-  const r = BRF_AIRAC?.apts?.[icao]?.[rid] ?? BRF_AIRAC?.apts?.[icao]?.[String(rid).padStart(2, '0')];
-  if (!r) return null;
-  const [cat, t = ''] = r.split('|');
-  const best = cat ? (cat === '0' ? 'ILS' : 'ILS CAT ' + ['', 'I', 'II', 'III'][+cat]) : t ? BRF_APT_T[t[0]] : '';
-  return best ? { best, all: [...new Set([...t].map(c => BRF_APT_T[c]).filter(Boolean))] } : null;
+  const id = String(rid), id2 = id.padStart(2, '0');
+  const r = BRF_AIRAC?.apts?.[icao]?.[id] ?? BRF_AIRAC?.apts?.[icao]?.[id2];
+  const fix = BRF_APT_FIX[icao]?.[id] || BRF_APT_FIX[icao]?.[id2] || '';
+  if (!r && !fix) return null;
+  const [cat, t0 = ''] = (r || '').split('|');
+  const t = [...new Set([...t0 + fix])].filter(c => !BRF_APT_MIL.includes(c) && BRF_APT_T[c]).sort((a, b) => (BRF_APT_RANK[a] ?? 9) - (BRF_APT_RANK[b] ?? 9));
+  const rank = cat ? 0 : t.length ? BRF_APT_RANK[t[0]] ?? 9 : 9;
+  const best = cat ? (cat === '0' ? 'ILS' : 'ILS CAT ' + ['', 'I', 'II', 'III'][+cat]) : t.length ? BRF_APT_T[t[0]] : '';
+  return best ? { best, rank, all: [...new Set(t.map(c => BRF_APT_T[c]))] } : null;
 }
+// testata da preferire: vento frontale prima, poi l'avvicinamento migliore, poi meno traverso
+const brfApptRank = (icao, id) => brfAppr(icao, id)?.rank ?? 9;
 
 // ---------- mappa aeroporto (OpenStreetMap)
 let BRF_RWY = null;
@@ -455,7 +469,7 @@ function brfCard(p, wx, mapRec, ccSel, mdl) {
   const ccWhy = ccSel ? '' : useMdl ? ' · auto from the model' : (covered || metNear) ? ' · auto' : ' · assumed, no forecast for the ' + (p.role === 'DEP' ? 'ETD' : 'ETA');
   const comps = winds.length ? brfComp(rws, winds, cc) : [];
   // la testata più favorevole: se anche quella è vicina ai limiti, va segnalato
-  const best = comps.slice().sort((x, y) => (BRF_RANK[x.lvl] - BRF_RANK[y.lvl]) || (y.hw - x.hw) || (x.tw - y.tw))[0];
+  const best = comps.slice().sort((x, y) => (BRF_RANK[x.lvl] - BRF_RANK[y.lvl]) || ((x.tw > 0) - (y.tw > 0)) || (brfApptRank(p.icao, x.id) - brfApptRank(p.icao, y.id)) || (y.hw - x.hw) || (x.tw - y.tw))[0];
   if (best && best.lvl !== 'ok') alerts.push([best.lvl, best.lt !== 'ok' && BRF_RANK[best.lt] >= BRF_RANK[best.lx] ? 'Tailwind' : 'Crosswind', `best RWY ${best.id}: ${best.tw ? 'TW ' + best.tw + '/' + tl : 'HW ' + best.hw} · XW ${best.xw}/${xl} kt`]);
   // orario fuori dal periodo di validità del TAF: va detto chiaramente
   if (taf && p.at && (p.at < taf.valid[0] || p.at > taf.valid[1])) alerts.unshift(['warn', 'TAF', `${p.role === 'DEP' ? 'ETD' : 'ETA'} outside validity (${brfT(taf.valid[0])}–${brfT(taf.valid[1])})`]);
@@ -478,7 +492,7 @@ function brfCard(p, wx, mapRec, ccSel, mdl) {
     ${alerts.length ? `<div class="brf-alerts">${alerts.map(([l, k, v]) => `<span class="${l}"><b>${esc(k)}</b> ${esc(v)}</span>`).join('')}</div>` : (pool.length ? '<div class="brf-alerts"><span class="ok"><b>No weather alerts</b> around ' + esc(refLab) + '</span></div>' : '')}
     <div class="brf-rw">
       <div class="brf-cc"><span>RWYCC</span>${[6, 5, 4, 3, 2].map(n => `<button type="button" data-cc="${esc(p.icao)}:${n}" class="${n === cc ? 'on' : ''}">${n}</button>`).join('')}<small>${esc(ccTxt)} · limits B737-800/-8 XW ${xl} · TW ${tl} kt${esc(ccWhy)}</small></div>
-      ${comps.length ? `<div class="brf-cmp">${comps.map(c => `<span class="${c.lvl}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i>${(k => k ? ` <small>${esc(k.all.join(' · '))}</small>` : '')(brfAppr(p.icao, c.id))}</span>`).join('')}</div>
+      ${comps.length ? `<div class="brf-cmp">${comps.slice().sort((x, y) => ((x.tw > 0) - (y.tw > 0)) || (brfApptRank(p.icao, x.id) - brfApptRank(p.icao, y.id)) || (BRF_RANK[x.lvl] - BRF_RANK[y.lvl]) || (y.hw - x.hw)).map(c => `<span class="${c.lvl}${!comps.some(k => !k.tw) ? '' : c.tw > 0 ? ' tail' : ' head'}">RWY <b>${esc(c.id)}</b> ${c.tw ? `<i class="${c.lt}">TW ${c.tw}</i>` : 'HW ' + c.hw} · <i class="${c.lx}">XW ${c.xw}${c.side}</i>${(k => k ? ` <small>${esc(k.all.join(' · '))}</small>` : '')(brfAppr(p.icao, c.id))}</span>`).join('')}</div>
       <small class="muted">Wind ${esc(winds.map(w => w.txt).join(', '))} from ${wSrc}, true direction${mv == null ? '' : ` (on the map in magnetic, VAR ${magVarTxt(mv)})`}. Crosswind and tailwind with gusts; yellow from 80% of the limit, red above it.</small>` : `<small class="muted">${rws.length ? 'No wind available for the runway components.' : ''}</small>`}
     </div>
     <div class="brf-sec"><h4>METAR ${metAge ? `<small>${brfHM(metAge)} · ${brfAge(metAge)}</small>` : ''}</h4>

@@ -908,6 +908,10 @@ table.data td .newdot { margin-right: 10px; }
 .brf-cmp span.warn { border-left-color: var(--cat2); } .brf-cmp span.bad { border-left-color: var(--red); }
 .brf-cmp i { font-style: normal; } .brf-cmp i.warn { color: var(--cat2); font-weight: 700; } .brf-cmp i.bad { color: var(--red); font-weight: 700; }
 .brf-cmp small { color: var(--muted); }
+.brf-cmp { flex-direction: column; align-items: flex-start; }
+.brf-cmp span.head { font-weight: 600; }
+.brf-cmp span.head b { font-size: 1.08em; }
+.brf-cmp span.tail { opacity: .5; font-size: 13px; border-left-width: 2px; }
 .brf-svg .cmp rect { fill: var(--sheet); stroke: var(--ok); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .brf-svg .cmp.warn rect { stroke: var(--cat2); } .brf-svg .cmp.bad rect { stroke: var(--red); fill: color-mix(in srgb, var(--red) 10%, var(--sheet)); }
 .brf-svg .cmp text { text-anchor: middle; font-family: var(--font); font-weight: 700; fill: var(--ink); }

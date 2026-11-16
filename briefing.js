@@ -34,7 +34,7 @@ function brfCleanup(route) {
         if (!(at > now - 864e5) || (route && at < now && ('-' + legs + '-').includes('-' + route + '-'))) localStorage.removeItem(k);
         continue;
       }
-      if (k.startsWith('brf:wx:') || k.startsWith('brf:mapfail:') || k.startsWith('brf:mdl:')) { const t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; if (now - t > 2 * 864e5) localStorage.removeItem(k); }
+      if (k.startsWith('brf:wx:') || k.startsWith('brf:mapfail:') || k.startsWith('brf:mdl:') || k.startsWith('brf:notam:')) { const t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0; if (now - t > 2 * 864e5) localStorage.removeItem(k); }
     }
   } catch { /* pulizia non essenziale */ }
 }

@@ -1048,3 +1048,22 @@ table.apt-rw .tw { color: var(--amber); font-weight: 700; }
   .apt-map { aspect-ratio: 3 / 4; }
   .apt-tools button { padding: 6px 8px; font-size: 11px; }
 }
+/* NOTAM (3.16) */
+.apt-nsrc { font-weight: 400; letter-spacing: .04em; color: var(--muted); margin-left: 6px; }
+.apt-notams { list-style: none; margin: 0; padding: 0; }
+.apt-notams li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); }
+.apt-notams li > i { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+.apt-notams li.bad > i { background: var(--red); } .apt-notams li.warn > i { background: var(--amber); }
+.apt-notams b { font-family: var(--font); font-size: 13px; }
+.apt-notams p { margin: 2px 0; font-family: "B612 Mono", ui-monospace, monospace; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.apt-notams li.bad p { font-weight: 700; }
+.apt-notams small { color: var(--muted); font-family: var(--font); font-size: 12px; }
+.apt-notams.far li { opacity: .6; }
+.apt-notams .nmap { font-size: 10.5px; font-weight: 700; color: var(--on-accent); background: var(--red); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
+.apt-nsec details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 10px 0 4px; }
+.apt-svg .ncl { fill: none; stroke: var(--red); opacity: .8; stroke-linecap: butt; stroke-dasharray: 18 10; }
+.apt-svg .ncl.rwy { opacity: .55; stroke-dasharray: 40 20; }
+.apt-tools button.on.red { background: var(--red); border-color: var(--red); color: #fff; }
+.apt-legend .ncl::before { background: var(--red); }
+.apt-exits span.clsd { border-left-color: var(--red); opacity: .75; } .apt-exits span.clsd b { text-decoration: line-through; }
+.apt-exits em { font-style: normal; font-size: 10.5px; font-weight: 700; color: var(--red); }

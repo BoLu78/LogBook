@@ -72,7 +72,7 @@ function aptMapStatic(ways, heads, P) {
 function aptMapOverlay(st, heads, ways, P, exits, mv) {
   const u = st.u, [x0, y0] = [st.cx - st.w / 2, st.cy - st.h / 2], x1 = x0 + st.w, y1 = y0 + st.h;
   const sel = heads.find(h => h.id === st.sel);
-  let g = '';
+  let g = st.notam ? st.nsvg : '';
   // TDZ: primi 900 m dalla soglia AIP (o un terzo dell'LDA se più corta), tacche ogni 300 m, fine LDA
   if (sel?.aip && st.tdz) {
     const o = P(sel.thr), [ux, uy] = aptDir(sel.brg), nx = -uy, ny = ux, hw = sel.w / 2, lda = sel.aip.lda, tdz = Math.min(900, lda / 3);
@@ -133,6 +133,84 @@ function aptWindComp(h, wind) {
   return { hw: Math.round(wind.spd * Math.cos(a)), xw: Math.round(Math.abs(g * Math.sin(a))), side: Math.sin(a) > 0 ? 'R' : 'L' };
 }
 
+// ---------- NOTAM: dal Worker "notam-bridge" (FAA NMS-API), salvati sul dispositivo per l'uso offline
+const APT_NOTAM_BRIDGE = 'https://notam-bridge.bortolotluca.workers.dev';
+const APT_NOTAM_FRESH = 15 * 60e3;
+async function aptNotams(icao, force) {
+  const c = brfRead('notam:' + icao);
+  if (!force && c && Date.now() - c.t < APT_NOTAM_FRESH) return { state: 'ok' };
+  try {
+    const r = await fetch(`${APT_NOTAM_BRIDGE}/notams?icao=${icao}${force ? '&force=1' : ''}`, { cache: 'no-store', signal: AbortSignal.timeout?.(15000) });
+    if (r.status === 503) return { state: 'off' };
+    if (!r.ok) return { state: 'err', why: 'HTTP ' + r.status };
+    const j = await r.json();
+    brfSave('notam:' + icao, j.items || []);
+    return { state: 'ok' };
+  } catch (e) { return { state: 'err', why: e.name === 'TimeoutError' ? 'timeout' : 'not reachable' }; }
+}
+// campo di un NOTAM in formato ICAO: E) testo, D) orari
+function aptNField(txt, L) { const m = String(txt || '').match(new RegExp('(?:^|\\s)' + L + '\\)\\s*([\\s\\S]*?)(?=\\s[A-G]\\)\\s|$)')); return m ? m[1].replace(/\s+/g, ' ').trim() : ''; }
+function aptNText(n) { return aptNField(n.text, 'E') || String(n.plain || n.text || '').replace(/\s+/g, ' ').trim(); }
+function aptQ(n) {
+  let q = String(n.sel || '').toUpperCase(); if (/^[A-Z]{4}$/.test(q)) q = 'Q' + q;
+  if (!/^Q[A-Z]{4}$/.test(q)) { const m = String(n.text || '').match(/Q\)\s*[A-Z]{4}\/(Q[A-Z]{4})/); q = m ? m[1] : ''; }
+  return q;
+}
+// rosso: pista, ILS, avvicinamenti, luci di pista e di avvicinamento, aeroporto chiuso
+// giallo: raccordi, piazzali, radioaiuti, SID/STAR, ostacoli · grigio: il resto (TACAN compreso, militare)
+const APT_N_RED = ['MR', 'FA', 'PI', 'LA', 'LR', 'LC', 'LE', 'LT', 'LZ', 'LH'];
+const APT_N_AMB = ['MX', 'MA', 'MN', 'MK', 'MD', 'MS', 'NV', 'ND', 'NM', 'NB', 'NA', 'NL', 'PD', 'PA', 'OB', 'OL', 'LX', 'LY'];
+function aptNLvl(n) {
+  const q = aptQ(n), sb = q.slice(1, 3), cd = q.slice(3, 5), t = aptNText(n).toUpperCase();
+  if (sb) {
+    if (sb === 'NT' || /^(AK|AO)$/.test(cd)) return 'low';
+    if (sb[0] === 'I' || APT_N_RED.includes(sb)) return 'bad';
+    return APT_N_AMB.includes(sb) ? 'warn' : 'low';
+  }
+  if (/\bTACAN\b/.test(t)) return 'low';
+  if ((/\bRWY\b/.test(t) && /\b(CLSD|CLOSED|U\/S|UNSERVICEABLE|REDUCED|DISPLACED|TORA|TODA|ASDA|LDA)\b/.test(t)) || /\b(ILS|LOC|LLZ|GP|GLIDE)\b/.test(t)) return 'bad';
+  return /\b(TWY|TAXIWAY|APRON|STAND|VOR|DME|NDB|SID|STAR|CRANE|OBST)\b/.test(t) ? 'warn' : 'low';
+}
+const aptNTime = v => !v || /PERM/i.test(v) ? null : (x => isFinite(x) ? x : null)(Date.parse(v));
+// chiusure da disegnare: solo testi che chiudono un raccordo o una pista per intero (nessun "tra", "parte", "da/a")
+function aptNClosed(n) {
+  const t = aptNText(n).toUpperCase().replace(/\.$/, '').replace(/\s+DUE\s+(TO\s+)?[A-Z0-9 ]+$/, '');
+  if (/\b(BTN|BETWEEN|PORTION|PART|SECTION|FM|FROM|TO|EXC|EXCEPT|FOR|ACFT|WINGSPAN|ONLY)\b/.test(t.replace(/^\S+\s+\S+/, ''))) return null;
+  let m = t.match(/^RWY\s+(\d{2}[LCR]?)(?:\/(\d{2}[LCR]?))?\s+CLSD$/);
+  if (m) return { rwy: [m[1], m[2]].filter(Boolean) };
+  m = t.match(/^TWY\s+([A-Z0-9 ,]+?)\s+CLSD$/);
+  if (m) { const refs = m[1].split(/[\s,]+|\bAND\b/).map(x => x.trim()).filter(Boolean); if (refs.length && refs.every(x => /^[A-Z]{1,2}\d{0,2}[A-Z]?$/.test(x))) return { twy: refs }; }
+  return null;
+}
+function aptNotamSVG(list, ways, heads, P) {
+  const path = g => g.map((p, i) => { const [x, y] = P(p); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`; }).join('');
+  const tw = new Set(list.flatMap(c => c.twy || [])), rw = new Set(list.flatMap(c => c.rwy || []));
+  let g = ways.filter(w => w.a === 'taxiway' && tw.has(w.r)).map(w => `<path class="ncl" d="${path(w.g)}" stroke-width="${(w.w || 20) + 6}"/>`).join('');
+  const done = new Set();
+  for (const h of heads) if (rw.has(h.id) && !done.has(h.pair)) { done.add(h.pair); g += `<path class="ncl rwy" d="${path([h.pair.A, h.pair.B])}" stroke-width="${h.w + 8}"/>`; }
+  return g;
+}
+const aptNFmt = ms => { if (ms == null) return 'PERM'; const d = new Date(ms); return `${pad2(d.getUTCDate())} ${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getUTCMonth()]} ${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}Z`; };
+function aptNotamHTML(icao, res, ref, refLab, drawn) {
+  const rec = brfRead('notam:' + icao), items = (rec?.v || []).filter(n => n.type !== 'C');
+  const head = `<h4>NOTAMs <small class="apt-nsrc">FAA${rec?.t ? ' · ' + brfAge(rec.t) : ''}</small></h4>`;
+  if (!rec) {
+    const why = res?.state === 'off' ? 'The NOTAM service is not active yet: the notam-bridge Worker has no FAA credentials.' : res?.state === 'err' ? `NOTAM service ${esc(res.why || 'not reachable')}.` : 'Loading…';
+    return head + `<p class="muted">${why} Check the official briefing package.</p>`;
+  }
+  const lvR = { bad: 0, warn: 1, low: 2 };
+  const rows = items.map(n => ({ n, s: aptNTime(n.start), e: aptNTime(n.end), lvl: aptNLvl(n), cl: aptNClosed(n) }))
+    .map(x => ({ ...x, act: (x.s == null || x.s <= ref + 3600e3) && (x.e == null || x.e >= ref - 3600e3) }))
+    .sort((a, b) => (lvR[a.lvl] - lvR[b.lvl]) || ((a.s || 0) - (b.s || 0)));
+  const li = x => `<li class="${x.lvl}"><i></i><div><b>${esc(x.n.number || x.n.id)}</b>${x.cl && x.act && drawn ? ' <span class="nmap">on map</span>' : ''}<p>${esc(aptNText(x.n))}</p>
+    <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est ? ' EST' : ''}${aptNField(x.n.text, 'D') ? ' · ' + esc(aptNField(x.n.text, 'D')) : ''}</small></div></li>`;
+  const on = rows.filter(x => x.act), off = rows.filter(x => !x.act);
+  return head + (res?.state === 'err' ? `<p class="hint">Service ${esc(res.why || 'not reachable')}: saved NOTAMs.</p>` : '')
+    + `<h5>Active at ${esc(refLab)} ±1 h <small>${on.length}</small></h5>${on.length ? `<ul class="apt-notams">${on.map(li).join('')}</ul>` : '<p class="muted">None.</p>'}`
+    + (off.length ? `<details><summary>Not active at that time (${off.length})</summary><ul class="apt-notams far">${off.map(li).join('')}</ul></details>` : '')
+    + '<p class="hint">Red: runway, ILS, approaches and lights · yellow: taxiways, aprons, navaids, SID/STAR, obstacles · grey: the rest. Only whole-taxiway or whole-runway closures are drawn on the map. The official briefing package is the reference.</p>';
+}
+
 async function viewAirport(main, arg) {
   const q = aptParse(arg);
   if (!/^[A-Z0-9]{4}$/.test(q.icao)) { main.innerHTML = '<h1>Airport</h1><p class="lede">No airport given. Open it from the icon next to DEP or ARR in a flight.</p>'; return; }
@@ -146,7 +224,9 @@ async function viewAirport(main, arg) {
   const mv = a && typeof magVar === 'function' ? magVar(a[0], a[1], ref) : null;
   const P = a ? aptM(a[0], a[1]) : null;
   const heads = a ? aptHeads(icao, aip) : [];
-  const st = { cx: 0, cy: 0, w: 4000, h: 3000, u: 10, sel: null, tdz: true, exits: true, full: false };
+  const st = { cx: 0, cy: 0, w: 4000, h: 3000, u: 10, sel: null, tdz: true, exits: true, notam: true, full: false, nsvg: '' };
+  let nres = null;
+  const nref = q.at && q.hhmm ? q.at : Date.now(), nrefLab = q.at && q.hhmm ? `${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z ${dmy(q.date)}` : 'now';
   let ways = [], exits = [], wind = null, mapStatic = '', status = '';
 
   const note = () => data?.aptNotes?.[icao]?.txt || '';
@@ -185,7 +265,7 @@ async function viewAirport(main, arg) {
     if (!ways.length) return '<p class="muted">Exits: airport map not loaded yet.</p>';
     if (!exits.length) return `<p class="muted">No taxiway exits found on the map for RWY ${esc(h.id)}.</p>`;
     return `<h5>Exits RWY ${esc(h.id)} <small>≈ distance from the AIP threshold · remaining LDA ${h.aip.lda} m</small></h5>
-      <div class="apt-exits">${exits.map(e => `<span class="${e.ret ? 'ret' : ''}"><b>${esc(e.ref)}</b> ≈${e.s} m<small>${e.end ? 'runway end' : 'rem ≈' + e.rem + ' m'}${e.ret ? ' · rapid' : ''}</small></span>`).join('')}</div>`;
+      <div class="apt-exits">${exits.map(e => `<span class="${e.ret ? 'ret' : ''}${st.ntw?.has(e.ref) ? ' clsd' : ''}"><b>${esc(e.ref)}</b> ≈${e.s} m${st.ntw?.has(e.ref) ? ' <em>CLSD · NOTAM</em>' : ''}<small>${e.end ? 'runway end' : 'rem ≈' + e.rem + ' m'}${e.ret ? ' · rapid' : ''}</small></span>`).join('')}</div>`;
   };
 
   const draw = () => {
@@ -195,6 +275,11 @@ async function viewAirport(main, arg) {
     pickSel();
     const sel = heads.find(h => h.id === st.sel);
     exits = sel ? aptExits(sel, ways, P) : [];
+    try {
+      const nl = (brfRead('notam:' + icao)?.v || []).filter(n => n.type !== 'C').filter(n => { const a0 = aptNTime(n.start), a1 = aptNTime(n.end); return (a0 == null || a0 <= nref + 3600e3) && (a1 == null || a1 >= nref - 3600e3); }).map(aptNClosed).filter(Boolean);
+      st.nsvg = P && heads.length ? aptNotamSVG(nl, ways, heads, P) : '';
+      st.ntw = new Set(nl.flatMap(c => c.twy || []));
+    } catch (e) { console.warn('notam map', e); st.nsvg = ''; st.ntw = null; }
     const tok = t => { const d = brfToken(t); return d && d.lvl !== 'ok' ? `<u class="${d.lvl}">${esc(t)}</u>` : esc(t); };
     const tz = a?.[4], off = tz ? utcLabel(tz, q.date || today(), q.hhmm ? q.hhmm.slice(0, 2) + ':' + q.hhmm.slice(2) : '') : '';
     main.innerHTML = `<div class="brf-head"><div><h1>${esc(icao)} <span class="apt-iata">${esc(brfIataOf(icao))}</span></h1><p class="lede">${esc(a ? cleanAptName(a[2]) : 'Airport not in the database')}${a?.[3] ? ' · ' + esc(a[3]) : ''}</p></div>
@@ -213,12 +298,12 @@ async function viewAirport(main, arg) {
           <div class="apt-tools">
             <button type="button" data-t="exits" class="${st.exits && sel?.aip ? 'on' : ''}" ${sel?.aip ? '' : 'disabled'}>EXIT DIST.</button>
             <button type="button" data-t="tdz" class="${st.tdz && sel?.aip ? 'on' : ''}" ${sel?.aip ? '' : 'disabled'}>TDZ</button>
-            <button type="button" data-t="notam" disabled title="Coming with the NOTAM service">NOTAMs</button>
+            <button type="button" data-t="notam" class="${st.notam && st.nsvg ? 'on red' : ''}" ${st.nsvg ? '' : 'disabled'} title="Closures from the active NOTAMs">NOTAMs</button>
           </div>
           <div class="apt-north"><svg viewBox="-8 -14 16 24" aria-hidden="true"><path d="M0,-12L6,8L0,3L-6,8Z"/></svg><b>N</b>${mv == null ? '' : `<small>VAR ${magVarTxt(mv)}</small>`}</div>
           <div class="apt-scale" id="aptScale"></div>
           <div class="apt-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button><button type="button" data-z="full" aria-label="Full screen">${st.full ? '✕' : '⤢'}</button></div>
-          ${sel?.aip ? `<div class="apt-legend"><span class="tdz">TDZ ${Math.min(900, Math.round(sel.aip.lda / 3))} m</span><span class="exi">exit ≈ m from THR</span><span class="end">LDA end</span></div>` : ''}
+          ${sel?.aip ? `<div class="apt-legend"><span class="tdz">TDZ ${Math.min(900, Math.round(sel.aip.lda / 3))} m</span><span class="exi">exit ≈ m from THR</span><span class="end">LDA end</span>${st.nsvg && st.notam ? '<span class="ncl">NOTAM closed</span>' : ''}</div>` : ''}
         </div>
         <div class="apt-src">${aip ? `AIP data: ${esc(aip.src)}, ${esc(aip.amdt || '')}${aip.eff ? ' (' + dmy(aip.eff) + ')' : ''}. Exits ≈ measured from the AIP threshold to OpenStreetMap taxiways.` : 'No AIP data for this airport: map only, no distances.'} Map © OpenStreetMap contributors. Not for navigation.</div>
         <div class="apt-body">${rwTable()}${exitList()}</div>
@@ -227,7 +312,7 @@ async function viewAirport(main, arg) {
         <h5>METAR</h5>${metRaw ? `<p class="mono">${metRaw.trim().split(/\s+/).map(tok).join(' ')}</p>` : '<p class="muted">No METAR.</p>'}
         <h5>TAF</h5>${tafRaw ? `<p class="mono">${esc(tafRaw).replace(/ (BECMG|TEMPO|FM\d{6}|PROB\d0)/g, '<br>$1')}</p>` : '<p class="muted">No TAF.</p>'}
       </section>
-      <section class="apt-card"><h4>NOTAMs</h4><p class="muted">The NOTAM service is not connected yet: check the official briefing package.</p></section>`;
+      <section class="apt-card apt-nsec">${aptNotamHTML(icao, nres, nref, nrefLab, !!st.nsvg && st.notam)}</section>`;
     bind();
   };
 
@@ -254,7 +339,7 @@ async function viewAirport(main, arg) {
     const ta = $('#aptNote', main);
     if (ta) { let t; ta.oninput = () => { clearTimeout(t); t = setTimeout(saveNote, 700); }; ta.onblur = () => { clearTimeout(t); saveNote(); }; }
     main.querySelectorAll('tr[data-rw]').forEach(tr => tr.onclick = () => { st.sel = tr.dataset.rw; draw(); });
-    main.querySelectorAll('.apt-tools [data-t]').forEach(b => b.onclick = () => { const k = b.dataset.t; if (k === 'exits' || k === 'tdz') { st[k] = !st[k]; draw(); } });
+    main.querySelectorAll('.apt-tools [data-t]').forEach(b => b.onclick = () => { const k = b.dataset.t; if (k === 'exits' || k === 'tdz' || k === 'notam') { st[k] = !st[k]; draw(); } });
     const box = $('#aptMap', main), svg = $('#aptSvg', main);
     main.querySelector('.apt-zoom').onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -303,6 +388,7 @@ async function viewAirport(main, arg) {
   async function load(force) {
     status = navigator.onLine ? 'Updating…' : 'Offline · saved data'; draw();
     await brfWeather([icao], force).catch(() => null);
+    nres = await aptNotams(icao, force).catch(() => ({ state: 'err' })); draw();
     if (a) { try { await brfMap(icao, a[0], a[1]); } catch (e) { console.warn('map', icao, e); } }
     readMap();
     status = brfRead('wx:' + icao)?.t ? 'Weather ' + brfAge(brfRead('wx:' + icao).t) : ''; draw();

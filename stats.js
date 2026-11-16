@@ -48,6 +48,7 @@ function viewStats(main) {
   </div>
   ${fl.length ? `
   <section class="chart-card"><h2>Cumulative hours</h2><div class="chart" id="chCum"></div></section>
+  <section class="chart-card"><h2>Sectors flown ${per === 'all' ? 'per year' : 'per month'}</h2><p class="hint">${per === 'all' ? 'Number of sectors year by year.' : `Number of sectors in the last 12 months up to ${monthLabel(to.slice(0, 7))}${per === 'month' ? ', selected month highlighted' : ''}.`}</p><div class="chart" id="chLegs"></div></section>
   <section class="chart-card"><h2>Year comparison</h2><p class="hint">Cumulative block time month by month, current year highlighted.</p><div class="chart" id="chYears"></div></section>
   <section class="chart-card"><h2>${per === 'all' ? 'Hours per year' : per === 'month' ? 'Hours per day' : 'Hours per month'}</h2><div class="chart" id="chBars"></div></section>
   <div class="chart-two">
@@ -58,7 +59,7 @@ function viewStats(main) {
   <section class="chart-card"><h2>Routes flown</h2><p class="hint" id="chRtHint"></p><div id="chRt"></div></section>` : '<p class="lede">No flights in this period.</p>'}`;
 
   // premendo Month si torna sempre al mese in corso; il menu accanto sceglie un altro mese
-  main.querySelectorAll('.pchip').forEach(b => b.onclick = () => { viewStats.per = b.dataset.p; if (b.dataset.p === 'month') viewStats.month = ''; viewStats(main); });
+  main.querySelectorAll('button.pchip').forEach(b => b.onclick = () => { viewStats.per = b.dataset.p; if (b.dataset.p === 'month') viewStats.month = ''; viewStats(main); });
   const ms = main.querySelector('#statMonth'); if (ms) ms.onchange = () => { viewStats.month = ms.value; viewStats(main); };
   if (!fl.length) return;
 
@@ -70,6 +71,21 @@ function viewStats(main) {
     lineChart($('#chCum'), [{ name: 'Block time', color: cssv('--accent'), pts: dense.map(([d, v]) => [dayNum(d), v, d]) }], {
       x0: dayNum(from || dense[0][0]), x1: dayNum(to), xLabel: x => dmyShort(dayStr(x)), area: true
     });
+  }
+  // ---- tratte volate: anno per anno (All) o negli ultimi 12 mesi
+  {
+    const legs = all.filter(f => f.kind === 'flight'), g = new Map();
+    if (per === 'all') {
+      for (let y = +legs[0].date.slice(0, 4); y <= +to.slice(0, 4); y++) g.set(String(y), 0);
+      for (const f of legs) g.set(f.date.slice(0, 4), (g.get(f.date.slice(0, 4)) || 0) + 1);
+      barChart($('#chLegs'), [...g], { count: true });
+    } else {
+      let [y, m] = to.slice(0, 7).split('-').map(Number); const keys = [];
+      for (let i = 0; i < 12; i++) { keys.unshift(`${y}-${String(m).padStart(2, '0')}`); m--; if (!m) { m = 12; y--; } }
+      for (const k of keys) g.set(k, 0);
+      for (const f of legs) { const k = f.date.slice(0, 7); if (g.has(k)) g.set(k, g.get(k) + 1); }
+      barChart($('#chLegs'), keys.map(k => [dmyShort(k + '-01'), g.get(k)]), { count: true, hi: per === 'month' ? dmyShort(to.slice(0, 7) + '-01') : '' });
+    }
   }
   // ---- confronto anni: ultimi 5 anni del periodo
   {
@@ -176,16 +192,20 @@ function lineChart(box, series, o) {
 }
 
 // ---------- barre verticali
-function barChart(box, rows) {
+function barChart(box, rows, o = {}) {
   const W = Math.max(320, box.clientWidth || 700), H = 220, L = 46, R = 8, T = 16, B = 26;
-  const mx = niceMax(Math.max(...rows.map(r => r[1]), 1)), n = rows.length, bw = (W - L - R) / n;
+  // o.count: numeri (tratte) invece di ore; o.hi: barra da evidenziare (le altre più chiare)
+  const niceN = v => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)); for (const k of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (k * p >= v) return Math.max(1, Math.ceil(k * p)); return 10 * p; };
+  const fmtV = o.count ? v => fmtN(v) : hm0, fmtS = o.count ? v => fmtN(v) : hShort;
+  const mx = o.count ? (m => m % 2 ? m + 1 : m)(niceN(Math.max(...rows.map(r => r[1]), 1))) : niceMax(Math.max(...rows.map(r => r[1]), 1)), n = rows.length, bw = (W - L - R) / n;
   const Y = v => T + (1 - v / mx) * (H - T - B);
   const every = Math.ceil(n / Math.floor((W - L - R) / 44));
   const best = rows.reduce((a, r) => r[1] > a[1] ? r : a, rows[0]);
   const bars = rows.map(([k, v], i) => { const x = L + i * bw + Math.min(2, bw * 0.1), w = Math.max(1, bw - Math.min(4, bw * 0.2)), h = Y(0) - Y(v);
-    return `<g><title>${k}: ${hm0(v)}</title><rect x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>${v ? `<path d="M${x},${Y(0)}V${Y(v) + Math.min(4, h)}q0,-${Math.min(4, h)} ${Math.min(4, w / 2)},-${Math.min(4, h)}H${x + w - Math.min(4, w / 2)}q${Math.min(4, w / 2)},0 ${Math.min(4, w / 2)},${Math.min(4, h)}V${Y(0)}Z" fill="var(--accent)"/>` : ''}
-      ${i % every === 0 ? `<text x="${L + i * bw + bw / 2}" y="${H - 8}" class="ax" text-anchor="middle">${k}</text>` : ''}${k === best[0] && v ? `<text x="${L + i * bw + bw / 2}" y="${Y(v) - 4}" class="lab" text-anchor="middle">${hShort(v)}</text>` : ''}</g>`; }).join('');
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Hours per period">${[0, 0.5, 1].map(k => `<line x1="${L}" x2="${W - R}" y1="${Y(mx * k)}" y2="${Y(mx * k)}" class="gl"/><text x="${L - 8}" y="${Y(mx * k) + 4}" class="ax" text-anchor="end">${hShort(mx * k)}</text>`).join('')}${bars}</svg>`;
+    const dim = o.hi && k !== o.hi ? ' opacity=".45"' : '', showV = v && (o.count && bw >= 28 ? true : k === best[0]);
+    return `<g><title>${k}: ${fmtV(v)}${o.count ? ' sectors' : ''}</title><rect x="${L + i * bw}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/>${v ? `<path d="M${x},${Y(0)}V${Y(v) + Math.min(4, h)}q0,-${Math.min(4, h)} ${Math.min(4, w / 2)},-${Math.min(4, h)}H${x + w - Math.min(4, w / 2)}q${Math.min(4, w / 2)},0 ${Math.min(4, w / 2)},${Math.min(4, h)}V${Y(0)}Z" fill="var(--accent)"${dim}/>` : ''}
+      ${i % every === 0 ? `<text x="${L + i * bw + bw / 2}" y="${H - 8}" class="ax" text-anchor="middle">${k}</text>` : ''}${showV ? `<text x="${L + i * bw + bw / 2}" y="${Y(v) - 4}" class="lab" text-anchor="middle">${fmtS(v)}</text>` : ''}</g>`; }).join('');
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${o.count ? 'Sectors' : 'Hours'} per period">${[0, 0.5, 1].map(k => `<line x1="${L}" x2="${W - R}" y1="${Y(mx * k)}" y2="${Y(mx * k)}" class="gl"/><text x="${L - 8}" y="${Y(mx * k) + 4}" class="ax" text-anchor="end">${fmtS(mx * k)}</text>`).join('')}${bars}</svg>`;
 }
 
 // ---------- ciambella con legenda

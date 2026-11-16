@@ -6,11 +6,19 @@ function statRange(p) {
   const td = today();
   if (p === '12m') return [addDays(td, -365), td];
   if (p === 'year') return [td.slice(0, 4) + '-01-01', td];
-  if (p === 'month') return [td.slice(0, 7) + '-01', td];
+  if (p === 'month') { // mese scelto (di default quello in corso): dal primo all'ultimo giorno, ma non oltre oggi
+    const ym = viewStats.month || td.slice(0, 7), [y, m] = ym.split('-').map(Number);
+    const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    return [ym + '-01', end < td ? end : td];
+  }
   if (p === '90d') return [addDays(td, -89), td];
   if (p === '30d') return [addDays(td, -29), td];
   return ['', td];
 }
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const monthLabel = ym => `${MONTHS_LONG[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
+// tratta senza verso: MXP-HEMA e HEMA-MXP contano insieme
+const routeKey = f => [f.dep, f.arr].sort().join('|');
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const hShort = m => { const h = Math.floor(m / 60); return h >= 1000 ? (h / 1000).toFixed(h >= 10000 ? 0 : 1) + 'k h' : h + ' h'; };
 const niceMax = m => { const v = m / 60; if (v <= 0) return 60; const p = 10 ** Math.floor(Math.log10(v)); for (const k of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (k * p >= v) return k * p * 60; return 10 * p * 60; };
@@ -28,11 +36,11 @@ function viewStats(main) {
   const day = Math.max(0, t.total - t.night);
 
   main.innerHTML = `<h1>Statistics</h1>
-  <div class="chips-row" role="radiogroup" aria-label="Period">${STAT_PERIODS.map(([k, l]) => `<button type="button" class="pchip ${k === per ? 'on' : ''}" data-p="${k}" role="radio" aria-checked="${k === per}">${l}</button>`).join('')}
+  <div class="chips-row" role="radiogroup" aria-label="Period">${STAT_PERIODS.map(([k, l]) => `<button type="button" class="pchip ${k === per ? 'on' : ''}" data-p="${k}" role="radio" aria-checked="${k === per}">${l}</button>${k === 'month' && per === 'month' ? monthSelect() : ''}`).join('')}
     <span class="hint">${from ? `${dmy(from)} – ${dmy(to)}` : 'Whole career' + (withOpen ? `, including ${hm0(data.opening.total)} brought forward before 2007` : '')}</span></div>
   <div class="stat-tiles">
     <div><b>${hm0(t.total)}</b><span>block time</span></div>
-    <div><b>${fmtN(t.legs)}</b><span>sectors</span></div>
+    <div><b>${fmtN(t.legs)}</b><span>sectors flown</span></div>
     <div><b>${fl.length ? avg(tLog) : '—'}</b><span>average sector</span></div>
     <div><b>${t.total ? Math.round(t.night / t.total * 100) : 0}%</b><span>night</span></div>
     <div><b>${t.ldgDay + t.ldgNight}</b><span>landings</span></div>
@@ -41,14 +49,17 @@ function viewStats(main) {
   ${fl.length ? `
   <section class="chart-card"><h2>Cumulative hours</h2><div class="chart" id="chCum"></div></section>
   <section class="chart-card"><h2>Year comparison</h2><p class="hint">Cumulative block time month by month, current year highlighted.</p><div class="chart" id="chYears"></div></section>
-  <section class="chart-card"><h2>${per === 'all' ? 'Hours per year' : 'Hours per month'}</h2><div class="chart" id="chBars"></div></section>
+  <section class="chart-card"><h2>${per === 'all' ? 'Hours per year' : per === 'month' ? 'Hours per day' : 'Hours per month'}</h2><div class="chart" id="chBars"></div></section>
   <div class="chart-two">
     <section class="chart-card"><h2>Day / Night</h2><div class="chart donut-box" id="chDN"></div></section>
     <section class="chart-card"><h2>Pilot function</h2><div class="chart donut-box" id="chFn"></div></section>
   </div>
-  <section class="chart-card"><h2>Aircraft family</h2><div id="chFam"></div></section>` : '<p class="lede">No flights in this period.</p>'}`;
+  <section class="chart-card"><h2>Aircraft family</h2><div id="chFam"></div></section>
+  <section class="chart-card"><h2>Routes flown</h2><p class="hint" id="chRtHint"></p><div id="chRt"></div></section>` : '<p class="lede">No flights in this period.</p>'}`;
 
-  main.querySelectorAll('.pchip').forEach(b => b.onclick = () => { viewStats.per = b.dataset.p; viewStats(main); });
+  // premendo Month si torna sempre al mese in corso; il menu accanto sceglie un altro mese
+  main.querySelectorAll('.pchip').forEach(b => b.onclick = () => { viewStats.per = b.dataset.p; if (b.dataset.p === 'month') viewStats.month = ''; viewStats(main); });
+  const ms = main.querySelector('#statMonth'); if (ms) ms.onchange = () => { viewStats.month = ms.value; viewStats(main); };
   if (!fl.length) return;
 
   // ---- ore cumulative (con "All" parte dalle ore portate avanti)
@@ -82,10 +93,16 @@ function viewStats(main) {
   // ---- ore per anno (All) o per mese (altri periodi)
   {
     const groups = new Map();
+    if (per === 'month') {
+      let d = from; while (d <= to) { groups.set(d, 0); d = addDays(d, 1); }
+      for (const f of fl) groups.set(f.date, (groups.get(f.date) || 0) + f.total);
+      barChart($('#chBars'), [...groups].map(([k, v]) => [String(+k.slice(8, 10)), v]));
+    } else {
     const key = per === 'all' ? f => f.date.slice(0, 4) : f => f.date.slice(0, 7);
     if (per !== 'all') { let d = (from || list[0].date).slice(0, 7); while (d <= to.slice(0, 7)) { groups.set(d, 0); const [y, m] = d.split('-').map(Number); d = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; } }
     for (const f of fl) groups.set(key(f), (groups.get(key(f)) || 0) + f.total);
     barChart($('#chBars'), [...groups].map(([k, v]) => [per === 'all' ? k : dmyShort(k + '-01'), v]));
+    }
   }
   // ---- giorno/notte e funzione
   donut($('#chDN'), [['Day', day, cssv('--dual')], ['Night', t.night, cssv('--sic')]], hm0(t.total), 'total');
@@ -98,6 +115,28 @@ function viewStats(main) {
     const rows = Object.entries(fam).sort((a, b) => b[1].t - a[1].t), mx = rows[0][1].t;
     $('#chFam').innerHTML = `<div class="hbars">${rows.map(([k, v]) => `<div class="hb" title="${esc(k)}: ${hm0(v.t)} in ${v.n} sectors"><span class="hb-k">${esc(k)}</span><span class="hb-bar"><i style="width:${Math.max(0.6, v.t / mx * 100)}%"></i></span><span class="hb-v">${hm0(v.t)}</span><span class="hb-n">${fmtN(v.n)} sectors</span></div>`).join('')}</div>`;
   }
+  // ---- tratte: quante volte è stata volata ogni coppia di aeroporti (andata e ritorno insieme)
+  {
+    const rt = new Map();
+    for (const f of fl) { if (!f.dep || !f.arr) continue; const k = routeKey(f); const r = rt.get(k) || { n: 0, t: 0, a: f.dep, b: f.arr }; r.n++; r.t += f.total; rt.set(k, r); }
+    const rows = [...rt.values()].sort((a, b) => b.n - a.n || b.t - a.t);
+    const box = $('#chRt'), hint = $('#chRtHint');
+    hint.textContent = rows.length ? `${fmtN(fl.length)} sectors on ${fmtN(rows.length)} different route${rows.length > 1 ? 's' : ''} (both directions counted together).` : 'No routes in this period.';
+    const TOP = 12, mx = rows[0]?.n || 1;
+    const draw = n => {
+      box.innerHTML = `<div class="hbars">${rows.slice(0, n).map(r => `<div class="hb" title="${esc(r.a)} – ${esc(r.b)}: ${r.n} sectors, ${hm0(r.t)}"><span class="hb-k">${esc(r.a)} ⇄ ${esc(r.b)}</span><span class="hb-bar"><i style="width:${Math.max(0.6, r.n / mx * 100)}%"></i></span><span class="hb-v">${fmtN(r.n)}×</span><span class="hb-n">${hm0(r.t)}</span></div>`).join('')}</div>${rows.length > n ? `<p class="row"><button type="button" class="btn small" id="rtAll">Show all ${fmtN(rows.length)} routes</button></p>` : ''}`;
+      const b = box.querySelector('#rtAll'); if (b) b.onclick = () => draw(rows.length);
+    };
+    draw(TOP);
+  }
+}
+// menu dei mesi: dal mese in corso indietro fino al primo volo
+function monthSelect() {
+  const cur = today().slice(0, 7), sel = viewStats.month || cur;
+  const first = data.flights.reduce((m, f) => !f.planned && f.date && f.date < m ? f.date : m, cur + '-01').slice(0, 7);
+  const opts = []; let [y, m] = cur.split('-').map(Number);
+  for (let ym = cur; ym >= first; ) { opts.push(ym); m--; if (!m) { m = 12; y--; } ym = `${y}-${String(m).padStart(2, '0')}`; }
+  return `<select class="pchip psel" id="statMonth" aria-label="Month">${opts.map(o => `<option value="${o}" ${o === sel ? 'selected' : ''}>${monthLabel(o)}${o === cur ? ' (current)' : ''}</option>`).join('')}</select>`;
 }
 const dayNum = d => Math.round(Date.parse(d + 'T00:00:00Z') / 864e5);
 const dayStr = n => new Date(n * 864e5).toISOString().slice(0, 10);

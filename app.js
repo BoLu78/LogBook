@@ -1,6 +1,6 @@
 'use strict';
-const APP_VERSION = '3.13.0';
-const APP_DATE = '11/11/2026';
+const APP_VERSION = '3.14.0';
+const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
 // ---------- utilità ----------
@@ -404,9 +404,13 @@ function showCrash(main, e) {
     <pre class="crash">${esc(String(e?.message || e))}\n${esc(String(e?.stack || '').split('\n').slice(0, 4).join('\n'))}\n${esc(APP_VERSION)} · ${esc(navigator.userAgent)}</pre>
     <p class="row"><a class="btn primary" href="#riepilogo">Summary</a> <a class="btn" href="#voli">Flights</a> <button class="btn" type="button" onclick="location.reload()">Reload</button></p>`;
 }
-window.addEventListener('error', e => { const m = document.getElementById('main'); if (m && !m.innerHTML.trim()) showCrash(m, e.error || e.message); });
-window.addEventListener('unhandledrejection', e => { const m = document.getElementById('main'); if (m && !m.innerHTML.trim()) showCrash(m, e.reason); });
+// pagina ancora vuota (o ferma sulla schermata di avvio): meglio mostrare l'errore che restare bloccati
+const mainBlank = m => m && (!m.innerHTML.trim() || !!m.querySelector('#boot'));
+window.addEventListener('error', e => { const m = document.getElementById('main'); if (mainBlank(m)) showCrash(m, e.error || e.message); });
+window.addEventListener('unhandledrejection', e => { const m = document.getElementById('main'); if (mainBlank(m)) showCrash(m, e.reason); });
+let bootDone = false; // finché l'archivio non è letto, un cambio di pagina non deve mostrare "logbook vuoto"
 function route() {
+  if (!bootDone) return;
   const [v, arg] = (location.hash.slice(1) || 'riepilogo').split('/');
   const view = views[v] ? v : 'riepilogo';
   document.querySelectorAll('.side a').forEach(a => a.classList.toggle('active', a.dataset.view === (view === 'modifica' ? 'voli' : view)));
@@ -2150,16 +2154,29 @@ function driveStartup() {
 (async () => {
   // chiede al browser di non cancellare mai l'archivio locale per liberare spazio
   try { navigator.storage?.persist?.(); } catch { /* ok */ }
+  // barra di avanzamento: ogni passo lascia al browser il tempo di disegnarla
+  const boot = (pct, msg) => new Promise(res => {
+    const f = document.getElementById('bootFill'), m = document.getElementById('bootMsg'), b = document.getElementById('boot');
+    if (f) f.style.width = pct + '%'; if (m) m.textContent = msg; b?.setAttribute('aria-valuenow', pct);
+    requestAnimationFrame(() => setTimeout(res, 0));
+  });
+  await boot(30, 'Reading logbook…');
   try { data = await idb.get('data') || null; } catch (e) { toast('Local storage not available: ' + e.message); }
-  try { if (data && normalizeTypes(data)) await save('Logbook updated'); } catch (e) { console.error(e); }
-  takeSnap();
+  await boot(65, data ? `Checking ${fmtN(data.flights?.length || 0)} entries…` : 'Starting…');
+  let saved = false;
+  try { if (data && normalizeTypes(data)) { await save('Logbook updated'); saved = true; } } catch (e) { console.error(e); }
+  await boot(90, 'Drawing…');
   try {
     dirHandle = await idb.get('dir') || null;
     if (dirHandle && (await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') { backupOk = true; lastBackup = data?.updated ? new Date(data.updated) : new Date(); }
   } catch { dirHandle = null; }
   $("#version").textContent = `Version ${APP_VERSION} · ${APP_DATE}`;
   renderBackupState();
+  bootDone = true;
   route();
+  // istantanea dei campi (serve all'unione con Drive) subito dopo aver disegnato, prima di ogni salvataggio o sincronizzazione
+  if (!saved) await new Promise(res => setTimeout(res, 0));
+  if (!saved) takeSnap();
   updateBadge();
   if (typeof brfCleanup === 'function') setTimeout(() => brfCleanup(), 3000);
   driveStartup();

@@ -288,7 +288,7 @@ function aptNotamHTML(icao, res, ref, refLab, drawn) {
     .map(x => ({ ...x, act: (x.s == null || x.s <= ref + 3600e3) && (x.e == null || x.e >= ref - 3600e3) }))
     .sort((a, b) => (lvR[a.lvl] - lvR[b.lvl]) || ((a.s || 0) - (b.s || 0)));
   const li = x => `<li class="${x.lvl}"><i></i><div><b>${esc(x.n.number || x.n.id)}</b>${x.cl && x.act && drawn ? ' <span class="nmap">on map</span>' : ''}<p>${esc(aptNText(x.n))}</p>
-    <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est ? ' EST' : ''}${aptNField(x.n.text, 'D') ? ' · ' + esc(aptNField(x.n.text, 'D')) : ''}</small></div></li>`;
+    <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est ? ' EST' : ''}${(d => d ? ' · ' + esc(d) : '')(aptNField(x.n.text, 'D') || x.n.sched)}</small></div></li>`;
   const on = rows.filter(x => x.act), off = rows.filter(x => !x.act);
   return head + (res?.state === 'err' ? `<p class="hint">Service ${esc(res.why || 'not reachable')}: saved NOTAMs.</p>` : '')
     + `<h5>Active at ${esc(refLab)} ±1 h <small>${on.length}</small></h5>${on.length ? `<ul class="apt-notams">${on.map(li).join('')}</ul>` : '<p class="muted">None.</p>'}`
@@ -478,7 +478,7 @@ async function viewAirport(main, arg) {
     readMap();
     status = brfRead('wx:' + icao)?.t ? 'Weather ' + brfAge(brfRead('wx:' + icao).t) : ''; draw();
   }
-  function readMap() { ways = brfRead('map2:' + icao)?.v || []; try { prep = aptPrep(ways, heads, P); } catch (e) { console.warn('prep', e); prep = { hold: [], bar: [], papi: [], sock: [], twr: null }; } mapStatic = P && heads.length ? aptMapStatic(ways, heads, P) : ''; }
+  function readMap() { ways = brfMapRec(icao)?.v || []; try { prep = aptPrep(ways, heads, P); } catch (e) { console.warn('prep', e); prep = { hold: [], bar: [], papi: [], sock: [], twr: null }; } mapStatic = P && heads.length ? aptMapStatic(ways, heads, P) : ''; }
   // a schermo intero: si esce anche cambiando pagina
   const leave = () => { if (!location.hash.startsWith('#aeroporto/')) { document.body.classList.remove('apt-full'); window.removeEventListener('hashchange', leave); } };
   window.addEventListener('hashchange', leave);

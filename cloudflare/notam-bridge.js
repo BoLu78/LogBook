@@ -3,7 +3,7 @@
 // Variabili (Settings → Variables and Secrets):
 //   FAA_CLIENT_ID (secret), FAA_CLIENT_SECRET (secret)        — quelle date dalla FAA (7-AWA-NAIMES@faa.gov)
 //   NMS_HOST (testo, facoltativo) — https://api-nms.aim.faa.gov (produzione, predefinito)
-//                                   oppure https://api-staging.cgifederal-aim.com (staging, se la FAA dà quello)
+//                                   https://api-staging.cgifederal-aim.com (staging: le prime credenziali FAA sono per questo)
 // Uso: GET /notams?icao=GCLP  →  { icao, t, items: [{ id, number, type, cls, start, end, est, sel, text }] }
 //      GET /ping              →  { ok: true se le credenziali ci sono }
 const ORIGINS = ['https://bolu78.github.io'];
@@ -25,7 +25,9 @@ function pick(f) {
   const core = f?.properties?.coreNOTAMData || {}, n = core.notam || {};
   const tr = (core.notamTranslation || []).find(t => t.type === 'ICAO' && (t.formattedText || t.simpleText));
   return {
-    id: n.id || '', number: n.number || '', type: n.type || '', cls: n.classification || '', loc: n.location || n.icaoLocation || '',
+    // numero come A8003/26: serie + numero (le specifiche FAA danno "series" e "number" separati)
+    id: n.id || '', number: (n.series && !/^[A-Z]/.test(n.number || '') ? n.series : '') + (n.number || ''), type: n.type || '', cls: n.classification || '', loc: n.icaoLocation || n.location || '',
+    sched: n.schedule || '',
     start: n.effectiveStart || '', end: n.effectiveEnd || '', est: n.estimated === 'true' || n.estimated === '1' || /EST/.test(n.effectiveEnd || ''),
     sel: n.selectionCode || '', text: String(tr?.formattedText || tr?.simpleText || n.text || '').trim(), plain: String(n.text || '').trim()
   };

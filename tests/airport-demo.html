@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airport page · test</title>
+<link rel="stylesheet" href="../styles.css">
+<!-- Pagina di prova: mostra la pagina aeroporto con dati veri (OpenStreetMap, METAR, NOTAM) senza toccare il logbook.
+     Uso: tests/airport-demo.html?GCLP -->
+</head>
+<body>
+<main id="main" style="max-width:1100px;margin:0 auto;padding:16px"></main>
+<div class="toast" id="toast"></div>
+<script>
+// le poche funzioni di app.js che la pagina aeroporto usa; nessun accesso ai dati del logbook
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dmy = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(2, 4)}` : '';
+const today = () => new Date().toISOString().slice(0, 10);
+const AP_FIX = {};
+let APT = null, IATA = null, data = { aptNotes: {} };
+const loadAirports = () => APT ? Promise.resolve(APT) : fetch('../data/airports.json').then(r => r.json()).then(j => (APT = j));
+const apt = c => APT && APT[c];
+const save = async () => {};
+function utcLabel(tz, date, time) { try { const t = Date.parse(`${date || today()}T${time || '12:00'}:00Z`); const v = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(t)).find(p => p.type === 'timeZoneName')?.value || ''; return v === 'GMT' ? 'UTC+0' : v.replace('GMT', 'UTC'); } catch { return ''; } }
+function cleanAptName(n) { return String(n || '').replace(/\s*\b(International|Intl\.?)?\s*(Airport|Aerodrome|Airfield)\b/gi, '').trim(); }
+</script>
+<script src="../ftl.js"></script>
+<script src="../magvar.js"></script>
+<script src="../briefing.js"></script>
+<script src="../airport.js"></script>
+<script>
+// i file dei dati stanno una cartella sopra
+const _f = window.fetch; window.fetch = (u, o) => _f(typeof u === 'string' && /^data\//.test(u) ? '../' + u : u, o);
+const icao = (location.search.slice(1) || 'GCLP').toUpperCase();
+history.replaceState(null, '', location.pathname + location.search + '#aeroporto/' + icao);
+viewAirport($('#main'), icao).catch(e => { $('#main').textContent = 'Error: ' + e.message; console.error(e); });
+</script>
+</body>
+</html>

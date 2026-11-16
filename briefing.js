@@ -16,7 +16,7 @@ function brfSave(k, v) {
   const s = JSON.stringify({ t: Date.now(), v });
   try { localStorage.setItem('brf:' + k, s); return; } catch { /* spazio pieno: liberiamo le mappe più vecchie */ }
   try {
-    const maps = Object.keys(localStorage).filter(x => x.startsWith('brf:map:') && x !== 'brf:' + k)
+    const maps = Object.keys(localStorage).filter(x => /^brf:map2?:/.test(x) && x !== 'brf:' + k)
       .map(x => [x, (JSON.parse(localStorage.getItem(x)) || {}).t || 0]).sort((a, b) => a[1] - b[1]);
     for (const [x] of maps.slice(0, Math.max(1, Math.ceil(maps.length / 2)))) localStorage.removeItem(x);
     localStorage.setItem('brf:' + k, s);
@@ -29,6 +29,7 @@ function brfCleanup(route) {
     const now = Date.now(), keys = Object.keys(localStorage).filter(k => k.startsWith('brf:'));
     for (const k of keys) {
       if (k.startsWith('brf:rmw:')) { localStorage.removeItem(k); continue; }   // formato vecchio dei venti
+      if (k.startsWith('brf:map:')) { localStorage.removeItem(k); continue; }   // mappe del formato vecchio (3.16 e prima): ora map2
       if (k.startsWith('brf:rmw2:') || k.startsWith('brf:rmh:')) {   // venti e rischi della mappa meteo, per tratta e ora
         const [legs, h] = k.slice(k.indexOf(':', 4) + 1).split(':'), at = +h * 3600e3;
         if (!(at > now - 864e5) || (route && at < now && ('-' + legs + '-').includes('-' + route + '-'))) localStorage.removeItem(k);
@@ -229,21 +230,24 @@ function brfRunwaysOf(icao) {
   return (BRF_RWY?.[icao] || []).map(([i1, a1, o1, i2, a2, o2, len, w]) => ({ A: [a1, o1], B: [a2, o2], idA: i1, idB: i2, len, w: w || 45, brg: brfBearing([a1, o1], [a2, o2]) }));
 }
 async function brfMap(icao, lat, lon) {
-  const c = brfRead('map:' + icao);
+  const c = brfRead('map2:' + icao);
   if (c && Date.now() - c.t < BRF_MAP_FRESH) return c;
   const miss = brfRead('mapfail:' + icao);
   if (miss && Date.now() - miss.t < BRF_OVP_RETRY) return c;
-  const q = `[out:json][timeout:20];(way["aeroway"~"^(taxiway|apron|terminal|runway)$"](around:5000,${lat},${lon}););out tags geom;`;
+  // vie: piste, stopway, raccordi, piazzali, edifici, piazzole · punti: holding point, barriere, maniche a vento, torre, PAPI
+  const q = `[out:json][timeout:25];(way["aeroway"~"^(taxiway|apron|terminal|runway|stopway|hangar|tower|parking_position)$"](around:5000,${lat},${lon});node["aeroway"~"^(holding_position|arresting_gear|windsock|tower)$"](around:5000,${lat},${lon});node["navigationaid"="papi"](around:5000,${lat},${lon}););out tags geom;`;
   for (const u of BRF_OVP) {
     try {
       const j = JSON.parse(await brfText(u + '?data=' + encodeURIComponent(q), 15000));
-      const ways = (j.elements || []).filter(e => e.geometry?.length > 1).map(e => ({
-        a: e.tags.aeroway, r: e.tags.ref || '', w: parseFloat(e.tags.width) || 0,
-        g: e.geometry.map(p => [Math.round(p.lat * 1e5) / 1e5, Math.round(p.lon * 1e5) / 1e5])
+      const rd = p => [Math.round(p.lat * 1e5) / 1e5, Math.round(p.lon * 1e5) / 1e5];
+      const ways = (j.elements || []).filter(e => e.geometry?.length > 1 || (e.type === 'node' && isFinite(e.lat))).map(e => ({
+        a: e.tags.navigationaid === 'papi' ? 'papi' : e.tags.aeroway, r: e.tags.ref || '', w: parseFloat(e.tags.width) || 0,
+        ...(e.tags['holding_position:type'] ? { t: e.tags['holding_position:type'] } : {}),
+        g: e.type === 'node' ? [rd(e)] : e.geometry.map(rd)
       }));
       if (!ways.length) continue;
-      brfSave('map:' + icao, ways);
-      return brfRead('map:' + icao) || { t: Date.now(), v: ways };
+      brfSave('map2:' + icao, ways);
+      return brfRead('map2:' + icao) || { t: Date.now(), v: ways };
     } catch { /* server occupato: si prova il successivo */ }
   }
   brfSave('mapfail:' + icao, 1);
@@ -539,7 +543,7 @@ async function viewBriefing(main, arg) {
     const oldest = Math.min(...icaos.map(c => wx[c]?.t || 0));
     main.innerHTML = `<div class="brf-head"><div><h1>Briefing</h1><p class="lede">${q.date ? dmy(q.date) + ' · ' : ''}${esc(q.list.map(p => p.icao).join(' → '))}</p></div>
       <div class="brf-upd"><button type="button" class="btn small" id="brfBack">← Back</button><span id="brfStatus">${status || (oldest ? 'Updated ' + brfAge(oldest) : '')}</span><button type="button" class="btn small" id="brfRefresh">Refresh</button></div></div>
-      <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map:' + p.icao), ccSel[p.icao], p.at ? brfRead('mdl:' + p.icao + ':' + Math.round(p.at / 3600e3))?.v : null); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
+      <div class="brf-grid">${cards.map(p => { try { return brfCard(p, wx[p.icao], brfRead('map2:' + p.icao), ccSel[p.icao], p.at ? brfRead('mdl:' + p.icao + ':' + Math.round(p.at / 3600e3))?.v : null); } catch (e) { console.error(e); return `<section class="brf-card"><header><b>${esc(p.icao)}</b></header><p class="muted brf-sec">Could not show this airport (${esc(e.message)}).</p></section>`; } }).join('')}</div>
       <div id="brfRouteSlot"></div>
       <p class="hint">${BRF_AIRAC?.apts ? `Approaches: ${esc(BRF_AIRAC.src || 'imported AIRAC')}, data ${esc(BRF_AIRAC.date || '?')} – simulator data, check the charts. ` : ''}Weather: MET Norway (api.met.no), METAR backup from VATSIM. Runways: OurAirports; taxiways and aprons: © OpenStreetMap contributors. Not for navigation. For awareness only: the official briefing package is the reference.</p>
       ${brfMinsHTML()}`;
@@ -577,7 +581,7 @@ async function viewBriefing(main, arg) {
     draw();
     for (const p of cards) {
       const a = APT?.[p.icao]; if (!a) continue;
-      const mc = brfRead('map:' + p.icao);
+      const mc = brfRead('map2:' + p.icao);
       if (mc && Date.now() - mc.t < BRF_MAP_FRESH) continue;
       try { await brfMap(p.icao, a[0], a[1]); } catch (e) { console.warn('map', p.icao, e); }
       draw();

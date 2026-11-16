@@ -21,7 +21,7 @@ function aptHeads(icao, aip) {
   for (const r of rws) {
     for (const [id, thr, end, brg] of [[r.idA, r.A, r.B, r.brg], [r.idB, r.B, r.A, (r.brg + 180) % 360]]) {
       const a = aip?.rwy?.[id];
-      heads.push({ id, w: r.w, thr: a?.thr || thr, end, brg: a?.brg ?? brg, aip: a || null, pair: r });
+      heads.push({ id, w: r.w, thr: a?.thr || thr, phys: thr, end, brg: a?.brg ?? brg, aip: a || null, pair: r });
     }
   }
   return heads;
@@ -61,18 +61,102 @@ function aptExits(h, ways, P) {
 }
 
 // ---------- mappa: geometria fissa in metri, etichette ridisegnate a ogni zoom con dimensione costante sullo schermo
+// ---------- elementi della mappa preparati una volta: stopway, soglie spostate, holding point, barriere, PAPI, maniche a vento, torre
+function aptPrep(ways, heads, P) {
+  const V = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [dx / L, dy / L, L]; };
+  // asse di una testata: lungo (s, verso la pista) e di lato (c) rispetto alla soglia
+  const axis = h => { const o = P(h.thr), [ux, uy] = aptDir(h.brg); return p => { const q = P(p), dx = q[0] - o[0], dy = q[1] - o[1]; return [dx * ux + dy * uy, -dx * uy + dy * ux]; }; };
+  for (const h of heads) {
+    const ax = axis(h), hw = h.w / 2 + 12;
+    h.disp = Math.max(0, ax(h.phys)[0] * -1);                     // soglia AIP più avanti dell'inizio fisico della pista
+    let back = h.disp;
+    for (const w of ways) if (w.a === 'stopway') for (const p of w.g) { const [s0, c0] = ax(p); if (Math.abs(c0) < hw && s0 < 0) back = Math.max(back, -s0); }
+    h.back = back;                                                  // asfalto davanti alla soglia (stopway o soglia spostata)
+  }
+  const twSegs = [];
+  for (const w of ways) if (w.a === 'taxiway') for (let i = 1; i < w.g.length; i++) twSegs.push([P(w.g[i - 1]), P(w.g[i]), w.w || 23]);
+  const nearSeg = q => { let best = null; for (const [a, b, wd] of twSegs) { const [ux, uy, L] = V(a, b), t = Math.max(0, Math.min(L, (q[0] - a[0]) * ux + (q[1] - a[1]) * uy)), d = Math.hypot(a[0] + ux * t - q[0], a[1] + uy * t - q[1]); if (!best || d < best.d) best = { d, ux, uy, wd }; } return best; };
+  const nearRw = q => { let best = null; for (const h of heads) { const a = P(h.pair.A), b = P(h.pair.B), [ux, uy, L] = V(a, b), t = Math.max(0, Math.min(L, (q[0] - a[0]) * ux + (q[1] - a[1]) * uy)), d = Math.hypot(a[0] + ux * t - q[0], a[1] + uy * t - q[1]); if (!best || d < best.d) best = { d, ux, uy, h, t, a }; } return best; };
+  const hold = [], bar = [], papi = [], sock = [];
+  let twr = null;
+  for (const w of ways) {
+    const q = P(w.g[0]);
+    if (w.a === 'holding_position') { const n = nearSeg(q); if (n && n.d < 40) hold.push({ q, ux: n.ux, uy: n.uy, wd: n.wd, rw: w.t !== 'intermediate' }); }
+    else if (w.a === 'arresting_gear') { const n = nearRw(q); if (n && n.d < 60) bar.push({ q: [n.a[0] + n.ux * n.t, n.a[1] + n.uy * n.t], ux: n.ux, uy: n.uy, w: n.h.w }); }
+    else if (w.a === 'papi') { const n = nearRw(q); if (n && n.d < 200) papi.push({ q, ux: n.ux, uy: n.uy }); }
+    else if (w.a === 'windsock') sock.push(q);
+    else if (w.a === 'tower' && !twr) { const pts = w.g.map(P); twr = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length]; }
+  }
+  return { hold, bar, papi, sock, twr };
+}
+// geometria fissa in metri (si ingrandisce con la mappa)
 function aptMapStatic(ways, heads, P) {
   const path = g => g.map((p, i) => { const [x, y] = P(p); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`; }).join('');
-  const ap = ways.filter(w => w.a === 'apron').map(w => `<path d="${path(w.g)}Z" class="ap"/>`).join('');
-  const te = ways.filter(w => w.a === 'terminal').map(w => `<path d="${path(w.g)}Z" class="te"/>`).join('');
-  const tw = ways.filter(w => w.a === 'taxiway').map(w => `<path d="${path(w.g)}" class="tw" stroke-width="${w.w || 20}"/>`).join('');
-  const seen = new Set(), rw = heads.filter(h => !seen.has(h.pair) && seen.add(h.pair)).map(h => { const d = path([h.pair.A, h.pair.B]); return `<path d="${d}" class="rw" stroke-width="${h.w}"/><path d="${d}" class="rwc" stroke-width="1.2" stroke-dasharray="30 20"/>`; }).join('');
-  return ap + te + tw + rw;
+  const area = cls => ways.filter(w => cls.includes(w.a) && w.g.length > 2).map(w => `<path d="${path(w.g)}Z" class="${w.a === 'apron' ? 'ap' : 'bd'}"/>`).join('');
+  const ap = area(['apron']), bd = area(['terminal', 'hangar', 'tower']);
+  const pk = ways.filter(w => w.a === 'parking_position' && w.g.length > 1).map(w => `<path d="${path(w.g)}" class="pk"/>`).join('');
+  const twb = ways.filter(w => w.a === 'taxiway').map(w => `<path d="${path(w.g)}" class="twb" stroke-width="${w.w || 23}"/>`).join('');
+  const twc = ways.filter(w => w.a === 'taxiway').map(w => `<path d="${path(w.g)}" class="twc"/>`).join('');
+  // stopway: asfalto con le chevron gialle che puntano alla pista
+  let sw = '';
+  for (const w of ways.filter(w => w.a === 'stopway' && w.g.length > 1)) {
+    const a = P(w.g[0]), b = P(w.g.at(-1));
+    // quale estremo tocca una pista? le chevron puntano verso quello
+    const dEnd = p => Math.min(...heads.map(h => Math.hypot(P(h.phys)[0] - p[0], P(h.phys)[1] - p[1])));
+    const [far, near] = dEnd(a) < dEnd(b) ? [b, a] : [a, b];
+    const L = Math.hypot(near[0] - far[0], near[1] - far[1]) || 1, ux = (near[0] - far[0]) / L, uy = (near[1] - far[1]) / L, nx = -uy, ny = ux;
+    const wd = heads.find(h => Math.hypot(P(h.phys)[0] - near[0], P(h.phys)[1] - near[1]) < 80)?.w || 45, hw = wd / 2;
+    sw += `<path d="M${far}L${near}" class="swb" stroke-width="${wd}"/>`;
+    for (let t = 8; t + 14 < L; t += 30) {
+      const bx = far[0] + ux * t, by = far[1] + uy * t, tip = [bx + ux * 14, by + uy * 14];
+      sw += `<path class="chv" d="M${(bx + nx * hw * .85).toFixed(1)},${(by + ny * hw * .85).toFixed(1)}L${tip[0].toFixed(1)},${tip[1].toFixed(1)}L${(bx - nx * hw * .85).toFixed(1)},${(by - ny * hw * .85).toFixed(1)}" stroke-width="2"/>`;
+    }
+  }
+  const seen = new Set();
+  let rw = '';
+  for (const h of heads) {
+    if (!seen.has(h.pair)) { seen.add(h.pair); rw += `<path d="${path([h.pair.A, h.pair.B])}" class="rwb" stroke-width="${h.w}"/>`; }
+    // soglia: "piano" bianco (solo dove la soglia viene dall'AIP); soglia spostata: frecce bianche dall'inizio pista alla soglia
+    if (!h.aip) continue;
+    const o = P(h.thr), [ux, uy] = aptDir(h.brg), nx = -uy, ny = ux, hw = h.w / 2, at = (s, c) => [(o[0] + ux * s + nx * c).toFixed(1), (o[1] + uy * s + ny * c).toFixed(1)];
+    const n = Math.max(4, Math.round(h.w / 45 * 12)), gap = (h.w - 6) / n;
+    for (let k = 0; k < n; k++) { const c = -hw + 3 + gap * (k + .5); if (Math.abs(c) < gap * .6) continue; rw += `<path class="mk" d="M${at(6, c)}L${at(36, c)}" stroke-width="${Math.min(1.8, gap * .55)}"/>`; }
+    rw += `<path class="mk" d="M${at(1.5, -hw + 1)}L${at(1.5, hw - 1)}" stroke-width="3"/>`;
+    if (h.disp > 30) for (let s = -h.disp + 20; s < -25; s += 40) rw += `<path class="mk" d="M${at(s, 0)}L${at(s + 18, 0)}M${at(s + 12, -3)}L${at(s + 18, 0)}L${at(s + 12, 3)}" stroke-width="1"/>`;
+  }
+  return ap + bd + pk + twb + sw + rw + twc;
 }
-function aptMapOverlay(st, heads, ways, P, exits, mv) {
+// tutto ciò che deve restare della stessa misura sullo schermo, ridisegnato a ogni zoom
+function aptMapOverlay(st, heads, ways, P, exits, mv, prep, icao) {
   const u = st.u, [x0, y0] = [st.cx - st.w / 2, st.cy - st.h / 2], x1 = x0 + st.w, y1 = y0 + st.h;
+  const vis = q => q[0] > x0 - 60 * u && q[0] < x1 + 60 * u && q[1] > y0 - 60 * u && q[1] < y1 + 60 * u;
+  const F = n => n.toFixed(1);
   const sel = heads.find(h => h.id === st.sel);
-  let g = st.notam ? st.nsvg : '';
+  let g = '';
+  // asse pista tratteggiato
+  const seen = new Set();
+  for (const h of heads) if (!seen.has(h.pair)) { seen.add(h.pair); const a = P(h.pair.A), b = P(h.pair.B); g += `<path class="rwc2" d="M${F(a[0])},${F(a[1])}L${F(b[0])},${F(b[1])}" stroke-width="${Math.max(.9, u)}" stroke-dasharray="30 20"/>`; }
+  if (st.notam) g += st.nsvg;
+  // holding point: barra rossa trasversale al raccordo (gialla se intermedio)
+  for (const k of prep.hold) {
+    if (!vis(k.q)) continue;
+    const L = Math.max(k.wd + 8, 12 * u) / 2, nx = -k.uy, ny = k.ux;
+    g += `<path class="hp${k.rw ? '' : ' int'}" d="M${F(k.q[0] - nx * L)},${F(k.q[1] - ny * L)}L${F(k.q[0] + nx * L)},${F(k.q[1] + ny * L)}" stroke-width="${2.4 * u}" stroke-dasharray="${2.2 * u} ${1.4 * u}"/>`;
+  }
+  // barriere (arresting gear / cable barrier) attraverso la pista
+  for (const b of prep.bar) {
+    const L = b.w / 2 + 10, nx = -b.uy, ny = b.ux;
+    g += `<path class="bar" d="M${F(b.q[0] - nx * L)},${F(b.q[1] - ny * L)}L${F(b.q[0] + nx * L)},${F(b.q[1] + ny * L)}" stroke-width="${2.6 * u}"/>`;
+    if (u < 3) g += `<text class="barl" x="${F(b.q[0] + nx * (L + 4 * u))}" y="${F(b.q[1] + ny * (L + 4 * u) + 3 * u)}" font-size="${9 * u}">BARRIER</text>`;
+  }
+  // PAPI: quattro luci, due bianche e due rosse, di traverso alla pista
+  for (const p of prep.papi) {
+    if (!vis(p.q)) continue;
+    const nx = -p.uy, ny = p.ux, d = 4.2 * u;
+    g += [-1.5, -.5, .5, 1.5].map((k, i) => `<circle class="papi${i < 2 ? ' w' : ''}" cx="${F(p.q[0] + nx * k * d)}" cy="${F(p.q[1] + ny * k * d)}" r="${1.8 * u}"/>`).join('');
+  }
+  for (const q of prep.sock) if (vis(q)) g += `<path class="sock" d="M${F(q[0])},${F(q[1])}l${F(10 * u)},${F(-3 * u)}l${F(-10 * u)},${F(-3 * u)}z"/>`;
+  if (prep.twr && vis(prep.twr)) g += `<g class="twr" transform="translate(${F(prep.twr[0])},${F(prep.twr[1])})"><rect x="${-14 * u}" y="${-7 * u}" width="${28 * u}" height="${14 * u}" rx="${3 * u}"/><text y="${3.8 * u}" font-size="${9.5 * u}">TWR</text></g>`;
   // TDZ: primi 900 m dalla soglia AIP (o un terzo dell'LDA se più corta), tacche ogni 300 m, fine LDA
   if (sel?.aip && st.tdz) {
     const o = P(sel.thr), [ux, uy] = aptDir(sel.brg), nx = -uy, ny = ux, hw = sel.w / 2, lda = sel.aip.lda, tdz = Math.min(900, lda / 3);
@@ -82,9 +166,9 @@ function aptMapOverlay(st, heads, ways, P, exits, mv) {
     // scritte dal lato della pista dove non ci sono le uscite
     const sd = st.exits && exits.filter(e => e.c > 0).length > exits.filter(e => e.c < 0).length ? -1 : 1;
     const lab = (s, t, cls = '') => { const [a, b] = [at(s, -hw - 3 * u), at(s, hw + 3 * u)], p = at(cls ? s - 22 * u : s, sd * (hw + (cls ? 30 : 16) * u)); return `<path class="tk ${cls}" d="M${a}L${b}" stroke-width="${2 * u}"/><text class="tkl ${cls}" x="${p[0].toFixed(0)}" y="${(p[1] + 3.5 * u).toFixed(0)}" font-size="${9.5 * u}">${t}</text>`; };
-    g += `<path class="thr" d="M${at(0, -hw)}L${at(0, hw)}" stroke-width="${Math.max(3 * u, 6)}"/>`;
     for (const s of [300, 600, 900]) if (s <= tdz + 1) g += lab(s, s);
     g += lab(lda, 'LDA END', 'end');
+    if (sel.disp > 30) { const p = at(-sel.disp / 2, sd * (hw + 30 * u)); g += `<text class="tkl" x="${p[0].toFixed(0)}" y="${(p[1] + 3.5 * u).toFixed(0)}" font-size="${9.5 * u}">DISPL THR ${Math.round(sel.disp)} m</text>`; }
   }
   // uscite (solo pista scelta, solo con AIP)
   if (sel?.aip && st.exits) {
@@ -107,16 +191,17 @@ function aptMapOverlay(st, heads, ways, P, exits, mv) {
     labs.push({ r: w.r, p: m });
   }
   g += labs.map(({ r, p }) => `<g class="twl" transform="translate(${p[0].toFixed(0)},${p[1].toFixed(0)})"><rect x="${-7 * u - (r.length - 1) * 3.2 * u}" y="${-7 * u}" width="${14 * u + (r.length - 1) * 6.4 * u}" height="${14 * u}" rx="${2 * u}"/><text y="${4 * u}" font-size="${10 * u}">${esc(r)}</text></g>`).join('');
-  // numeri di pista oltre la testata: si toccano per scegliere la pista di atterraggio
-  const R = 13 * u;
+  // etichette di pista oltre l'asfalto davanti alla soglia: numero, QFU magnetico, miglior avvicinamento. Si toccano per scegliere la pista
   const put = [];
   for (const h of heads) {
-    const t = P(h.thr), [ux, uy] = aptDir(h.brg);
-    let d = R + 10 * u, c = [t[0] - ux * d, t[1] - uy * d];
-    // piste parallele vicine: il secondo numero va un po' più indietro, così non si coprono
-    for (let k = 0; k < 4 && put.some(q => Math.hypot(q[0] - c[0], q[1] - c[1]) < 2 * R + 3 * u); k++) { d += 2 * R + 4 * u; c = [t[0] - ux * d, t[1] - uy * d]; }
+    const t = P(h.thr), [ux, uy] = aptDir(h.brg), ap = brfAppr(icao, h.id);
+    const qfu = mv == null ? '' : String(brfMag(h.brg, mv)).padStart(3, '0') + '°';
+    const W = 38 * u, H = (ap ? 38 : 29) * u;
+    let d = (h.back || 0) + H / 2 + 8 * u, c = [t[0] - ux * d, t[1] - uy * d];
+    for (let k = 0; k < 4 && put.some(q => Math.abs(q[0] - c[0]) < W + 2 * u && Math.abs(q[1] - c[1]) < H + 2 * u); k++) { d += H + 4 * u; c = [t[0] - ux * d, t[1] - uy * d]; }
     put.push(c);
-    g += `<g class="rwl${h.id === st.sel ? ' sel' : ''}" data-rw="${esc(h.id)}" transform="translate(${c[0].toFixed(0)},${c[1].toFixed(0)})"><circle r="${R}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(h.id)}</text></g>`;
+    g += `<g class="rwl2${h.id === st.sel ? ' sel' : ''}" data-rw="${esc(h.id)}" transform="translate(${F(c[0])},${F(c[1])})"><rect x="${-W / 2}" y="${-H / 2}" width="${W}" height="${H}" rx="${H / 2.6}"/>`
+      + `<text y="${(ap ? -5 : -1) * u}" font-size="${13 * u}" class="id">${esc(h.id)}</text><text y="${(ap ? 6 : 10) * u}" font-size="${8.5 * u}">${qfu}</text>${ap ? `<text y="${16 * u}" font-size="${6.8 * u}" class="ap">${esc(ap.best)}</text>` : ''}</g>`;
   }
   return g;
 }
@@ -227,7 +312,7 @@ async function viewAirport(main, arg) {
   const st = { cx: 0, cy: 0, w: 4000, h: 3000, u: 10, sel: null, tdz: true, exits: true, notam: true, full: false, nsvg: '' };
   let nres = null;
   const nref = q.at && q.hhmm ? q.at : Date.now(), nrefLab = q.at && q.hhmm ? `${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z ${dmy(q.date)}` : 'now';
-  let ways = [], exits = [], wind = null, mapStatic = '', status = '';
+  let ways = [], exits = [], wind = null, mapStatic = '', status = '', prep = { hold: [], bar: [], papi: [], sock: [], twr: null };
 
   const note = () => data?.aptNotes?.[icao]?.txt || '';
   const pickSel = () => {
@@ -236,7 +321,7 @@ async function viewAirport(main, arg) {
     st.sel = heads.slice().sort((x, y) => { const [a1, b1, c1] = sc(x), [a2, b2, c2] = sc(y); return (a1 - a2) || (b1 - b2) || (c1 - c2); })[0]?.id || null;
   };
   const fit = (box) => {
-    const pts = heads.flatMap(h => [P(h.thr), P(h.end)]); if (!pts.length) { st.cx = 0; st.cy = 0; st.w = 4000; }
+    const pts = heads.flatMap(h => { const t = P(h.thr), [ux, uy] = aptDir(h.brg), b = (h.back || 0) + 60; return [t, P(h.end), [t[0] - ux * b, t[1] - uy * b]]; }); if (!pts.length) { st.cx = 0; st.cy = 0; st.w = 4000; }
     else {
       const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), pad = 650;
       const bw = Math.max(...xs) - Math.min(...xs) + 2 * pad, bh = Math.max(...ys) - Math.min(...ys) + 2 * pad;
@@ -324,7 +409,7 @@ async function viewAirport(main, arg) {
     const r = box.getBoundingClientRect(); if (!r.width) return;
     st.h = st.w * r.height / r.width; st.u = st.w / r.width;
     svg.setAttribute('viewBox', `${(st.cx - st.w / 2).toFixed(1)} ${(st.cy - st.h / 2).toFixed(1)} ${st.w.toFixed(1)} ${st.h.toFixed(1)}`);
-    $('#aptG1', main).innerHTML = aptMapOverlay(st, heads, ways, P, exits, mv);
+    $('#aptG1', main).innerHTML = aptMapOverlay(st, heads, ways, P, exits, mv, prep, icao);
     const sc = $('#aptScale', main); if (sc) sc.innerHTML = aptScale(st, r.width);
   };
   const repaint = () => { if (!raf) raf = requestAnimationFrame(paint); };
@@ -393,7 +478,7 @@ async function viewAirport(main, arg) {
     readMap();
     status = brfRead('wx:' + icao)?.t ? 'Weather ' + brfAge(brfRead('wx:' + icao).t) : ''; draw();
   }
-  function readMap() { ways = brfRead('map:' + icao)?.v || []; mapStatic = P && heads.length ? aptMapStatic(ways, heads, P) : ''; }
+  function readMap() { ways = brfRead('map2:' + icao)?.v || []; try { prep = aptPrep(ways, heads, P); } catch (e) { console.warn('prep', e); prep = { hold: [], bar: [], papi: [], sock: [], twr: null }; } mapStatic = P && heads.length ? aptMapStatic(ways, heads, P) : ''; }
   // a schermo intero: si esce anche cambiando pagina
   const leave = () => { if (!location.hash.startsWith('#aeroporto/')) { document.body.classList.remove('apt-full'); window.removeEventListener('hashchange', leave); } };
   window.addEventListener('hashchange', leave);

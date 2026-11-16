@@ -299,18 +299,18 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
   // Ogni etichetta prova più posizioni e prende la prima libera da altre etichette e dalle piste; se non ce n'è una libera, la meno affollata.
   const segs = rws.map(r => [P(r.A), P(r.B), Math.max(5 * u, r.w) / 2 + 3 * u]);
   // spazi già occupati: freccia del vento con la sua scritta, nord con la variazione, scala
-  const placed = [[x1 - 50 * u, y0 + 4 * u, x1, y0 + 40 * u, 5], [x0 + 8 * u, y1 - 30 * u, x0 + 90 * u, y1 - 8 * u, 5], ...(wind ? [[x1 - 100 * u, y0 + 50 * u, x1 - 2 * u, y0 + 112 * u, 5]] : [])];   // il 5 pesa di più: nord, scala e vento non si coprono
+  const placed = [[x1 - (mv == null ? 34 : 72) * u, y0 + 4 * u, x1, y0 + (mv == null ? 46 : 60) * u, 5], [x0 + 8 * u, y1 - 30 * u, x0 + 90 * u, y1 - 8 * u, 5]];   // il 5 pesa di più: nord (con VAR) e scala non si coprono
   const ovl = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
   const segHit = (rc, [a, b, hw]) => {   // la pista (segmento con spessore) tocca il rettangolo? campioni lungo l'asse
     for (let t = 0; t <= 1; t += 0.02) { const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t; if (x > rc[0] - hw && x < rc[2] + hw && y > rc[1] - hw && y < rc[3] + hw) return 1; }
     return 0;
   };
-  const cost = (rc, withRw) => placed.reduce((s, q) => s + ovl(rc, q) * (q[4] || 1), 0) + (withRw ? segs.reduce((s, g) => s + segHit(rc, g) * 400 * u * u, 0) : 0)
+  const cost = (rc, withRw) => placed.reduce((s, q) => s + ovl(rc, q) * (q[4] || 1), 0) + (withRw ? segs.reduce((s, g) => s + segHit(rc, g) * 2500 * u * u, 0) : 0)
     + (rc[0] < x0 || rc[1] < y0 || rc[2] > x1 || rc[3] > y1 ? 3000 * u * u + 4 * ((rc[2] - rc[0]) * (rc[3] - rc[1]) - ovl(rc, [x0, y0, x1, y1])) : 0);   // fuori dalla mappa: peggio di tutto
-  const pick = (cands, w, h, withRw) => {
+  const pick = (cands, w, h, withRw, wgt = 1, extra = null) => {
     let best = null;
-    for (const [x, y] of cands) { const rc = [x - w / 2, y - h / 2, x + w / 2, y + h / 2], c = cost(rc, withRw); if (!best || c < best.c - 1e-6) best = { x, y, rc, c }; if (c === 0) break; }
-    placed.push(best.rc); return best;
+    for (const [x, y] of cands) { const rc = [x - w / 2, y - h / 2, x + w / 2, y + h / 2], c = cost(rc, withRw) + (extra ? extra(x, y) : 0); if (!best || c < best.c - 1e-6) best = { x, y, rc, c }; if (c === 0) break; }
+    const g = 3 * u; placed.push([best.rc[0] - g, best.rc[1] - g, best.rc[2] + g, best.rc[3] + g, wgt]); return best;
   };
   const heads = rws.flatMap(r => {
     const a = P(r.A), b = P(r.B), L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
@@ -322,20 +322,38 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
     const cands = [22, 34, 48, 62].flatMap(d => [[0, d], [9, d], [-9, d]]).map(([s, d]) => [h.p[0] + h.dx * d * u - h.dy * s * u, h.p[1] + h.dy * d * u + h.dx * s * u]);
     const b = pick(cands, 2 * R + 2 * u, 2 * R + 2 * u, false); h.x = b.x; h.y = b.y;
   }
-  // riquadro delle componenti: di lato rispetto all'asse, verso il centro, poi le altre posizioni intorno al numero
-  const BW = 50 * u, BH = 28 * u;
+  // vento: freccia e scritta nell'angolo più libero (prima sotto il nord, poi gli altri angoli e i bordi)
+  const wtxt = !wind ? '' : wind.dir == null || mv == null ? wind.txt : wind.txt.replace(/^\d{3}/, String(brfMag(wind.dir, mv)).padStart(3, '0') + '°M');
+  let wpos = null;
+  if (wind) {
+    const ww = Math.max(40 * u, wtxt.length * 6.6 * u + 18 * u), wh = 62 * u, mx = ww / 2 + 6 * u, my = wh / 2 + 6 * u;
+    const cands = [[x1 - mx, y0 + (mv == null ? 50 : 64) * u + wh / 2], [x0 + mx, y0 + my], [x1 - mx, y1 - my], [x0 + mx, y1 - 36 * u - wh / 2], [(x0 + x1) / 2, y0 + my], [(x0 + x1) / 2, y1 - my], [x0 + mx, (y0 + y1) / 2], [x1 - mx, (y0 + y1) / 2]];
+    wpos = pick(cands, ww, wh, true, 5);
+  }
+  // riquadro delle componenti (con sotto il miglior avvicinamento): di lato rispetto all'asse, verso il centro, poi intorno al numero
+  const leaders = [];
   for (const h of heads) {
     const c = comps.find(k => k.id === h.id && k.rw === h.r); if (!c) continue;
+    const ap = icao && brfAppr(icao, h.id); h.apDone = !!ap;
+    const BW = Math.max(50 * u, ap ? ap.best.length * 5.4 * u + 8 * u : 0), BH = ap ? 39 * u : 28 * u;
     const sg = h.dy * (cx0 - h.x) - h.dx * (cy0 - h.y) >= 0 ? 1 : -1;
     const dirs = [[-h.dy * sg, h.dx * sg], [h.dy * sg, -h.dx * sg], [h.dx, h.dy], [(-h.dy * sg + h.dx) * 0.7071, (h.dx * sg + h.dy) * 0.7071], [(h.dy * sg + h.dx) * 0.7071, (-h.dx * sg + h.dy) * 0.7071], [(-h.dy * sg - h.dx) * 0.7071, (h.dx * sg - h.dy) * 0.7071], [(h.dy * sg - h.dx) * 0.7071, (-h.dx * sg - h.dy) * 0.7071]];
     const cands = [];
     for (const k of [1, 1.6, 2.3, 3]) for (const [px, py] of dirs) { const dd = (17 * u + Math.abs(px) * BW / 2 + Math.abs(py) * BH / 2) * k; cands.push([h.x + px * dd, h.y + py * dd]); }
-    const b = pick(cands, BW, BH, true);
+    // un riquadro non deve stare più vicino al numero di un'altra testata (piste parallele): sembrerebbe suo
+    const own = (x, y) => { const d = Math.hypot(x - h.x, y - h.y); return heads.some(o => o !== h && o.x != null && Math.hypot(x - o.x, y - o.y) < d + 8 * u) ? 900 * u * u : 0; };
+    const b = pick(cands, BW, BH, true, 1, own);
+    // riquadro lontano dal suo numero: una linea sottile li collega, così si capisce di quale testata è
+    const dOwn = Math.hypot(b.x - h.x, b.y - h.y), closerOther = heads.some(o => o !== h && o.x != null && Math.hypot(b.x - o.x, b.y - o.y) < dOwn - 2 * u);
+    if (closerOther || dOwn > R + Math.max(BW, BH) * 0.75 + 6 * u) leaders.push(`<path class="ldr" d="M${h.x.toFixed(0)},${h.y.toFixed(0)}L${b.x.toFixed(0)},${b.y.toFixed(0)}" stroke-width="${1.2 * u}" stroke-dasharray="${3 * u} ${2.5 * u}"/>`);
+    const y1t = ap ? -8 * u : -2.5 * u;
     h.box = `<g class="cmp ${c.lvl}" transform="translate(${b.x.toFixed(0)},${b.y.toFixed(0)})"><rect x="${-BW / 2}" y="${-BH / 2}" width="${BW}" height="${BH}" rx="${3 * u}"/>`
-      + `<text y="${-2.5 * u}" font-size="${9.5 * u}" class="${c.tw ? c.lt : ''}">${c.tw ? 'TW ' + c.tw : 'HW ' + c.hw}</text><text y="${9 * u}" font-size="${9.5 * u}" class="${c.lx}">XW ${c.xw}${c.side}</text></g>`;
+      + `<text y="${y1t}" font-size="${9.5 * u}" class="${c.tw ? c.lt : ''}">${c.tw ? 'TW ' + c.tw : 'HW ' + c.hw}</text><text y="${y1t + 11.5 * u}" font-size="${9.5 * u}" class="${c.lx}">XW ${c.xw}${c.side}</text>`
+      + (ap ? `<text class="apr" y="${y1t + 23 * u}" font-size="${8.5 * u}">${esc(ap.best)}</text>` : '') + `</g>`;
   }
-  // miglior avvicinamento della testata: accanto al numero, dove c'è posto
+  // senza vento (nessun riquadro): il miglior avvicinamento da solo, accanto al numero
   for (const h of heads) {
+    if (h.apDone) continue;
     const k = icao && brfAppr(icao, h.id); if (!k) continue;
     const tw = k.best.length * 5.6 * u + 4 * u, th = 11 * u, cands = [];
     for (const d of [1, 1.5, 2.1]) for (const [px, py] of [[h.dy, -h.dx], [-h.dy, h.dx], [h.dx, h.dy], [-h.dx * 0.6 + h.dy * 0.8, -h.dy * 0.6 - h.dx * 0.8]]) {
@@ -344,7 +362,7 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
     const b = pick(cands, tw, th, true);
     h.apr = `<text class="apr" x="${b.x.toFixed(0)}" y="${(b.y + 3.5 * u).toFixed(0)}" font-size="${9 * u}">${esc(k.best)}</text>`;
   }
-  const rwLab = heads.map(h => `<g class="rwl" transform="translate(${h.x.toFixed(0)},${h.y.toFixed(0)})"><circle r="${R}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(h.id)}</text></g>${h.apr || ''}${h.box || ''}`).join('');
+  const rwLab = leaders.join('') + heads.map(h => `<g class="rwl" transform="translate(${h.x.toFixed(0)},${h.y.toFixed(0)})"><circle r="${R}"/><text y="${4.5 * u}" font-size="${12 * u}">${esc(h.id)}</text></g>${h.apr || ''}${h.box || ''}`).join('');
   // scala
   const sc = [250, 500, 1000, 2000].find(m => m / VW * 400 >= 55) || 2000;
   const scale = `<g class="scl" transform="translate(${x0 + 14 * u},${y1 - 14 * u})"><path d="M0,0H${sc}" stroke-width="${2 * u}"/><text y="${-6 * u}" font-size="${10 * u}">${sc >= 1000 ? sc / 1000 + ' km' : sc + ' m'}</text></g>`;
@@ -352,10 +370,10 @@ function brfMapSVG(rws, ways, lat, lon, wind, comps = [], mv = null, icao = '') 
   // freccia del vento: la coda indica da dove viene, la punta dove va
   let wnd = '';
   if (wind) {
-    const cx = x1 - 50 * u, cy = y0 + 70 * u;
+    const cx = wpos.x, cy = wpos.y - 11 * u;
     const arrow = wind.dir == null ? '' : `<g transform="rotate(${wind.dir})"><path d="M0,${-16 * u}V${16 * u}" stroke-width="${2.5 * u}"/><path d="M${-6 * u},${8 * u}L0,${17 * u}L${6 * u},${8 * u}" stroke-width="${2.5 * u}" fill="none"/></g>`;
     // la mappa è orientata al nord vero, quindi la freccia resta vera; l'etichetta è in magnetico, come la dà la torre
-    const txt = wind.dir == null || mv == null ? wind.txt : wind.txt.replace(/^\d{3}/, String(brfMag(wind.dir, mv)).padStart(3, '0') + '°M');
+    const txt = wtxt;
     wnd = `<g class="wnd ${wind.lvl}" transform="translate(${cx},${cy})">${arrow}<text y="${34 * u}" font-size="${10.5 * u}">${esc(txt)}</text></g>`;
   }
   return `<svg class="brf-svg" viewBox="${x0.toFixed(0)} ${y0.toFixed(0)} ${VW.toFixed(0)} ${VH.toFixed(0)}" role="img" aria-label="Airport diagram">${aprons}${terms}${twys}${runways}${twLab}${rwLab}${scale}${north}${wnd}</svg>`;

@@ -850,6 +850,7 @@ table.data td .newdot { margin-right: 10px; }
 .brf-svg .twl rect { fill: var(--ink); } .brf-svg .twl text { fill: var(--amber); }
 .brf-svg .scl path { stroke: var(--ink); } .brf-svg .scl text { fill: var(--ink); font-family: var(--font); }
 .brf-svg .nrt path { fill: var(--ink); } .brf-svg .nrt text { fill: var(--ink); text-anchor: middle; font-weight: 700; }
+.brf-svg .ldr { stroke: var(--muted); fill: none; opacity: .8; }
 .brf-svg .apr { fill: #2f5fd0; text-anchor: middle; font-family: var(--font); font-weight: 700; }
 .brf-svg .nrt .var { font-family: var(--font); text-anchor: end; }
 .brf-svg .wnd path { stroke: var(--accent); } .brf-svg .wnd text { fill: var(--accent); text-anchor: middle; font-family: var(--font); font-weight: 700; }
@@ -910,6 +911,7 @@ table.data td .newdot { margin-right: 10px; }
 .brf-svg .cmp rect { fill: var(--sheet); stroke: var(--ok); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .brf-svg .cmp.warn rect { stroke: var(--cat2); } .brf-svg .cmp.bad rect { stroke: var(--red); fill: color-mix(in srgb, var(--red) 10%, var(--sheet)); }
 .brf-svg .cmp text { text-anchor: middle; font-family: var(--font); font-weight: 700; fill: var(--ink); }
+.brf-svg .cmp text.apr { fill: #2f5fd0; }
 .brf-svg .cmp text.warn { fill: var(--cat2); } .brf-svg .cmp text.bad { fill: var(--red); }
 .brf-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin: 4px 0 8px; }
 .brf-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--ok); }

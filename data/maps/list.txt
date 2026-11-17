@@ -1,0 +1,7 @@
+# Aeroporti di cui scaricare la mappa OpenStreetMap una volta alla settimana (GitHub Actions, "Mappe aeroporti").
+# Un codice ICAO per riga. Gli aeroporti non in lista si scaricano comunque dall'app, ma più lentamente.
+GCLP
+LIBD
+LIMC
+LIPX
+LIRF

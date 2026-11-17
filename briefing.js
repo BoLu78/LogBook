@@ -241,6 +241,11 @@ async function brfMap(icao, lat, lon) {
   // riquadro di ±5 km (più veloce del raggio). Prima la copia in cache del Worker (30 giorni), poi i server OpenStreetMap
   const dl = 0.045, dn = 0.045 / Math.cos(brfRad(lat)), bb = [lat - dl, lon - dn, lat + dl, lon + dn].map(v => v.toFixed(4)).join(',');
   const q = `[out:json][timeout:60][bbox:${bb}];(way[aeroway~"^(taxiway|apron|terminal|runway|stopway|hangar|tower|parking_position)$"];node[aeroway~"^(holding_position|arresting_gear|windsock|tower)$"];node[navigationaid=papi];);out tags geom;`;
+  // prima la mappa già pronta nel sito (GitHub la scarica ogni settimana), poi la cache del Worker, poi OpenStreetMap
+  try {
+    const r = await fetch(`data/maps/${icao}.json`, { cache: 'no-cache' });
+    if (r.ok) { const j = await r.json(); if (j.v?.some(w => w.a === 'runway' || w.a === 'taxiway')) { brfSave('map2:' + icao, j.v); return brfRead('map2:' + icao) || { t: Date.now(), v: j.v }; } }
+  } catch { /* non c'è: si scarica */ }
   const srcs = [`${BRF_MAP_BRIDGE}/osm?icao=${icao}&bb=${bb}`, ...BRF_OVP.map(u => u + '?data=' + encodeURIComponent(q))];
   for (const u of srcs) {
     try {

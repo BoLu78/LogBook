@@ -8,13 +8,24 @@ async function aptAipDB() { if (!APT_AIP) { try { APT_AIP = await (await fetch('
 let APT_AOI = null;
 async function aptAoiDB() { if (!APT_AOI) { try { APT_AOI = await (await fetch('data/aoi.json')).json(); } catch { APT_AOI = {}; } } return APT_AOI; }
 // schema delle piste preferenziali per la partenza (AOI): giorno "first"/"second" e pista per l'orario UTC dato
-function aptAoiDep(aoi, date, hhmm) {
+function aptAoiDep(aoi, date, hhmm, tz) {
   const D = aoi?.dep; if (!D || !date) return null;
   const [y, m, d] = date.split('-').map(Number), ref = D.first?.[y]?.[m - 1];
   if (!ref) return { none: `scheme for ${y} not in the AOI data` };
-  const day = Math.abs(d - ref) % 2 === 0 ? 'first' : 'second', set = D.schemes[day][D.summer.includes(m) ? 'summer' : 'std'];
+  const day = Math.abs(d - ref) % 2 === 0 ? 'first' : 'second', per = D.summer.includes(m) ? 'summer' : 'std';
+  // ‡ (Lido 7.13): durante l'ora legale gli orari UTC sono un'ora prima. Vale solo per gli orari stampati con ‡
+  const dst = (D.dstShift || []).includes(per) && aptIsDst(tz, date);
+  const sh = t => { if (!dst) return t; const n = (+t.slice(0, 2) * 60 + +t.slice(2) - 60 + 1440) % 1440; return String(Math.floor(n / 60)).padStart(2, '0') + String(n % 60).padStart(2, '0'); };
+  const set = D.schemes[day][per].map(([r, a, b]) => [r, sh(a), sh(b)]);
   const hit = hhmm ? set.find(([, a, b]) => hhmm >= a && hhmm < b) : null;
-  return { day, set, rw: hit?.[0] || null, slot: hit ? `${hit[1]}-${hit[2]}` : '' };
+  return { day, set, dst, rw: hit?.[0] || null, slot: hit ? `${hit[1]}-${hit[2]}` : '' };
+}
+// ora legale in vigore quel giorno nel fuso dell'aeroporto (offset maggiore di quello di gennaio)
+function aptIsDst(tz, date) {
+  if (!tz) return false;
+  const off = t => { try { const v = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(t)).find(p => p.type === 'timeZoneName')?.value || 'GMT'; const m = v.match(/GMT([+-]\d+)(?::(\d+))?/); return m ? +m[1] * 60 + Math.sign(+m[1]) * (+m[2] || 0) : 0; } catch { return 0; } };
+  const y = date.slice(0, 4);
+  return off(Date.parse(date + 'T12:00:00Z')) > Math.min(off(Date.parse(y + '-01-15T12:00:00Z')), off(Date.parse(y + '-07-15T12:00:00Z')));
 }
 const aptM = (lat, lon) => p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];   // metri: x est, y sud
 const aptDir = brg => [Math.sin(brfRad(brg)), -Math.cos(brfRad(brg))];                                        // versore della prua vera
@@ -326,12 +337,12 @@ function aptAoiBox(aoi, dep, q) {
   if (aoi.dep) {
     const S = aoi.dep.schemes;
     h += `<h5>${esc(aoi.dep.title)}</h5>`;
-    if (dep && !dep.none && q.date) h += `<p class="apt-aoi-today">${dmy(q.date)}: <b>${dep.day === 'first' ? 'First' : 'Second'} day</b> scheme → ${fmt(dep.set)}${aoi.dep.mark ? ' ‡' : ''}${dep.rw ? ` · at ${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z: <b>RWY ${esc(dep.rw)}</b>` : q.hhmm ? ' · no scheme at that time' : ''}</p>`;
+    if (dep && !dep.none && q.date) h += `<p class="apt-aoi-today">${dmy(q.date)}: <b>${dep.day === 'first' ? 'First' : 'Second'} day</b> scheme → ${fmt(dep.set)} UTC${dep.dst ? ' <small>(DST: one hour earlier, ‡)</small>' : ''}${dep.rw ? ` · at ${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z: <b>RWY ${esc(dep.rw)}</b>` : q.hhmm ? ' · no scheme at that time' : ''}</p>`;
     else if (dep?.none) h += `<p class="muted">${esc(dep.none)}</p>`;
-    h += `<table class="data apt-aoi-t"><tr><th></th><th>01 JAN–31 MAY, 01 SEP–31 DEC</th><th>01 JUN–31 AUG</th></tr>
+    h += `<table class="data apt-aoi-t"><tr><th></th><th>01 JAN–31 MAY, 01 SEP–31 DEC ‡</th><th>01 JUN–31 AUG</th></tr>
       <tr><td>First day</td><td>${fmt(S.first.std)}</td><td>${fmt(S.first.summer)}</td></tr>
       <tr><td>Second day</td><td>${fmt(S.second.std)}</td><td>${fmt(S.second.summer)}</td></tr></table>
-      <small class="hint">"First day" and "Second day" alternate; the first-day dates of each month are in the AOI table. Times as printed in the AOI${aoi.dep.mark ? ' (‡ as in the AOI)' : ''}.</small>`;
+      <small class="hint">"First day" and "Second day" alternate; the first-day dates of each month are in the AOI table. Table times in UTC as printed; ${esc(aoi.dep.mark || '')}. The line above already applies it.</small>`;
   }
   return h + '</div>';
 }
@@ -362,7 +373,7 @@ async function viewAirport(main, arg) {
   // pista preferenziale col vento del METAR: più vento frontale, a parità il miglior avvicinamento. Con vento calmo o variabile nessuna
   // prima il vento (direzione con più vento frontale; mai vento in coda), poi tra le piste parallele lo schema delle AOI per la partenza,
   // altrimenti il miglior avvicinamento. Con vento calmo o variabile vale solo lo schema AOI, se c'è
-  const aoi = APT_AOI?.[icao] || null, aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm) : null;
+  const aoi = APT_AOI?.[icao] || null, aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm, a?.[4]) : null;
   const prefId = () => {
     st.prefWhy = '';
     const all = heads.map(h => ({ h, c: aptWindComp(h, wind) }));
@@ -373,7 +384,7 @@ async function viewAirport(main, arg) {
     else if (calm) cand = all;
     if (!cand.length) return null;
     const aoiHit = aoiDep?.rw && cand.find(x => x.h.id === aoiDep.rw);
-    if (aoiHit) { st.prefWhy = `${calm && !ok.length ? 'calm wind' : 'wind HW ' + aoiHit.c.hw} · AOI departure scheme (${aoiDep.day} day, ${aoiDep.slot}${aoi.dep.mark ? ' ‡' : ''})`; return aoiHit.h.id; }
+    if (aoiHit) { st.prefWhy = `${calm && !ok.length ? 'calm wind' : 'wind HW ' + aoiHit.c.hw} · AOI departure scheme (${aoiDep.day} day, ${aoiDep.slot}Z${aoiDep.dst ? ', DST −1 h' : ''})`; return aoiHit.h.id; }
     if (!ok.length) return null;
     cand.sort((a, b) => (b.c.hw - a.c.hw) || (brfApptRank(icao, a.h.id) - brfApptRank(icao, b.h.id)));
     st.prefWhy = `wind HW ${cand[0].c.hw}` + (cand.length > 1 ? ' · best approach' : '');

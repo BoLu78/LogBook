@@ -5,3 +5,4 @@ tools/
 
 # dati pubblici della mappa
 !data/*.json
+!data/maps/*.json

@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node tools/build-maps.mjs ${{ github.event.inputs.icao }}
+      - run: node .github/scripts/build-maps.mjs ${{ github.event.inputs.icao }}
       - name: Salva le mappe
         run: |
           git config user.name "github-actions[bot]"

@@ -332,7 +332,7 @@ function aptAoiBox(aoi, dep, q) {
   if (!aoi) return '';
   const fmt = set => set.map(([r, a, b]) => `<b>${esc(r)}</b> ${a}-${b}`).join(' · ');
   const age = aoi.date ? (Date.now() - Date.parse(aoi.date)) / 864e5 : 0;
-  let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src || '')}${aoi.date ? ' · checked ' + dmy(aoi.date) : ''}</small>${age > 183 ? ' <span class="apt-old">older than 6 months: check the AOI</span>' : ''}</h5>${aoi.notes?.length ? `<ul>${aoi.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
+  let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src || '')}${aoi.wef ? ' · WEF ' + esc(aoi.wef) : ''}${aoi.date ? ' · checked ' + dmy(aoi.date) : ''} · general idea only</small>${age > 183 ? ' <span class="apt-old">older than 6 months: check the AOI</span>' : ''}</h5>${aoi.notes?.length ? `<ul class="apt-aoi-notes">${aoi.notes.map(n => Array.isArray(n) ? `<li><span class="apt-tag t-${esc(n[0].toLowerCase())}">${esc(n[0])}</span>${esc(n[1])}</li>` : `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="muted">No special notes in the AOI.</p>'}`;
   if (aoi.dep) {
     const S = aoi.dep.schemes;
     h += `<h5>${esc(aoi.dep.title)}</h5>`;
@@ -342,14 +342,6 @@ function aptAoiBox(aoi, dep, q) {
       <tr><td>First day</td><td>${fmt(S.first.std)}</td><td>${fmt(S.first.summer)}</td></tr>
       <tr><td>Second day</td><td>${fmt(S.second.std)}</td><td>${fmt(S.second.summer)}</td></tr></table>
       <small class="hint">"First day" and "Second day" alternate; the first-day dates of each month are in the AOI table. Table times in UTC as printed; ${esc(aoi.dep.mark || '')}. The line above already applies it.</small>`;
-  }
-  if (aoi.text) {
-    // testo completo delle AOI: titoli in grassetto, il resto com'è
-    const lines = String(aoi.text).split('\n').map(l => {
-      const t = esc(l), head = l.length < 48 && /^[A-Z][A-Za-z ,/&()-]+$/.test(l) && !/\b(AVBL|RWY|TWY|MAX|ACFT)\b/.test(l);
-      return head ? `<b>${t}</b>` : t;
-    }).join('\n');
-    h += `<details class="apt-aoi-full"><summary>Full AOI text${aoi.pages ? ` · ${aoi.pages} pages` : ''}${aoi.wef ? ` · WEF ${esc(aoi.wef)}` : ''}</summary><pre>${lines}</pre></details>`;
   }
   return h + '</div>';
 }

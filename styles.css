@@ -1106,3 +1106,5 @@ table.apt-rw tr.pref td:first-child { box-shadow: inset 4px 0 0 #1f9d55; }
 table.apt-aoi-t { font-size: 13px; margin-bottom: 4px; } table.apt-aoi-t td, table.apt-aoi-t th { text-align: left; }
 .apt-why { margin: 10px 0 0; font-size: 13.5px; }
 .apt-old { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--amber); border-radius: 4px; padding: 1px 6px; letter-spacing: .03em; }
+.apt-aoi-full { margin-top: 8px; } .apt-aoi-full summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--accent); }
+.apt-aoi-full pre { white-space: pre-wrap; font-family: "B612 Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.5; max-height: 60vh; overflow: auto; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin: 6px 0 0; }

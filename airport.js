@@ -277,7 +277,9 @@ function aptNotamSVG(list, ways, heads, P) {
 }
 const aptNFmt = ms => { if (ms == null) return 'PERM'; const d = new Date(ms); return `${pad2(d.getUTCDate())} ${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getUTCMonth()]} ${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}Z`; };
 function aptNotamHTML(icao, res, ref, refLab, drawn) {
-  const rec = brfRead('notam:' + icao), items = (rec?.v || []).filter(n => n.type !== 'C');
+  const rec = brfRead('notam:' + icao), seen = new Set();
+  // via i NOTAM di cancellazione e i doppioni (la FAA a volte manda lo stesso NOTAM due volte)
+  const items = (rec?.v || []).filter(n => n.type !== 'C' && !seen.has(n.number + '|' + aptNText(n)) && seen.add(n.number + '|' + aptNText(n)));
   const head = `<h4>NOTAMs <small class="apt-nsrc">FAA${rec?.t ? ' · ' + brfAge(rec.t) : ''}</small></h4>`;
   if (!rec) {
     const why = res?.state === 'off' ? 'The NOTAM service is not active yet: the notam-bridge Worker has no FAA credentials.' : res?.state === 'err' ? `NOTAM service ${esc(res.why || 'not reachable')}.` : 'Loading…';
@@ -288,7 +290,7 @@ function aptNotamHTML(icao, res, ref, refLab, drawn) {
     .map(x => ({ ...x, act: (x.s == null || x.s <= ref + 3600e3) && (x.e == null || x.e >= ref - 3600e3) }))
     .sort((a, b) => (lvR[a.lvl] - lvR[b.lvl]) || ((a.s || 0) - (b.s || 0)));
   const li = x => `<li class="${x.lvl}"><i></i><div><b>${esc(x.n.number || x.n.id)}</b>${x.cl && x.act && drawn ? ' <span class="nmap">on map</span>' : ''}<p>${esc(aptNText(x.n))}</p>
-    <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est ? ' EST' : ''}${(d => d ? ' · ' + esc(d) : '')(aptNField(x.n.text, 'D') || x.n.sched)}</small></div></li>`;
+    <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est || /C\)\s*\d{10}\s*EST/.test(x.n.text || '') ? ' EST' : ''}${(d => d ? ' · ' + esc(d) : '')(aptNField(x.n.text, 'D') || x.n.sched)}</small></div></li>`;
   const on = rows.filter(x => x.act), off = rows.filter(x => !x.act);
   return head + (res?.state === 'err' ? `<p class="hint">Service ${esc(res.why || 'not reachable')}: saved NOTAMs.</p>` : '')
     + `<h5>Active at ${esc(refLab)} ±1 h <small>${on.length}</small></h5>${on.length ? `<ul class="apt-notams">${on.map(li).join('')}</ul>` : '<p class="muted">None.</p>'}`

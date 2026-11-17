@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.17.4';
+const APP_VERSION = '3.17.5';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 

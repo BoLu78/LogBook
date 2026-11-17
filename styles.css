@@ -1090,3 +1090,12 @@ table.apt-rw .tw { color: var(--amber); font-weight: 700; }
 .apt-svg .rwl2 { cursor: pointer; } .apt-svg .rwl2 rect { fill: #fff; stroke: #111; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .apt-svg .rwl2 text { text-anchor: middle; font-family: var(--font); font-weight: 700; fill: #111; } .apt-svg .rwl2 text.ap { fill: #2f5fd0; }
 .apt-svg .rwl2.sel rect { fill: var(--accent); stroke: var(--accent); } .apt-svg .rwl2.sel text { fill: var(--on-accent); }
+/* vento e pista preferenziale (3.17.5) */
+.apt-wind { position: absolute; top: 92px; right: 10px; display: flex; flex-direction: column; align-items: center; gap: 1px; background: color-mix(in srgb, var(--sheet) 88%, transparent); border: 1px solid var(--rule); border-radius: 10px; padding: 6px 8px; font-family: var(--font); color: var(--ink); pointer-events: none; min-width: 64px; }
+.apt-wind svg { width: 30px; height: 30px; fill: #2f8fe0; }
+.apt-wind b { font-size: 13px; } .apt-wind span { font-size: 12px; font-weight: 700; } .apt-wind small { font-size: 9.5px; color: var(--muted); letter-spacing: .06em; }
+.apt-svg .rwl2.pref rect { fill: #1f9d55; stroke: #1f9d55; } .apt-svg .rwl2.pref text { fill: #fff; }
+.apt-svg .rwl2.pref.sel rect { stroke: #fff; stroke-width: 2.5px; }
+table.apt-rw tr.pref td:first-child { box-shadow: inset 4px 0 0 #1f9d55; }
+.apt-pref { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #fff; background: #1f9d55; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
+.apt-legend { top: 10px; bottom: auto; }

@@ -200,7 +200,7 @@ function aptMapOverlay(st, heads, ways, P, exits, mv, prep, icao) {
     let d = (h.back || 0) + H / 2 + 8 * u, c = [t[0] - ux * d, t[1] - uy * d];
     for (let k = 0; k < 4 && put.some(q => Math.abs(q[0] - c[0]) < W + 2 * u && Math.abs(q[1] - c[1]) < H + 2 * u); k++) { d += H + 4 * u; c = [t[0] - ux * d, t[1] - uy * d]; }
     put.push(c);
-    g += `<g class="rwl2${h.id === st.sel ? ' sel' : ''}" data-rw="${esc(h.id)}" transform="translate(${F(c[0])},${F(c[1])})"><rect x="${-W / 2}" y="${-H / 2}" width="${W}" height="${H}" rx="${H / 2.6}"/>`
+    g += `<g class="rwl2${h.id === st.sel ? ' sel' : ''}${h.id === st.pref ? ' pref' : ''}" data-rw="${esc(h.id)}" transform="translate(${F(c[0])},${F(c[1])})"><rect x="${-W / 2}" y="${-H / 2}" width="${W}" height="${H}" rx="${H / 2.6}"/>`
       + `<text y="${(ap ? -5 : -1) * u}" font-size="${13 * u}" class="id">${esc(h.id)}</text><text y="${(ap ? 6 : 10) * u}" font-size="${8.5 * u}">${qfu}</text>${ap ? `<text y="${16 * u}" font-size="${6.8 * u}" class="ap">${esc(ap.best)}</text>` : ''}</g>`;
   }
   return g;
@@ -298,6 +298,15 @@ function aptNotamHTML(icao, res, ref, refLab, drawn) {
     + '<p class="hint">Red: runway, ILS, approaches and lights · yellow: taxiways, aprons, navaids, SID/STAR, obstacles · grey: the rest. Only whole-taxiway or whole-runway closures are drawn on the map. The official briefing package is the reference.</p>';
 }
 
+// vento del METAR sulla mappa: la freccia punta dove va il vento (la mappa è orientata al nord vero), la scritta è in magnetico
+function aptWindBox(wind, mv) {
+  if (!wind || !(wind.spd > 0 || wind.dir != null)) return '';
+  const spd = `${String(wind.spd).padStart(2, '0')}${wind.gst ? 'G' + wind.gst : ''}KT`;
+  if (wind.dir == null) return `<div class="apt-wind"><b>VRB</b><span>${spd}</span><small>METAR</small></div>`;
+  const mag = mv == null ? null : brfMag(wind.dir, mv);
+  return `<div class="apt-wind"><svg viewBox="-12 -12 24 24" aria-hidden="true" style="transform:rotate(${(wind.dir + 180) % 360}deg)"><path d="M0,-11L5,-2L1.6,-2L1.6,11L-1.6,11L-1.6,-2L-5,-2Z"/></svg>`
+    + `<b>${mag == null ? String(wind.dir).padStart(3, '0') + '°T' : String(mag).padStart(3, '0') + '°M'}</b><span>${spd}</span><small>METAR</small></div>`;
+}
 async function viewAirport(main, arg) {
   const q = aptParse(arg);
   if (!/^[A-Z0-9]{4}$/.test(q.icao)) { main.innerHTML = '<h1>Airport</h1><p class="lede">No airport given. Open it from the icon next to DEP or ARR in a flight.</p>'; return; }
@@ -322,6 +331,13 @@ async function viewAirport(main, arg) {
     const sc = h => { const c = aptWindComp(h, wind); return [(c ? -c.hw : 0), brfApptRank(icao, h.id), h.aip ? 0 : 1]; };
     st.sel = heads.slice().sort((x, y) => { const [a1, b1, c1] = sc(x), [a2, b2, c2] = sc(y); return (a1 - a2) || (b1 - b2) || (c1 - c2); })[0]?.id || null;
   };
+  // pista preferenziale col vento del METAR: più vento frontale, a parità il miglior avvicinamento. Con vento calmo o variabile nessuna
+  const prefId = () => {
+    const ok = heads.map(h => ({ h, c: aptWindComp(h, wind) })).filter(x => x.c && x.c.hw > 0);
+    if (!ok.length) return null;
+    ok.sort((a, b) => (b.c.hw - a.c.hw) || (brfApptRank(icao, a.h.id) - brfApptRank(icao, b.h.id)));
+    return ok[0].h.id;
+  };
   const fit = (box) => {
     const pts = heads.flatMap(h => { const t = P(h.thr), [ux, uy] = aptDir(h.brg), b = (h.back || 0) + 60; return [t, P(h.end), [t[0] - ux * b, t[1] - uy * b]]; }); if (!pts.length) { st.cx = 0; st.cy = 0; st.w = 4000; }
     else {
@@ -337,10 +353,10 @@ async function viewAirport(main, arg) {
     const rows = heads.map(h => {
       const ap = brfAppr(icao, h.id), c = aptWindComp(h, wind), A = h.aip;
       const mag = mv == null ? '' : String(brfMag(h.brg, mv)).padStart(3, '0') + '°';
-      return `<tr class="click${h.id === st.sel ? ' sel' : ''}" data-rw="${esc(h.id)}"><td class="l"><b>${esc(h.id)}</b></td><td>${mag}</td>
+      return `<tr class="click${h.id === st.sel ? ' sel' : ''}${h.id === st.pref ? ' pref' : ''}" data-rw="${esc(h.id)}"><td class="l"><b>${esc(h.id)}</b>${h.id === st.pref ? ' <span class="apt-pref">PREF</span>' : ''}</td><td>${mag}</td>
         ${aip ? (A ? `<td>${A.tora}</td><td>${A.toda}</td><td>${A.asda}</td><td><b>${A.lda}</b></td><td>${A.elev ?? ''}</td>` : '<td colspan="5" class="muted">not in AIP data</td>') : ''}
         <td class="l">${ap ? esc(ap.all.join(' · ')) : '<span class="muted">—</span>'}</td>
-        <td>${c ? `<span class="${c.hw < 0 ? 'tw' : ''}">${c.hw < 0 ? 'TW ' + -c.hw : 'HW ' + c.hw}</span> · XW ${c.xw}${c.xw ? c.side : ''}` : '<span class="muted">—</span>'}</td></tr>`;
+        <td>${c ? `${c.hw < 0 ? 'TW ' + -c.hw : 'HW ' + c.hw} · XW ${c.xw}${c.xw ? c.side : ''}` : '<span class="muted">—</span>'}</td></tr>`;
     }).join('');
     const ints = (aip?.int || []).map(x => `<li><b>RWY ${esc(x.rwy)}</b> from ${esc(x.from)}: TORA ${x.tora} · TODA ${x.toda} · ASDA ${x.asda}${x.note ? ` <small>${esc(x.note)}</small>` : ''}</li>`).join('');
     return `<div class="scroll-x"><table class="data apt-rw"><thead><tr><th class="l">RWY</th><th>QFU</th>${aip ? '<th>TORA</th><th>TODA</th><th>ASDA</th><th>LDA</th><th>THR ft</th>' : ''}<th class="l">Approaches</th><th>Wind (METAR)</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -359,7 +375,7 @@ async function viewAirport(main, arg) {
     if (!alive()) return;
     const wx = brfRead('wx:' + icao), metRaw = wx?.v?.metar || '', tafRaw = wx?.v?.taf || '';
     try { wind = metRaw ? brfDecode(brfMetarBody(metRaw))?.wind || null : null; } catch { wind = null; }
-    pickSel();
+    pickSel(); st.pref = prefId();
     const sel = heads.find(h => h.id === st.sel);
     exits = sel ? aptExits(sel, ways, P) : [];
     try {
@@ -388,6 +404,7 @@ async function viewAirport(main, arg) {
             <button type="button" data-t="notam" class="${st.notam && st.nsvg ? 'on red' : ''}" ${st.nsvg ? '' : 'disabled'} title="Closures from the active NOTAMs">NOTAMs</button>
           </div>
           <div class="apt-north"><svg viewBox="-8 -14 16 24" aria-hidden="true"><path d="M0,-12L6,8L0,3L-6,8Z"/></svg><b>N</b>${mv == null ? '' : `<small>VAR ${magVarTxt(mv)}</small>`}</div>
+          ${aptWindBox(wind, mv)}
           <div class="apt-scale" id="aptScale"></div>
           <div class="apt-zoom"><button type="button" data-z="in" aria-label="Zoom in">+</button><button type="button" data-z="out" aria-label="Zoom out">−</button><button type="button" data-z="reset" aria-label="Reset view">⟲</button><button type="button" data-z="full" aria-label="Full screen">${st.full ? '✕' : '⤢'}</button></div>
           ${sel?.aip ? `<div class="apt-legend"><span class="tdz">TDZ ${Math.min(900, Math.round(sel.aip.lda / 3))} m</span><span class="exi">exit ≈ m from THR</span><span class="end">LDA end</span>${st.nsvg && st.notam ? '<span class="ncl">NOTAM closed</span>' : ''}</div>` : ''}

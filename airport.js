@@ -333,10 +333,11 @@ function aptAoiBox(aoi, dep, q) {
   const fmt = set => set.map(([r, a, b]) => `<b>${esc(r)}</b> ${a}-${b}`).join(' · ');
   const age = aoi.date ? (Date.now() - Date.parse(aoi.date)) / 864e5 : 0;
   let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src || '')}${aoi.wef ? ' · WEF ' + esc(aoi.wef) : ''}${aoi.date ? ' · checked ' + dmy(aoi.date) : ''} · general idea only</small>${age > 183 ? ' <span class="apt-old">older than 6 months: check the AOI</span>' : ''}</h5>${aoi.notes?.length ? `<ul class="apt-aoi-notes">${aoi.notes.map(n => Array.isArray(n) ? `<li><span class="apt-tag t-${esc(n[0].toLowerCase())}">${esc(n[0])}</span>${esc(n[1])}</li>` : `<li>${esc(n)}</li>`).join('')}</ul>` : '<p class="muted">No special notes in the AOI.</p>'}`;
+  if (aoi.wind?.rwy?.length) h += `<p class="apt-aoi-today"><span class="apt-tag t-rwy">RWY</span>Preferential RWY <b>${aoi.wind.rwy.map(esc).join('/')}</b> with tailwind up to <b>${+aoi.wind.tail || 0} kt</b>${aoi.wind.src ? ' <small>(' + esc(aoi.wind.src) + ')</small>' : ''}</p>`;
   if (aoi.dep) {
     const S = aoi.dep.schemes;
     h += `<h5>${esc(aoi.dep.title)}</h5>`;
-    if (dep && !dep.none && q.date) h += `<p class="apt-aoi-today">${dmy(q.date)}: <b>${dep.day === 'first' ? 'First' : 'Second'} day</b> scheme → ${fmt(dep.set)} UTC${dep.dst ? ' <small>(DST: one hour earlier, ‡)</small>' : ''}${dep.rw ? ` · at ${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z: <b>RWY ${esc(dep.rw)}</b>` : q.hhmm ? ' · no scheme at that time' : ''}</p>`;
+    if (dep && !dep.none && q.date) h += `<p class="apt-aoi-today">${dmy(q.date)}: <b>${dep.day === 'first' ? 'First' : 'Second'} day</b> scheme → ${fmt(dep.set)} UTC${dep.dst ? ' <small>(DST: one hour earlier, ‡)</small>' : ''}${dep.rw ? ` · at ${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z: departures <b>RWY ${esc(dep.rw)}</b>${aoi.dep.arrOther ? ', arrivals the other parallel' : ''}` : q.hhmm ? ' · no scheme at that time' : ''}</p>`;
     else if (dep?.none) h += `<p class="muted">${esc(dep.none)}</p>`;
     h += `<table class="data apt-aoi-t"><tr><th></th><th>01 JAN–31 MAY, 01 SEP–31 DEC ‡</th><th>01 JUN–31 AUG</th></tr>
       <tr><td>First day</td><td>${fmt(S.first.std)}</td><td>${fmt(S.first.summer)}</td></tr>
@@ -369,25 +370,40 @@ async function viewAirport(main, arg) {
     const sc = h => { const c = aptWindComp(h, wind); return [(c ? -c.hw : 0), brfApptRank(icao, h.id), h.aip ? 0 : 1]; };
     st.sel = heads.slice().sort((x, y) => { const [a1, b1, c1] = sc(x), [a2, b2, c2] = sc(y); return (a1 - a2) || (b1 - b2) || (c1 - c2); })[0]?.id || null;
   };
-  // pista preferenziale col vento del METAR: più vento frontale, a parità il miglior avvicinamento. Con vento calmo o variabile nessuna
-  // prima il vento (direzione con più vento frontale; mai vento in coda), poi tra le piste parallele lo schema delle AOI per la partenza,
-  // altrimenti il miglior avvicinamento. Con vento calmo o variabile vale solo lo schema AOI, se c'è
+  // pista preferenziale. 1) Se le AOI hanno piste preferenziali con un limite di vento in coda (LIMC: 35L/35R fino a 5 kt di coda)
+  // e il vento lo consente, si sceglie fra quelle. 2) Altrimenti il vento: direzione con più vento frontale, mai vento in coda.
+  // 3) Fra le candidate lo schema orario delle AOI: in partenza la pista dello schema, in arrivo l'altra parallela (uso segregato).
+  // 4) Infine il miglior avvicinamento. Con vento calmo o variabile e nessuna regola AOI: nessuna evidenziazione
   const aoi = data?.aptAoi?.[icao] || null,   // AOI: dati privati del logbook (importati da Settings), mai nel sito pubblico
-    aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm, a?.[4]) : null;
+    aoiDep = q.role ? aptAoiDep(aoi, q.date, q.hhmm, a?.[4]) : null;
   const prefId = () => {
     st.prefWhy = '';
     const all = heads.map(h => ({ h, c: aptWindComp(h, wind) }));
     const ok = all.filter(x => x.c && x.c.hw > 0);
-    const calm = !wind || wind.dir == null || wind.spd <= 3;
-    let cand = ok;
-    if (ok.length) { const top = Math.max(...ok.map(x => x.c.hw)); cand = ok.filter(x => x.c.hw >= top - 1); }
-    else if (calm) cand = all;
+    const vrb = !wind || wind.dir == null, calm = !wind || wind.spd <= 3;   // VRB oltre 3 kt: nessuna pista sicura
+    const R = aoi?.wind, why = [];
+    let cand = [];
+    if (R?.rwy?.length) {
+      const lim = +R.tail || 0, pr = all.filter(x => R.rwy.includes(x.h.id));
+      const okR = pr.filter(x => vrb ? (!wind || wind.spd <= lim) : x.c && x.c.hw >= -lim);
+      if (okR.length) { cand = okR; why.push(`${!wind ? 'no wind' : vrb ? 'VRB ' + wind.spd + ' kt' : 'wind ' + (okR[0].c.hw >= 0 ? 'HW ' + okR[0].c.hw : 'TW ' + -okR[0].c.hw)} · AOI preferential RWY ${R.rwy.join('/')} (tailwind up to ${lim} kt)`); }
+    }
+    if (!cand.length) {
+      if (ok.length) { const top = Math.max(...ok.map(x => x.c.hw)); cand = ok.filter(x => x.c.hw >= top - 1); why.push(`wind HW ${cand[0].c.hw}`); }
+      else if (calm) { cand = all; why.push(vrb && wind ? `VRB ${wind.spd} kt` : 'calm wind'); }
+    }
     if (!cand.length) return null;
-    const aoiHit = aoiDep?.rw && cand.find(x => x.h.id === aoiDep.rw);
-    if (aoiHit) { st.prefWhy = `${calm && !ok.length ? 'calm wind' : 'wind HW ' + aoiHit.c.hw} · AOI departure scheme (${aoiDep.day} day, ${aoiDep.slot}Z${aoiDep.dst ? ', DST −1 h' : ''})`; return aoiHit.h.id; }
-    if (!ok.length) return null;
-    cand.sort((a, b) => (b.c.hw - a.c.hw) || (brfApptRank(icao, a.h.id) - brfApptRank(icao, b.h.id)));
-    st.prefWhy = `wind HW ${cand[0].c.hw}` + (cand.length > 1 ? ' · best approach' : '');
+    // schema orario: in partenza la pista dello schema; in arrivo l'altra pista parallela attiva nello stesso verso
+    let sch = null;
+    if (aoiDep?.rw) {
+      if (q.role === 'dep') sch = cand.find(x => x.h.id === aoiDep.rw);
+      else if (q.role === 'arr' && aoi.dep.arrOther) { const dn = aoiDep.rw.slice(0, 2); sch = cand.find(x => x.h.id !== aoiDep.rw && x.h.id.slice(0, 2) === dn); }
+    }
+    if (sch) { st.prefWhy = why.concat(`AOI scheme (${aoiDep.day} day, ${aoiDep.slot}Z${aoiDep.dst ? ', DST −1 h' : ''}${q.role === 'arr' ? ': departures RWY ' + aoiDep.rw + ', arrivals the other' : ''})`).join(' · '); return sch.h.id; }
+    if (calm && !R?.rwy?.length && !ok.length) return null;
+    cand.sort((x, y) => ((y.c?.hw ?? 0) - (x.c?.hw ?? 0)) || (brfApptRank(icao, x.h.id) - brfApptRank(icao, y.h.id)));
+    if (cand.length > 1) why.push('best approach');
+    st.prefWhy = why.join(' · ');
     return cand[0].h.id;
   };
   const fit = (box) => {

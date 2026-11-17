@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.17.5';
+const APP_VERSION = '3.18.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -857,7 +857,7 @@ function viewEdit(main, id) {
     location.hash = brfHash(v('date'), [{ icao: dep, hhmm: /\d/.test(v('out') || v('std')) ? t(v('out') || v('std')) : '' }, { icao: arr, hhmm: /\d/.test(v('inn') || v('sta')) ? t(v('inn') || v('sta')) : '' }]); }; }
   form.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const v = id => form.querySelector('#' + id)?.value?.trim() || '', t = x => x.replace(':', '').padStart(4, '0').slice(0, 4);
     const dep = b.dataset.go === 'dep', c = v(b.dataset.go).toUpperCase(), tm = dep ? (v('out') || v('std')) : (v('inn') || v('sta'));
-    if (/^[A-Z0-9]{4}$/.test(c)) location.hash = 'aeroporto/' + c + (v('date') ? '_' + v('date') + (/\d/.test(tm) ? '.' + t(tm) : '') : ''); });
+    if (/^[A-Z0-9]{4}$/.test(c)) location.hash = 'aeroporto/' + c + (v('date') ? '_' + v('date') + (/\d/.test(tm) ? '.' + t(tm) : '') + (dep ? '.d' : '.a') : ''); });
   form.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => { g('fFlight').hidden = kind() === 'sim'; g('fSim').hidden = kind() !== 'sim'; });
 
   // ---------- blocco, notte, decolli e atterraggi

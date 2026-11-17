@@ -5,14 +5,25 @@
    Modulo separato, caricato solo quando serve: se qui qualcosa non va, il resto dell'app non ne risente. */
 let APT_AIP = null;
 async function aptAipDB() { if (!APT_AIP) { try { APT_AIP = await (await fetch('data/aip.json')).json(); } catch { APT_AIP = {}; } } return APT_AIP; }
+let APT_AOI = null;
+async function aptAoiDB() { if (!APT_AOI) { try { APT_AOI = await (await fetch('data/aoi.json')).json(); } catch { APT_AOI = {}; } } return APT_AOI; }
+// schema delle piste preferenziali per la partenza (AOI): giorno "first"/"second" e pista per l'orario UTC dato
+function aptAoiDep(aoi, date, hhmm) {
+  const D = aoi?.dep; if (!D || !date) return null;
+  const [y, m, d] = date.split('-').map(Number), ref = D.first?.[y]?.[m - 1];
+  if (!ref) return { none: `scheme for ${y} not in the AOI data` };
+  const day = Math.abs(d - ref) % 2 === 0 ? 'first' : 'second', set = D.schemes[day][D.summer.includes(m) ? 'summer' : 'std'];
+  const hit = hhmm ? set.find(([, a, b]) => hhmm >= a && hhmm < b) : null;
+  return { day, set, rw: hit?.[0] || null, slot: hit ? `${hit[1]}-${hit[2]}` : '' };
+}
 const aptM = (lat, lon) => p => [(p[1] - lon) * 111320 * Math.cos(brfRad(lat)), -(p[0] - lat) * 110540];   // metri: x est, y sud
 const aptDir = brg => [Math.sin(brfRad(brg)), -Math.cos(brfRad(brg))];                                        // versore della prua vera
 // #aeroporto/GCLP oppure #aeroporto/GCLP_2026-11-19.1225 (orario UTC del volo: serve a fuso e NOTAM)
 function aptHash(icao, date, hhmm) { return 'aeroporto/' + icao + (date ? '_' + date + (hhmm ? '.' + hhmm : '') : ''); }
 function aptParse(arg) {
-  const [c, rest = ''] = String(arg || '').split('_'), [date, hhmm] = rest.split('.');
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : null, t = /^\d{4}$/.test(hhmm || '') ? hhmm : '';
-  return { icao: (c || '').toUpperCase(), date: d, hhmm: t, at: d ? Date.parse(`${d}T${t ? t.slice(0, 2) + ':' + t.slice(2) : '12:00'}:00Z`) : null };
+  const [c, rest = ''] = String(arg || '').split('_'), parts = rest.split('.'), date = parts[0], hhmm = parts.find(x => /^\d{4}$/.test(x)), role = parts.find(x => x === 'd' || x === 'a');
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : null, t = hhmm || '';
+  return { icao: (c || '').toUpperCase(), date: d, hhmm: t, role: role === 'd' ? 'dep' : role === 'a' ? 'arr' : '', at: d ? Date.parse(`${d}T${t ? t.slice(0, 2) + ':' + t.slice(2) : '12:00'}:00Z`) : null };
 }
 
 // ---------- piste: testate con prua vera; se ci sono i dati AIP, soglia e distanze dichiarate ufficiali
@@ -307,10 +318,27 @@ function aptWindBox(wind, mv) {
   return `<div class="apt-wind"><svg viewBox="-12 -12 24 24" aria-hidden="true" style="transform:rotate(${(wind.dir + 180) % 360}deg)"><path d="M0,-11L5,-2L1.6,-2L1.6,11L-1.6,11L-1.6,-2L-5,-2Z"/></svg>`
     + `<b>${mag == null ? String(wind.dir).padStart(3, '0') + '°T' : String(mag).padStart(3, '0') + '°M'}</b><span>${spd}</span><small>METAR</small></div>`;
 }
+// note fisse dalle AOI (sola lettura), sotto la warning note personale
+function aptAoiBox(aoi, dep, q) {
+  if (!aoi) return '';
+  const fmt = set => set.map(([r, a, b]) => `<b>${esc(r)}</b> ${a}-${b}`).join(' · ');
+  let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src)}</small></h5><ul>${(aoi.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+  if (aoi.dep) {
+    const S = aoi.dep.schemes;
+    h += `<h5>${esc(aoi.dep.title)}</h5>`;
+    if (dep && !dep.none && q.date) h += `<p class="apt-aoi-today">${dmy(q.date)}: <b>${dep.day === 'first' ? 'First' : 'Second'} day</b> scheme → ${fmt(dep.set)}${aoi.dep.mark ? ' ‡' : ''}${dep.rw ? ` · at ${q.hhmm.slice(0, 2)}:${q.hhmm.slice(2)}Z: <b>RWY ${esc(dep.rw)}</b>` : q.hhmm ? ' · no scheme at that time' : ''}</p>`;
+    else if (dep?.none) h += `<p class="muted">${esc(dep.none)}</p>`;
+    h += `<table class="data apt-aoi-t"><tr><th></th><th>01 JAN–31 MAY, 01 SEP–31 DEC</th><th>01 JUN–31 AUG</th></tr>
+      <tr><td>First day</td><td>${fmt(S.first.std)}</td><td>${fmt(S.first.summer)}</td></tr>
+      <tr><td>Second day</td><td>${fmt(S.second.std)}</td><td>${fmt(S.second.summer)}</td></tr></table>
+      <small class="hint">"First day" and "Second day" alternate; the first-day dates of each month are in the AOI table. Times as printed in the AOI${aoi.dep.mark ? ' (‡ as in the AOI)' : ''}.</small>`;
+  }
+  return h + '</div>';
+}
 async function viewAirport(main, arg) {
   const q = aptParse(arg);
   if (!/^[A-Z0-9]{4}$/.test(q.icao)) { main.innerHTML = '<h1>Airport</h1><p class="lede">No airport given. Open it from the icon next to DEP or ARR in a flight.</p>'; return; }
-  try { await Promise.all([loadAirports(), brfRwyDB(), brfAiracLoad(), aptAipDB()]); } catch { /* si mostra quello che c'è */ }
+  try { await Promise.all([loadAirports(), brfRwyDB(), brfAiracLoad(), aptAipDB(), aptAoiDB()]); } catch { /* si mostra quello che c'è */ }
   if (typeof IATA !== 'undefined' && !IATA) { try { IATA = await (await fetch('data/iata.json')).json(); } catch { /* niente IATA */ } }
   const icao = q.icao, a = apt(icao);
   const my = viewAirport.seq = (viewAirport.seq || 0) + 1;
@@ -332,11 +360,24 @@ async function viewAirport(main, arg) {
     st.sel = heads.slice().sort((x, y) => { const [a1, b1, c1] = sc(x), [a2, b2, c2] = sc(y); return (a1 - a2) || (b1 - b2) || (c1 - c2); })[0]?.id || null;
   };
   // pista preferenziale col vento del METAR: più vento frontale, a parità il miglior avvicinamento. Con vento calmo o variabile nessuna
+  // prima il vento (direzione con più vento frontale; mai vento in coda), poi tra le piste parallele lo schema delle AOI per la partenza,
+  // altrimenti il miglior avvicinamento. Con vento calmo o variabile vale solo lo schema AOI, se c'è
+  const aoi = APT_AOI?.[icao] || null, aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm) : null;
   const prefId = () => {
-    const ok = heads.map(h => ({ h, c: aptWindComp(h, wind) })).filter(x => x.c && x.c.hw > 0);
+    st.prefWhy = '';
+    const all = heads.map(h => ({ h, c: aptWindComp(h, wind) }));
+    const ok = all.filter(x => x.c && x.c.hw > 0);
+    const calm = !wind || wind.dir == null || wind.spd <= 3;
+    let cand = ok;
+    if (ok.length) { const top = Math.max(...ok.map(x => x.c.hw)); cand = ok.filter(x => x.c.hw >= top - 1); }
+    else if (calm) cand = all;
+    if (!cand.length) return null;
+    const aoiHit = aoiDep?.rw && cand.find(x => x.h.id === aoiDep.rw);
+    if (aoiHit) { st.prefWhy = `${calm && !ok.length ? 'calm wind' : 'wind HW ' + aoiHit.c.hw} · AOI departure scheme (${aoiDep.day} day, ${aoiDep.slot}${aoi.dep.mark ? ' ‡' : ''})`; return aoiHit.h.id; }
     if (!ok.length) return null;
-    ok.sort((a, b) => (b.c.hw - a.c.hw) || (brfApptRank(icao, a.h.id) - brfApptRank(icao, b.h.id)));
-    return ok[0].h.id;
+    cand.sort((a, b) => (b.c.hw - a.c.hw) || (brfApptRank(icao, a.h.id) - brfApptRank(icao, b.h.id)));
+    st.prefWhy = `wind HW ${cand[0].c.hw}` + (cand.length > 1 ? ' · best approach' : '');
+    return cand[0].h.id;
   };
   const fit = (box) => {
     const pts = heads.flatMap(h => { const t = P(h.thr), [ux, uy] = aptDir(h.brg), b = (h.back || 0) + 60; return [t, P(h.end), [t[0] - ux * b, t[1] - uy * b]]; }); if (!pts.length) { st.cx = 0; st.cy = 0; st.w = 4000; }
@@ -394,7 +435,7 @@ async function viewAirport(main, arg) {
       </section>
       <section class="apt-card"><h4>Warning note</h4>
         <textarea id="aptNote" rows="3" placeholder="Enter warning notes for this airport…">${esc(note())}</textarea>
-        <small class="hint" id="aptNoteSt">${data?.aptNotes?.[icao]?.mt ? 'Saved ' + brfAge(data.aptNotes[icao].mt) + ' · synced with the logbook' : 'Kept for this airport on every flight, synced with the logbook.'}</small></section>
+        <small class="hint" id="aptNoteSt">${data?.aptNotes?.[icao]?.mt ? 'Saved ' + brfAge(data.aptNotes[icao].mt) + ' · synced with the logbook' : 'Kept for this airport on every flight, synced with the logbook.'}</small>${aptAoiBox(aoi, aoiDep, q)}</section>
       <section class="apt-card apt-mapcard">
         <div class="apt-map${st.full ? ' full' : ''}" id="aptMap">
           ${a && heads.length ? `<svg class="brf-svg apt-svg" id="aptSvg" role="img" aria-label="Airport diagram"><g id="aptG0">${mapStatic}</g><g id="aptG1"></g></svg>` : `<div class="brf-map-empty">${a ? 'No runway data for this airport.' : 'Airport not in the database.'}</div>`}
@@ -410,7 +451,7 @@ async function viewAirport(main, arg) {
           ${sel?.aip ? `<div class="apt-legend"><span class="tdz">TDZ ${Math.min(900, Math.round(sel.aip.lda / 3))} m</span><span class="exi">exit ≈ m from THR</span><span class="end">LDA end</span>${st.nsvg && st.notam ? '<span class="ncl">NOTAM closed</span>' : ''}</div>` : ''}
         </div>
         <div class="apt-src">${aip ? `AIP data: ${esc(aip.src)}, ${esc(aip.amdt || '')}${aip.eff ? ' (' + dmy(aip.eff) + ')' : ''}. Exits ≈ measured from the AIP threshold to OpenStreetMap taxiways.` : 'No AIP data for this airport: map only, no distances.'} Map © OpenStreetMap contributors. Not for navigation.</div>
-        <div class="apt-body">${rwTable()}${exitList()}</div>
+        <div class="apt-body">${rwTable()}${st.pref ? `<p class="apt-why"><span class="apt-pref">PREF</span> RWY ${esc(st.pref)}: ${esc(st.prefWhy)}${q.role === 'dep' || q.role === 'arr' ? ` <small>(${q.role === 'dep' ? 'departure' : 'arrival'}${q.hhmm ? ' ' + q.hhmm.slice(0, 2) + ':' + q.hhmm.slice(2) + 'Z' : ''})</small>` : ''}</p>` : ''}${exitList()}</div>
       </section>
       <section class="apt-card"><h4>Weather</h4>
         <h5>METAR</h5>${metRaw ? `<p class="mono">${metRaw.trim().split(/\s+/).map(tok).join(' ')}</p>` : '<p class="muted">No METAR.</p>'}

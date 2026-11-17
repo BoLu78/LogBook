@@ -1099,3 +1099,9 @@ table.apt-rw .tw { color: var(--amber); font-weight: 700; }
 table.apt-rw tr.pref td:first-child { box-shadow: inset 4px 0 0 #1f9d55; }
 .apt-pref { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #fff; background: #1f9d55; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
 .apt-legend { top: 10px; bottom: auto; }
+/* AOI (3.18) */
+.apt-aoi { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.apt-aoi h5 { margin: 4px 0 4px; } .apt-aoi ul { margin: 0 0 6px; padding-left: 18px; font-size: 13.5px; }
+.apt-aoi-today { margin: 4px 0 8px; font-size: 14px; }
+table.apt-aoi-t { font-size: 13px; margin-bottom: 4px; } table.apt-aoi-t td, table.apt-aoi-t th { text-align: left; }
+.apt-why { margin: 10px 0 0; font-size: 13.5px; }

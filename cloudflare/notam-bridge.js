@@ -6,6 +6,7 @@
 //                                   https://api-staging.cgifederal-aim.com (staging: le prime credenziali FAA sono per questo)
 // Uso: GET /notams?icao=GCLP  →  { icao, t, items: [{ id, number, type, cls, start, end, est, sel, text }] }
 //      GET /ping              →  { ok: true se le credenziali ci sono }
+//      GET /osm?icao=&bb=     →  mappa aeroporto OpenStreetMap, in cache 30 giorni (vedi sotto)
 const ORIGINS = ['https://bolu78.github.io'];
 let TOKEN = null;   // { v, exp } finché il Worker resta caldo
 async function token(env, host) {
@@ -32,6 +33,30 @@ function pick(f) {
     sel: n.selectionCode || '', text: String(tr?.formattedText || tr?.simpleText || n.text || '').trim(), plain: String(n.text || '').trim()
   };
 }
+// Mappe aeroporto: la stessa richiesta a OpenStreetMap (Overpass) che farebbe l'app, ma tenuta 30 giorni nella cache
+// di Cloudflare. Così la mappa arriva subito anche quando i server Overpass sono lenti (succede spesso).
+// GET /osm?icao=GCLP&bb=lat1,lon1,lat2,lon2  →  JSON Overpass
+const OVP = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+async function osm(url, cors, ctx) {
+  const icao = (url.searchParams.get('icao') || '').toUpperCase(), bb = url.searchParams.get('bb') || '';
+  const hdr = (status, cache) => ({ status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': cache } });
+  if (!/^[A-Z0-9]{4}$/.test(icao) || !/^-?\d+\.\d{4}(,-?\d+\.\d{4}){3}$/.test(bb)) return new Response('{"error":"bad_request"}', hdr(400, 'no-store'));
+  const key = new Request('https://notam-bridge.cache/osm/v1/' + icao + '/' + bb);
+  const hit = await caches.default.match(key);
+  if (hit) return new Response(hit.body, hdr(200, 'public, max-age=86400'));
+  const q = `[out:json][timeout:90][bbox:${bb}];(way[aeroway~"^(taxiway|apron|terminal|runway|stopway|hangar|tower|parking_position)$"];node[aeroway~"^(holding_position|arresting_gear|windsock|tower)$"];node[navigationaid=papi];);out tags geom;`;
+  for (const u of OVP) {
+    try {
+      const r = await fetch(u, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'LogBook-notam-bridge (bolu78.github.io/LogBook)' } });
+      if (!r.ok) continue;
+      const t = await r.text();
+      if (!/"aeroway"\s*:\s*"(runway|taxiway)"/.test(t)) continue;
+      ctx.waitUntil(caches.default.put(key, new Response(t, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=2592000' } })));
+      return new Response(t, hdr(200, 'public, max-age=86400'));
+    } catch { /* server successivo */ }
+  }
+  return new Response('{"error":"overpass_unavailable"}', hdr(502, 'no-store'));
+}
 export default {
   async fetch(req, env, ctx) {
     const origin = req.headers.get('Origin') || '';
@@ -42,6 +67,7 @@ export default {
     const url = new URL(req.url);
     const configured = !!(env.FAA_CLIENT_ID && env.FAA_CLIENT_SECRET);
     if (url.pathname === '/ping') return json({ ok: configured });
+    if (ok && req.method === 'GET' && url.pathname === '/osm') return osm(url, cors, ctx);
     if (!ok || req.method !== 'GET' || url.pathname !== '/notams') return json({ error: 'forbidden' }, 403);
     if (!configured) return json({ error: 'not_configured' }, 503);
     const icao = (url.searchParams.get('icao') || '').toUpperCase();

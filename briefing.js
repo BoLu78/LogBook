@@ -5,6 +5,7 @@
 const BRF_METNO = 'https://api.met.no/weatherapi/tafmetar/1.0/';   // METAR e TAF mondiali, leggibili dal browser
 const BRF_VATSIM = 'https://metar.vatsim.net/';                     // METAR di riserva
 const BRF_OVP = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const BRF_MAP_BRIDGE = 'https://notam-bridge.bortolotluca.workers.dev';   // stesso Worker dei NOTAM: tiene in cache le mappe OSM
 const BRF_OVP_RETRY = 30 * 60e3;     // se OpenStreetMap non risponde, riprova tra 30'
 const BRF_WX_FRESH = 10 * 60e3;      // meteo: scarica di nuovo se il dato salvato ha più di 10'
 const BRF_MAP_FRESH = 60 * 864e5;    // mappa aeroporto: 60 giorni
@@ -237,20 +238,23 @@ async function brfMap(icao, lat, lon) {
   const miss = brfRead('mapfail:' + icao);
   if (miss && Date.now() - miss.t < BRF_OVP_RETRY) return c || brfRead('map:' + icao);
   // vie: piste, stopway, raccordi, piazzali, edifici, piazzole · punti: holding point, barriere, maniche a vento, torre, PAPI
-  const q = `[out:json][timeout:25];(way["aeroway"~"^(taxiway|apron|terminal|runway|stopway|hangar|tower|parking_position)$"](around:5000,${lat},${lon});node["aeroway"~"^(holding_position|arresting_gear|windsock|tower)$"](around:5000,${lat},${lon});node["navigationaid"="papi"](around:5000,${lat},${lon}););out tags geom;`;
-  for (const u of BRF_OVP) {
+  // riquadro di ±5 km (più veloce del raggio). Prima la copia in cache del Worker (30 giorni), poi i server OpenStreetMap
+  const dl = 0.045, dn = 0.045 / Math.cos(brfRad(lat)), bb = [lat - dl, lon - dn, lat + dl, lon + dn].map(v => v.toFixed(4)).join(',');
+  const q = `[out:json][timeout:60][bbox:${bb}];(way[aeroway~"^(taxiway|apron|terminal|runway|stopway|hangar|tower|parking_position)$"];node[aeroway~"^(holding_position|arresting_gear|windsock|tower)$"];node[navigationaid=papi];);out tags geom;`;
+  const srcs = [`${BRF_MAP_BRIDGE}/osm?icao=${icao}&bb=${bb}`, ...BRF_OVP.map(u => u + '?data=' + encodeURIComponent(q))];
+  for (const u of srcs) {
     try {
-      const j = JSON.parse(await brfText(u + '?data=' + encodeURIComponent(q), 45000));
+      const j = JSON.parse(await brfText(u, 90000));
       const rd = p => [Math.round(p.lat * 1e5) / 1e5, Math.round(p.lon * 1e5) / 1e5];
       const ways = (j.elements || []).filter(e => e.geometry?.length > 1 || (e.type === 'node' && isFinite(e.lat))).map(e => ({
         a: e.tags.navigationaid === 'papi' ? 'papi' : e.tags.aeroway, r: e.tags.ref || '', w: parseFloat(e.tags.width) || 0,
         ...(e.tags['holding_position:type'] ? { t: e.tags['holding_position:type'] } : {}),
         g: e.type === 'node' ? [rd(e)] : e.geometry.map(rd)
       }));
-      if (!ways.length) continue;
+      if (!ways.some(w => w.a === 'runway' || w.a === 'taxiway')) continue;
       brfSave('map2:' + icao, ways);
       return brfRead('map2:' + icao) || { t: Date.now(), v: ways };
-    } catch { /* server occupato: si prova il successivo */ }
+    } catch { /* server occupato o lento: si prova il successivo */ }
   }
   brfSave('mapfail:' + icao, 1);
   return c || brfRead('map:' + icao);

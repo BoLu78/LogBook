@@ -402,17 +402,19 @@ async function viewAirport(main, arg) {
 
   const rwTable = () => {
     if (!heads.length) return '<p class="muted">No runway data for this airport.</p>';
+    const dist = !!(aip || aoi?.rwy);   // distanze: AIP (con LDA) o Lido AGC (TORA/ASDA/TODA)
     const rows = heads.map(h => {
-      const ap = brfAppr(icao, h.id), c = aptWindComp(h, wind), A = h.aip;
+      const ap = brfAppr(icao, h.id), c = aptWindComp(h, wind), A = h.aip || (aoi?.rwy?.[h.id] ? { ...aoi.rwy[h.id], lido: 1 } : null);
       const mag = mv == null ? '' : String(brfMag(h.brg, mv)).padStart(3, '0') + '°';
       return `<tr class="click${h.id === st.sel ? ' sel' : ''}${h.id === st.pref ? ' pref' : ''}" data-rw="${esc(h.id)}"><td class="l"><b>${esc(h.id)}</b>${h.id === st.pref ? ' <span class="apt-pref">PREF</span>' : ''}</td><td>${mag}</td>
-        ${aip ? (A ? `<td>${A.tora}</td><td>${A.toda}</td><td>${A.asda}</td><td><b>${A.lda}</b></td><td>${A.elev ?? ''}</td>` : '<td colspan="5" class="muted">not in AIP data</td>') : ''}
+        ${dist ? (A ? `<td>${A.tora}</td><td>${A.toda}</td><td>${A.asda}</td><td><b>${A.lda ?? '—'}</b></td><td>${A.elev ?? '—'}</td>` : '<td colspan="5" class="muted">not in the data</td>') : ''}
         <td class="l">${ap ? esc(ap.all.join(' · ')) : '<span class="muted">—</span>'}</td>
         <td>${c ? `${c.hw < 0 ? 'TW ' + -c.hw : 'HW ' + c.hw} · XW ${c.xw}${c.xw ? c.side : ''}` : '<span class="muted">—</span>'}</td></tr>`;
     }).join('');
-    const ints = (aip?.int || []).map(x => `<li><b>RWY ${esc(x.rwy)}</b> from ${esc(x.from)}: TORA ${x.tora} · TODA ${x.toda} · ASDA ${x.asda}${x.note ? ` <small>${esc(x.note)}</small>` : ''}</li>`).join('');
-    return `<div class="scroll-x"><table class="data apt-rw"><thead><tr><th class="l">RWY</th><th>QFU</th>${aip ? '<th>TORA</th><th>TODA</th><th>ASDA</th><th>LDA</th><th>THR ft</th>' : ''}<th class="l">Approaches</th><th>Wind (METAR)</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${ints ? `<h5>Intersection take-off (AIP)</h5><ul class="apt-int">${ints}</ul>` : ''}`;
+    const ints = (aip?.int || aoi?.int || []).map(x => `<li><b>RWY ${esc(x.rwy)}</b> from ${esc(x.from)}: TORA ${x.tora}${x.toda ? ' · TODA ' + x.toda : ''}${x.asda ? ' · ASDA ' + x.asda : ''}${x.note ? ` <small>${esc(x.note)}</small>` : ''}</li>`).join('');
+    return `<div class="scroll-x"><table class="data apt-rw"><thead><tr><th class="l">RWY</th><th>QFU</th>${dist ? '<th>TORA</th><th>TODA</th><th>ASDA</th><th>LDA</th><th>THR ft</th>' : ''}<th class="l">Approaches</th><th>Wind (METAR)</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${!aip && aoi?.rwy ? '<p class="hint">Distances: Lido AGC (TORA, ASDA, TODA). LDA and threshold are not in the Lido charts: no landing distances on the map.</p>' : ''}
+      ${ints ? `<h5>Intersection take-off (${aip?.int ? 'AIP' : 'Lido'})</h5><ul class="apt-int">${ints}</ul>` : ''}`;
   };
   const exitList = () => {
     const h = heads.find(x => x.id === st.sel); if (!h) return '';

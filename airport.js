@@ -5,8 +5,6 @@
    Modulo separato, caricato solo quando serve: se qui qualcosa non va, il resto dell'app non ne risente. */
 let APT_AIP = null;
 async function aptAipDB() { if (!APT_AIP) { try { APT_AIP = await (await fetch('data/aip.json')).json(); } catch { APT_AIP = {}; } } return APT_AIP; }
-let APT_AOI = null;
-async function aptAoiDB() { if (!APT_AOI) { try { APT_AOI = await (await fetch('data/aoi.json')).json(); } catch { APT_AOI = {}; } } return APT_AOI; }
 // schema delle piste preferenziali per la partenza (AOI): giorno "first"/"second" e pista per l'orario UTC dato
 function aptAoiDep(aoi, date, hhmm, tz) {
   const D = aoi?.dep; if (!D || !date) return null;
@@ -333,7 +331,8 @@ function aptWindBox(wind, mv) {
 function aptAoiBox(aoi, dep, q) {
   if (!aoi) return '';
   const fmt = set => set.map(([r, a, b]) => `<b>${esc(r)}</b> ${a}-${b}`).join(' · ');
-  let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src)}</small></h5><ul>${(aoi.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+  const age = aoi.date ? (Date.now() - Date.parse(aoi.date)) / 864e5 : 0;
+  let h = `<div class="apt-aoi"><h5>AOI <small>${esc(aoi.src || '')}${aoi.date ? ' · ' + dmy(aoi.date) : ''}</small>${age > 183 ? ' <span class="apt-old">older than 6 months: check the AOI</span>' : ''}</h5><ul>${(aoi.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
   if (aoi.dep) {
     const S = aoi.dep.schemes;
     h += `<h5>${esc(aoi.dep.title)}</h5>`;
@@ -349,7 +348,7 @@ function aptAoiBox(aoi, dep, q) {
 async function viewAirport(main, arg) {
   const q = aptParse(arg);
   if (!/^[A-Z0-9]{4}$/.test(q.icao)) { main.innerHTML = '<h1>Airport</h1><p class="lede">No airport given. Open it from the icon next to DEP or ARR in a flight.</p>'; return; }
-  try { await Promise.all([loadAirports(), brfRwyDB(), brfAiracLoad(), aptAipDB(), aptAoiDB()]); } catch { /* si mostra quello che c'è */ }
+  try { await Promise.all([loadAirports(), brfRwyDB(), brfAiracLoad(), aptAipDB()]); } catch { /* si mostra quello che c'è */ }
   if (typeof IATA !== 'undefined' && !IATA) { try { IATA = await (await fetch('data/iata.json')).json(); } catch { /* niente IATA */ } }
   const icao = q.icao, a = apt(icao);
   const my = viewAirport.seq = (viewAirport.seq || 0) + 1;
@@ -373,7 +372,8 @@ async function viewAirport(main, arg) {
   // pista preferenziale col vento del METAR: più vento frontale, a parità il miglior avvicinamento. Con vento calmo o variabile nessuna
   // prima il vento (direzione con più vento frontale; mai vento in coda), poi tra le piste parallele lo schema delle AOI per la partenza,
   // altrimenti il miglior avvicinamento. Con vento calmo o variabile vale solo lo schema AOI, se c'è
-  const aoi = APT_AOI?.[icao] || null, aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm, a?.[4]) : null;
+  const aoi = data?.aptAoi?.[icao] || null,   // AOI: dati privati del logbook (importati da Settings), mai nel sito pubblico
+    aoiDep = q.role !== 'arr' ? aptAoiDep(aoi, q.date, q.hhmm, a?.[4]) : null;
   const prefId = () => {
     st.prefWhy = '';
     const all = heads.map(h => ({ h, c: aptWindComp(h, wind) }));

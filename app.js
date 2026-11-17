@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.18.1';
+const APP_VERSION = '3.19.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -1677,6 +1677,12 @@ function viewData(main) {
   ${sec('<path d="M12 2.5 14 9h7l-5.6 4 2.1 6.7L12 15.6l-5.5 4.1L8.6 13 3 9h7z"/>', 'Approaches (AIRAC)', `
     <div class="set-row"><span class="k">Data</span><span class="v" id="dAirac">${typeof brfAiracLoad === 'function' && BRF_AIRAC?.apts ? `${esc(BRF_AIRAC.src || 'AIRAC')} · ${esc(BRF_AIRAC.date || '?')} · ${fmtN(Object.keys(BRF_AIRAC.apts).length)} airports` : 'Not loaded'}</span></div>
     <div class="set-row act"><label class="btn file-btn">Import AIRAC file<input type="file" id="dAiracFile" accept=".json,application/json" hidden></label>${typeof brfAiracLoad === 'function' && BRF_AIRAC?.apts ? '<button type="button" class="btn" id="dAiracDel">Remove</button>' : ''}<span class="hint">ILS category and approaches for each runway, shown in the briefing. The file stays on this device only and is not synced.</span></div>`)}
+  ${sec('<path d="M4 4h12l4 4v12H4z"/><path d="M8 12h8M8 16h6"/>', 'Airport info (AOI)', (() => {
+    const A = Object.entries(data?.aptAoi || {}), old = A.filter(([, x]) => x.date && Date.now() - Date.parse(x.date) > 183 * 864e5);
+    return `<div class="set-row"><span class="k">Airports</span><span class="v">${A.length ? `${A.length} · ${esc(A.map(([k]) => k).sort().join(' '))}` : 'None'}</span></div>
+    ${old.length ? `<div class="set-row"><span class="k">To check</span><span class="v warn">${esc(old.map(([k]) => k).join(' '))} — older than 6 months</span></div>` : ''}
+    <div class="set-row act"><label class="btn file-btn">Import AOI file<input type="file" id="dAoiFile" accept=".json,application/json" hidden></label><span class="hint">Notes and preferential runways from the AOI, shown in the airport page. Private: saved in the logbook and synced with your Google Drive, never in the public app.</span></div>`;
+  })())}
   ${sec(I.theme, 'Theme', `
     <div class="set-row col"><div class="theme-pick" role="radiogroup" aria-label="Theme">${THEMES.map(([k, name, desc, sw]) => `<label><input type="radio" name="theme" value="${k}" ${k === cur ? 'checked' : ''}><div class="sw">${sw.map(c => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></label>`).join('')}</div></div>`)}
   <p class="hint set-ver">Logbook ${APP_VERSION} · ${APP_DATE}</p>`;
@@ -1684,6 +1690,17 @@ function viewData(main) {
   bindDrivePanel(main);
   $('#dChoose')?.addEventListener('click', chooseFolder);
   if (typeof brfAiracLoad === 'function' && BRF_AIRAC === undefined) brfAiracLoad().then(j => { if (j && location.hash === '#dati') viewData(main); });
+  $('#dAoiFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const j = JSON.parse(await f.text()), apts = Object.entries(j.airports || j).filter(([k, v]) => /^[A-Z0-9]{4}$/.test(k) && v && typeof v === 'object');
+      if (!apts.length) throw new Error('no airports in the file');
+      const now = Date.now(); data.aptAoi ||= {};
+      for (const [k, v] of apts) data.aptAoi[k] = { ...v, date: v.date || j.date || today(), mt: now };
+      await save(); toast(`AOI loaded: ${apts.length} airports`); viewData(main);
+    } catch (err) { toast('AOI import failed: ' + err.message); }
+    e.target.value = '';
+  };
   $('#dAiracFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const j = await brfAiracImport(f); toast(`AIRAC loaded: ${fmtN(Object.keys(j.apts).length)} airports`); viewData(main); } catch (err) { toast('AIRAC import failed: ' + err.message); } e.target.value = ''; };
   $('#dAiracDel')?.addEventListener('click', async () => { await brfAiracClear(); toast('AIRAC data removed'); viewData(main); });
   renderCopies(main);
@@ -1971,10 +1988,10 @@ function mergeData(local, remote) {
   const flights = [...m.values()].filter(f => !(del[f.id] && del[f.id] >= (f.mt || 0)));
   const meta = (local.metaMt || 0) >= (remote.metaMt || 0) ? local : remote, other = meta === local ? remote : local;
   // le chiavi che questa versione non conosce restano (non si perde niente scritto da una versione più nuova)
-  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), aptNotes: mergeRoster(local.aptNotes, remote.aptNotes), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), lastPdf: Math.max(local.lastPdf || 0, remote.lastPdf || 0), deleted: del, flights };
+  return { ...remote, ...local, version: meta.version || 1, aircraft: pickMap(meta, other, 'aircraft'), simulators: pickMap(meta, other, 'simulators'), roster: mergeRoster(local.roster, remote.roster), aptNotes: mergeRoster(local.aptNotes, remote.aptNotes), aptAoi: mergeRoster(local.aptAoi, remote.aptAoi), rosterBase: local.rosterBase || remote.rosterBase, simRegDone: local.simRegDone || remote.simRegDone, lockAllDone: local.lockAllDone || remote.lockAllDone, upperDone: local.upperDone || remote.upperDone, fnFixDone: local.fnFixDone || remote.fnFixDone, acModel: { ...(meta.acModel || {}) }, simTypeDone: local.simTypeDone || remote.simTypeDone, pilot: meta.pilot, opening: meta.opening, metaMt: meta.metaMt || 0, generated: meta.generated, updated: [local.updated, remote.updated].sort().at(-1), lastPdf: Math.max(local.lastPdf || 0, remote.lastPdf || 0), deleted: del, flights };
 }
 const fmtSum = f => f.fmt ? Object.values(f.fmt).reduce((s, v) => s + v, 0) : 0;
-const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}|${d.lastPdf || 0}|${Object.values(d.aptNotes || {}).reduce((s, x) => s + (x.mt || 0), 0)}` : '';
+const sig = d => d ? `${d.flights.length}|${d.flights.reduce((s, f) => s + (f.mt || 0) + fmtSum(f), 0)}|${Object.values(d.roster || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.keys(d.deleted || {}).length}|${d.metaMt || 0}|${d.pilot}|${d.lastPdf || 0}|${Object.values(d.aptNotes || {}).reduce((s, x) => s + (x.mt || 0), 0)}|${Object.values(d.aptAoi || {}).reduce((s, x) => s + (x.mt || 0), 0)}` : '';
 async function syncNow(interactive) {
   if (!gdClientId()) return;
   if (GD.busy) { GD.again = true; return; }   // una modifica durante la sincronizzazione: si ripete subito dopo

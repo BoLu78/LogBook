@@ -1105,3 +1105,4 @@ table.apt-rw tr.pref td:first-child { box-shadow: inset 4px 0 0 #1f9d55; }
 .apt-aoi-today { margin: 4px 0 8px; font-size: 14px; }
 table.apt-aoi-t { font-size: 13px; margin-bottom: 4px; } table.apt-aoi-t td, table.apt-aoi-t th { text-align: left; }
 .apt-why { margin: 10px 0 0; font-size: 13.5px; }
+.apt-old { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--amber); border-radius: 4px; padding: 1px 6px; letter-spacing: .03em; }

@@ -34,3 +34,6 @@ const n=M({flights:[],aptNotes:{GCLP:{txt:'a',mt:5},LIBD:{txt:'x',mt:9}}},{fligh
 assert.equal(n.aptNotes.GCLP.txt,'b'); assert.equal(n.aptNotes.LIBD.txt,'x'); assert.equal(n.aptNotes.LIMC.txt,'m');
 assert.notEqual(S({flights:[],aptNotes:{GCLP:{txt:'a',mt:5}}}),S({flights:[],aptNotes:{GCLP:{txt:'b',mt:7}}}));
 console.log('apt notes merge ok');
+// 7. AOI private per aeroporto: vince la più recente
+const o=M({flights:[],aptAoi:{LIMC:{src:'a',mt:5}}},{flights:[],aptAoi:{LIMC:{src:'b',mt:9},HESH:{src:'c',mt:1}}});
+assert.equal(o.aptAoi.LIMC.src,'b'); assert.equal(o.aptAoi.HESH.src,'c'); console.log('aoi merge ok');

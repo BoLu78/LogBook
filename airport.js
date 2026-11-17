@@ -245,9 +245,10 @@ async function aptNotams(icao, force) {
   const c = brfRead('notam:' + icao);
   if (!force && c && Date.now() - c.t < APT_NOTAM_FRESH) return { state: 'ok' };
   try {
-    const r = await fetch(`${APT_NOTAM_BRIDGE}/notams?icao=${icao}${force ? '&force=1' : ''}`, { cache: 'no-store', signal: AbortSignal.timeout?.(15000) });
+    const r = await fetch(`${APT_NOTAM_BRIDGE}/notams?icao=${icao}${force ? '&force=1' : ''}`, { cache: 'no-store', signal: AbortSignal.timeout?.(25000) });
     if (r.status === 503) return { state: 'off' };
-    if (!r.ok) return { state: 'err', why: 'HTTP ' + r.status };
+    if (r.status === 429) return { state: 'err', why: 'busy (FAA rate limit): try again in a minute' };
+    if (!r.ok) { const e = await r.json().catch(() => ({})); return { state: 'err', why: e.error === 'faa_429' ? 'busy (FAA rate limit): try again in a minute' : 'HTTP ' + r.status }; }
     const j = await r.json();
     brfSave('notam:' + icao, j.items || []);
     return { state: 'ok' };

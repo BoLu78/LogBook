@@ -3,12 +3,32 @@
 // Variabili (Settings → Variables and Secrets):
 //   FAA_CLIENT_ID (secret), FAA_CLIENT_SECRET (secret)        — quelle date dalla FAA (7-AWA-NAIMES@faa.gov)
 //   NMS_HOST (testo, facoltativo) — https://api-nms.aim.faa.gov (produzione, predefinito)
-//                                   https://api-staging.cgifederal-aim.com (staging: le prime credenziali FAA sono per questo)
+//                                   https://api-staging.cgifederal-aim.com (staging, solo per prove)
+// La produzione FAA rifiuta le richieste troppo ravvicinate (HTTP 429): il Worker le mette in fila, una alla volta,
+// e se la FAA risponde 429 riprova da solo fino a 2 volte, aspettando quanto chiede (Retry-After) o 2 s / 4 s.
 // Uso: GET /notams?icao=GCLP  →  { icao, t, items: [{ id, number, type, cls, start, end, est, sel, text }] }
 //      GET /ping              →  { ok: true se le credenziali ci sono }
 //      GET /osm?icao=&bb=     →  mappa aeroporto OpenStreetMap, in cache 30 giorni (vedi sotto)
 const ORIGINS = ['https://bolu78.github.io'];
 let TOKEN = null;   // { v, exp } finché il Worker resta caldo
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// una richiesta alla FAA per volta, almeno 1,5 s tra l'una e l'altra
+let QUEUE = Promise.resolve(), LAST = 0;
+function faaSlot(fn) {
+  const run = QUEUE.then(async () => { const w = LAST + 1500 - Date.now(); if (w > 0) await sleep(w); try { return await fn(); } finally { LAST = Date.now(); } });
+  QUEUE = run.catch(() => {});
+  return run;
+}
+// GET alla FAA con nuovo tentativo su 429 (troppe richieste) e su token scaduto
+async function faaGet(env, host, path) {
+  for (let i = 0; ; i++) {
+    const r = await faaSlot(async () => fetch(host + path, { headers: { Authorization: 'Bearer ' + await token(env, host), nmsResponseFormat: 'GEOJSON', Accept: 'application/json' } }));
+    if ((r.status === 401 || r.status === 403) && i === 0) { TOKEN = null; continue; }
+    if (r.status !== 429 || i >= 2) return r;
+    const ra = parseInt(r.headers.get('Retry-After') || '', 10);
+    await sleep(Math.min(Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000 * (i + 1), 6000));
+  }
+}
 async function token(env, host) {
   if (TOKEN && Date.now() < TOKEN.exp) return TOKEN.v;
   const r = await fetch(host + '/v1/auth/token', {
@@ -77,10 +97,8 @@ export default {
     if (url.searchParams.get('force') !== '1') { const hit = await cache.match(key); if (hit) { const r = new Response(hit.body, hit); for (const [k, v] of Object.entries(cors)) r.headers.set(k, v); return r; } }
     const host = (env.NMS_HOST || 'https://api-nms.aim.faa.gov').replace(/\/+$/, '');
     try {
-      const get = async () => fetch(`${host}/nmsapi/v1/notams?location=${icao}`, { headers: { Authorization: 'Bearer ' + await token(env, host), nmsResponseFormat: 'GEOJSON', Accept: 'application/json' } });
-      let r = await get();
-      if (r.status === 401 || r.status === 403) { TOKEN = null; r = await get(); }
-      if (!r.ok) return json({ error: 'faa_' + r.status }, 502);
+      const r = await faaGet(env, host, `/nmsapi/v1/notams?location=${icao}`);
+      if (!r.ok) return json({ error: 'faa_' + r.status }, r.status === 429 ? 429 : 502);
       const j = await r.json();
       const items = (j?.data?.geojson || []).map(pick).filter(x => x.number || x.text);
       const out = json({ icao, t: Date.now(), items }, 200, 'public, max-age=600');

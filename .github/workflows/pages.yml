@@ -22,5 +22,12 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+      # a volte GitHub non trova subito il pacchetto appena caricato: riprova da solo dopo 30 secondi
       - id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4

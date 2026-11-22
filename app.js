@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.21.0';
+const APP_VERSION = '3.22.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -162,7 +162,14 @@ const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; 
 const SUM_KEYS = ['total', 'spSe', 'spMe', 'mp', 'night', 'ifr', 'pic', 'sic', 'dual', 'instr', 'sim', 'toDay', 'toNight', 'ldgDay', 'ldgNight'];
 // riepilogo mostrato sulle sezioni chiuse del volo
 const remTagOf = (rem, signed) => [rem ? (rem.length > 28 ? rem.slice(0, 27) + '…' : rem) : '', signed ? '✓ signed' : ''].filter(Boolean).join(' · ') || 'Tap to add';
-const fuelTagOf = f => [f.pax ? `${f.pax} PAX` : '', f.payload ? `${f.payload} t payload` : '', f.fuelUsed ? `${f.fuelUsed} t fuel` : ''].filter(Boolean).join(' · ') || 'Tap to add';
+const fuelTagOf = f => [f.pax ? `${f.pax} PAX` : '', f.payload ? `${f.payload} t payload` : '', f.fuelUsed ? `${f.fuelUsed} t fuel` : '', f.nm ? `${fmtN(f.nm)} NM` : ''].filter(Boolean).join(' · ') || 'Tap to add';
+// time dilation (per gioco): l'orologio di bordo rispetto a terra. Quota (+, relatività generale) meno velocità (−, relatività ristretta).
+// Quota media 10 000 m sul tempo in volo, velocità media = distanza / tempo in volo. Risultato in nanosecondi.
+function timeDilationNs(airMin, nm) {
+  if (!airMin || !nm) return null;
+  const T = airMin * 60, v = nm * 1852 / T, c2 = 299792458 ** 2;
+  return T * (9.81 * 10000 / c2 - v * v / (2 * c2)) * 1e9;
+}
 const EMPTY = () => ({ id: '', date: '', kind: 'flight', dep: '', arr: '', out: '', inn: '', type: '', reg: '', spSe: 0, spMe: 0, mp: 0, total: 0, picName: '', toDay: 0, toNight: 0, ldgDay: 0, ldgNight: 0, night: 0, ifr: 0, pic: 0, sic: 0, dual: 0, instr: 0, simType: '', sim: 0, remarks: '', src: 'app' });
 
 // ---------- archivio locale (IndexedDB) ----------
@@ -678,6 +685,9 @@ function viewEdit(main, id) {
   let confirmed = !orig?.planned;          // un volo NetLine resta programmato finché non scrivi un orario effettivo
   let created = !!orig;
   const role = orig ? roleOf(orig) : 'PIC';
+  // equipaggio per l'FTL: piloti letti dal roster per questa tratta, riposi cabina della tabella OMA 7.1.7.3 (B787 classe 1, altri classe 2)
+  const rosterPc = (data.roster?.[f.date]?.legs || []).find(l => l.k === 'flight' && l.dep === f.dep && (!f.out || !l.out || l.out === f.out.replace(':', '')))?.pc || (f.sched?.out && (data.roster?.[f.date]?.legs || []).find(l => l.k === 'flight' && l.out === f.sched.out.replace(':', ''))?.pc) || 0;
+  const cabOpts = /787/.test(f.type || '') ? [90, 105, 120, 135, 155, 180, 205, 230] : [90, 120, 140, 160, 180, 205];
   const isSim = f.kind === 'sim';
   const simTypes = [...new Set([...KNOWN_SIMS, ...Object.keys(SIM_DEVICES)])];
   const mpOn = !orig || f.mp > 0 || !(f.spSe || f.spMe);
@@ -766,30 +776,37 @@ function viewEdit(main, id) {
 
     <section class="sheet-card">
       <h3>Function</h3>
-      <div class="rows">
+      <div class="rows fn-rows">
         <div class="ri"><span>Function</span><div class="seg" role="radiogroup" aria-label="Pilot function">
           ${['PIC', 'PICUS', 'SIC', 'LIFUS', 'DUAL'].map(r => `<label><input type="radio" name="role" value="${r}" ${r === role ? 'checked' : ''}><span>${r}</span></label>`).join('')}</div></div>
         <label class="ri"><span>PIC name</span><input id="picName" value="${esc(f.picName)}"></label>
         <label class="ri"><span>IFR</span><input id="ifr" class="short" value="${hm(f.ifr)}" ${ifrAll ? 'data-auto="1"' : ''}></label>
         <label class="ri"><span>Multi-pilot</span><input type="checkbox" class="sw" id="mpOn" ${mpOn ? 'checked' : ''}></label>
         <label class="ri"><span>Instructor</span><input type="checkbox" class="sw" id="instrOn" ${f.instr ? 'checked' : ''}></label>
+        <div class="ri"><span>Pilots <small>FTL</small></span><div class="seg" role="radiogroup" aria-label="Pilots on the duty, for FTL">
+          ${[2, 3, 4].map(n => `<label><input type="radio" name="ftlCrew" value="${n}" ${n === (f.ftlCrew || rosterPc || 2) ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div></div>
+        <label class="ri" id="cabRow"><span>Cabin rest <small>FTL</small></span><select id="ftlCabin"><option value="">As needed</option>${cabOpts.map(m => `<option value="${m}" ${m === f.ftlCabin ? 'selected' : ''}>${hm(m)}</option>`).join('')}</select></label>
       </div>
+      <p class="hint rows-hint" id="ftlHint"></p>
       ${orig && fnMismatch(orig) ? `<div class="fn-warn keep" id="fnWarn">⚠︎ Function time saved: PIC ${hm(orig.pic) || '0:00'} · SIC ${hm(orig.sic) || '0:00'} · Dual ${hm(orig.dual) || '0:00'}, but total time is ${hm(orig.total)}. <button type="button" class="btn small primary keep" id="fnFix">Set ${esc(roleOf(orig) || 'PIC')} = ${hm(orig.total)}</button></div>` : ''}
       <p class="hint rows-hint" id="roleHint"></p>
       ${f.crew ? `<p class="hint rows-hint">NetLine crew: ${esc(f.crew)}</p>` : ''}
     </section>
 
-    <details class="sheet-card fold" id="fuelBox">
-      <summary><h3>Payload · Fuel <span class="chk-tag" id="fuelTag">${esc(fuelTagOf(f))}</span></h3></summary>
-      <div class="tiles">
+    <details class="sheet-card fold pfr" id="fuelBox">
+      <summary><h3>Payload · Fuel · Route <span class="chk-tag" id="fuelTag">${esc(fuelTagOf(f))}</span><span class="chk-tag swx-sum" id="swxTag" hidden></span></h3></summary>
+      <div class="tiles pfr-in">
         <label><span>Payload</span><input id="payload" inputmode="decimal" value="${f.payload || ''}" placeholder="0"><small>t</small></label>
         <label><span>PAX</span><input id="pax" type="number" min="0" inputmode="numeric" value="${f.pax || ''}" placeholder="0"></label>
-        <label><span>Fuel used</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small></label>
-        <label><span>Planned fuel burn</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small></label>
+        <label><span>Fuel used</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small><small class="fpm" id="fpm"></small></label>
+        <label><span>Planned burn</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small><small class="fpm" id="fpmPlan"></small></label>
       </div>
-      <p class="hint rows-hint">CO₂ <b id="co2">—</b> t</p>
+      <div class="pfr-line">
+        <label><span>Distance</span><input id="nm" type="number" min="0" inputmode="numeric" value="${f.nm || ''}" placeholder="—"><em>NM</em><small id="nmHint"></small></label>
+        <div><span>Time dilation</span><b id="tdil">—</b><small>just for fun</small></div>
+      </div>
+      <div class="swx" id="swxCard" hidden></div>
     </details>
-    <details class="sheet-card fold swx" id="swxCard" hidden></details>
     </div>
     <div id="fSim" ${isSim ? '' : 'hidden'}>
     <section class="sheet-card">
@@ -912,7 +929,19 @@ function viewEdit(main, id) {
     const fu = parseDec(g('fuelUsed').value), fp = parseDec(g('fuelPlan').value);
     g('fuelDiff').textContent = fu && fp ? `t, ${fu - fp > 0 ? '+' : '−'}${Math.abs(fu - fp).toFixed(1)} vs plan` : 't';
     g('fuelDiff').className = fu && fp ? (fu > fp ? 'late' : 'early') : '';
-    g('co2').textContent = fu ? (fu * 3.16).toFixed(1) : '—';
+    // carburante al minuto (in volo off→on, altrimenti block), distanza (ortodromia se non scritta), time dilation
+    // consumo al minuto block-block: effettivo sul block reale, pianificato sul block schedulato (STD–STA)
+    const air = toMin(g('off').value) != null && toMin(g('on').value) != null ? ((toMin(g('on').value) - toMin(g('off').value)) + 1440) % 1440 : null;
+    const blk = parseHM(g('total').value) || 0, pblk = sb || blk;
+    const kpm = fu && blk ? fu * 1000 / blk : null, ppm = fp && pblk ? fp * 1000 / pblk : null;
+    g('fpm').textContent = kpm ? `${kpm.toFixed(1)} kg/min` : '';
+    g('fpm').className = 'fpm' + (kpm && ppm ? kpm > ppm + 0.05 ? ' late' : kpm < ppm - 0.05 ? ' early' : '' : '');
+    g('fpmPlan').textContent = ppm ? `${ppm.toFixed(1)} kg/min` : '';
+    const gc = nmOf({ kind: 'flight', dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase() });
+    g('nm').placeholder = gc ? String(gc) : '—';
+    g('nmHint').textContent = !num(g('nm').value) && gc ? 'great circle' : '';
+    const td = timeDilationNs(air || blk, num(g('nm').value) || gc);
+    g('tdil').textContent = td == null ? '—' : `${td >= 0 ? '+' : '−'}${Math.abs(td).toFixed(1)} ns`;
     drawTO(); drawLDG();
   };
   const runNight = async () => {
@@ -1017,8 +1046,14 @@ function viewEdit(main, id) {
   g('remBox').addEventListener('toggle', sigInit); sigInit();
   g('remarks').addEventListener('input', remTag);
   g('sigClear').onclick = () => { if (locked) return; if (sigPad) sigPad.clear(); else sigGone = true; g('sigHint').textContent = 'Signature cleared.'; remTag(); schedule(); };
-  const fuelTag = () => { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value) }); };
-  ['pax', 'payload', 'fuelUsed'].forEach(k => g(k).addEventListener('input', fuelTag));
+  const ftlUi = () => {
+    const n = +(form.querySelector('input[name=ftlCrew]:checked')?.value || 2);
+    g('cabRow').hidden = n < 3;
+    g('ftlHint').textContent = `${rosterPc ? `Roster: ${rosterPc} pilots. ` : ''}Pilots${n >= 3 ? ' and cabin rest' : ''} apply to the whole duty and set the FDP max on the FTL page, as in DK3 Roster${n >= 3 && !g('ftlCabin').value ? ' (cabin rest: as needed for the planned FDP)' : ''}.`;
+  };
+  form.querySelectorAll('input[name=ftlCrew]').forEach(r => r.addEventListener('change', ftlUi)); g('ftlCabin').addEventListener('change', ftlUi); ftlUi();
+  const fuelTag = () => { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value), nm: num(g('nm').value) }); };
+  ['pax', 'payload', 'fuelUsed', 'nm'].forEach(k => g(k).addEventListener('input', fuelTag));
   let chk = null;
   const chkInit = () => { if (!chk && g('chkBox').open) chk = signaturePad(g('chkSig'), f.check?.sig, schedule); };
   g('chkBox').addEventListener('toggle', chkInit); chkInit();
@@ -1080,9 +1115,12 @@ function viewEdit(main, id) {
         instr: g('instrOn').checked ? total : 0, toDay: num(g('toDay').value), toNight: num(g('toNight').value),
         ldgDay: num(g('ldgDay').value), ldgNight: num(g('ldgNight').value), sim: 0, simType: '', remarks: rem,
         pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelPlan: parseDec(g('fuelPlan').value), fuelUsed: parseDec(g('fuelUsed').value),
-        approach: g('approach').value, nm: calc ? calc.nm : (rec.nm || 0)
+        approach: g('approach').value, nm: num(g('nm').value) || (calc ? calc.nm : (rec.nm || 0))
       });
       if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
+      const ftlN = +(form.querySelector('input[name=ftlCrew]:checked')?.value || 2), ftlC = num(g('ftlCabin').value);
+      if (ftlN !== (rosterPc || 2)) rec.ftlCrew = ftlN; else delete rec.ftlCrew;
+      if (ftlN >= 3 && ftlC) rec.ftlCabin = ftlC; else delete rec.ftlCabin;
       if (confirmed) { delete rec.planned; delete rec.change; } else rec.planned = true;
     }
     for (const k of ['picName', 'remarks', 'flightNo', 'simType', 'simReg']) if (typeof rec[k] === 'string') rec[k] = rec[k].toUpperCase();

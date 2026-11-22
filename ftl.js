@@ -73,7 +73,23 @@ function dk3Analysis() {
   if (!DK3 || !Object.keys(data.roster || {}).length) return null;
   try {
     const { days, airports } = dk3Days();
-    const res = DK3.analyze(days, { base: data.rosterBase || 'MXP', airports, hubs: ['MXP', 'VRN', 'FCO'] });
+    const opts = { base: data.rosterBase || 'MXP', airports, hubs: ['MXP', 'VRN', 'FCO'] };
+    let res = DK3.analyze(days, opts);
+    // piloti e riposo cabina scelti nella scheda del volo (una tratta qualsiasi del servizio vale per tutto il servizio)
+    const picked = data.flights.filter(f => f.kind === 'flight' && (f.ftlCrew || f.ftlCabin) && (f.out || f.sched?.out));
+    if (picked.length) {
+      const crewByDuty = {}, cabinRestByDuty = {};
+      for (const x of res.duties) {
+        if (!x.fdp) continue;
+        for (const f of picked) {
+          const o = utcMs(f.date, f.sched?.out || f.out);
+          if (o < x.startMs || o > x.endMs) continue;
+          if (f.ftlCrew) crewByDuty[x.key] = Math.max(crewByDuty[x.key] || 0, f.ftlCrew);
+          if (f.ftlCabin) cabinRestByDuty[x.key] = f.ftlCabin;
+        }
+      }
+      if (Object.keys(crewByDuty).length || Object.keys(cabinRestByDuty).length) res = DK3.analyze(days, { ...opts, crewByDuty, cabinRestByDuty });
+    }
     return new Map(res.duties.filter(x => x.fdp).map(x => [x.startMs, x]));
   } catch (e) { console.warn('DK3 FTL failed', e); return null; }
 }

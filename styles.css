@@ -1113,3 +1113,44 @@ table.apt-aoi-t { font-size: 13px; margin-bottom: 4px; } table.apt-aoi-t td, tab
 .apt-aoi-notes { list-style: none; padding: 0 !important; } .apt-aoi-notes li { margin: 4px 0; padding-left: 0; }
 .apt-tag { display: inline-block; min-width: 54px; text-align: center; font: 700 10px var(--font); letter-spacing: .05em; border-radius: 4px; padding: 2px 5px; margin-right: 8px; color: #fff; background: var(--muted); vertical-align: 1px; }
 .apt-tag.t-rwy { background: #1f9d55; } .apt-tag.t-nap { background: #7a4cc2; } .apt-tag.t-taxi { background: #c98a00; } .apt-tag.t-caution { background: var(--red); } .apt-tag.t-lvp, .apt-tag.t-atc, .apt-tag.t-ppr { background: #2f5fd0; }
+
+/* ---------- scheda volo 3.22: Function compatta, Payload · Fuel · Route con space weather ---------- */
+.fn-rows { display: grid; grid-template-columns: 1fr 1fr; }
+.fn-rows > .ri:first-child { grid-column: 1 / -1; }
+.fn-rows > .ri:nth-child(2n) { border-right: 1px solid var(--rule-soft); }
+.fn-rows > .ri:nth-last-child(-n+2) { border-bottom: 0; }
+.fn-rows > .ri { padding-top: 9px; padding-bottom: 9px; min-width: 0; }
+.fn-rows .ri input:not([type=checkbox]) { width: 100%; min-width: 0; }
+.fn-rows .ri > span { white-space: nowrap; }
+.pfr .tiles { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px 12px 0; }
+.pfr .tiles.pfr-calc { grid-template-columns: repeat(3, 1fr); padding-bottom: 10px; }
+.pfr .tiles > * { padding: 8px 6px; border-radius: 9px; }
+.pfr .tiles span { font-size: 10.5px; }
+.pfr .tiles input, .pfr .tiles b { font-size: 22px; }
+.pfr .tiles small { font-size: 11px; }
+.pfr .pfr-calc > * { background: transparent; border: 1px solid var(--rule-soft); }
+.pfr .swx { border-top: 1px solid var(--rule-soft); padding: 10px 0 4px; }
+.pfr .swx-head { padding: 0 18px 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.pfr .swx-head .swx-sum { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--ink-2); }
+.pfr .swx-head .swx-sum.warn { color: var(--amber); font-weight: 700; }
+.pfr .swx-head .swx-sum.bad { color: var(--red); font-weight: 700; }
+.fold > summary h3 .swx-sum { flex: 0 0 auto; }
+@media (max-width: 560px) { .pfr .tiles { grid-template-columns: repeat(2, 1fr); } .pfr .tiles.pfr-calc { grid-template-columns: repeat(3, 1fr); } .pfr .tiles input, .pfr .tiles b { font-size: 19px; } }
+.pfr .swx-alert { margin: 0 12px 8px; padding: 8px 10px; font-size: 13px; }
+.pfr .swx-row { margin: 0 18px 4px; }
+
+/* 3.22: consumo al minuto, riga distanza/time dilation, equipaggio FTL */
+.pfr .tiles small.fpm { font-size: 11px; color: var(--muted); }
+.pfr .tiles small.fpm.late { color: var(--red); font-weight: 700; }
+.pfr .tiles small.fpm.early { color: var(--ok); font-weight: 700; }
+.pfr-line { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline; padding: 8px 18px 10px; font-size: 14px; color: var(--ink-2); }
+.pfr-line > * { display: inline-flex; align-items: baseline; gap: 6px; }
+.pfr-line span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.pfr-line input { width: 70px; border: 0; border-bottom: 1px solid var(--rule); background: transparent; font: inherit; font-size: 16px; font-weight: 700; color: var(--ink); text-align: right; padding: 2px 0; }
+.pfr-line input:focus { outline: none; border-bottom-color: var(--accent); }
+.pfr-line em { font-style: normal; }
+.pfr-line b { font-size: 16px; color: var(--ink); }
+.pfr-line small { font-size: 11px; color: var(--muted); }
+.ri > span small { font-size: 10px; letter-spacing: .06em; color: var(--muted); margin-left: 4px; }
+.fn-rows select { border: 0; background: transparent; font: inherit; font-weight: 700; color: var(--ink); text-align: right; }
+.fn-rows > .ri[hidden] { display: none; }

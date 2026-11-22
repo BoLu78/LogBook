@@ -83,22 +83,24 @@ async function swxAssess(f) {
 
 // riquadro nella scheda volo; si aggiorna quando cambiano data, tratta o orari
 function swxCard(form) {
-  const box = form.querySelector('#swxCard'); if (!box) return;
+  const box = form.querySelector('#swxCard'), tag = form.querySelector('#swxTag'); if (!box) return;
+  const hide = () => { box.hidden = true; if (tag) tag.hidden = true; };
   let seq = 0;
   const run = async () => {
     const my = ++seq, v = id => form.querySelector('#' + id)?.value?.trim() || '';
     const f = { date: v('date'), dep: v('dep').toUpperCase(), arr: v('arr').toUpperCase(), out: v('out') || v('std'), inn: v('inn') || v('sta') };
-    if (form.querySelector('input[name=kind]:checked')?.value === 'sim') { box.hidden = true; return; }
+    if (form.querySelector('input[name=kind]:checked')?.value === 'sim') { hide(); return; }
     try { await loadAirports(); } catch { /* senza aeroporti niente valutazione */ }
     let r;
-    try { r = await swxAssess(f); } catch (e) { if (my !== seq) return; box.hidden = false; box.innerHTML = `<summary><h3>Space weather <span class="chk-tag">n/a</span></h3></summary><p class="hint rows-hint">Space weather not available: ${esc(e.message)}.</p>`; return; }
+    try { r = await swxAssess(f); } catch (e) { if (my !== seq) return; box.hidden = false; if (tag) tag.hidden = true; box.innerHTML = `<div class="swx-head">Space weather</div><p class="hint rows-hint">Not available: ${esc(e.message)}.</p>`; return; }
     if (my !== seq) return;
-    if (!r || r.skip) { box.hidden = true; return; }
+    if (!r || r.skip) { hide(); return; }
     box.hidden = false;
     const chip = (l, x) => `<span class="swx-chip ${x.n >= 3 ? 'bad' : x.n >= 1 ? 'warn' : 'ok'}" title="${esc(x.text)}">${l}${x.n}</span>`;
     const worst = r.alerts.some(a => a[0] === 'bad') ? 'bad' : r.alerts.length ? 'warn' : 'ok';
-    box.innerHTML = `<summary><h3>Space weather <span class="chk-tag swx-sum ${worst}">${worst === 'ok' ? 'No impact' : '⚠︎ ' + (worst === 'bad' ? 'Alert' : 'Advisory')} · Kp ${r.kp != null ? r.kp.toFixed(1) : '—'}${r.future ? ' · forecast' : ''}</span></h3></summary>
-      ${r.alerts.map(([c, t]) => `<div class="swx-alert ${c}"><b>⚠︎</b> ${esc(t)}</div>`).join('') || '<div class="swx-alert ok">No space weather impact expected on this route.</div>'}
+    if (tag) { tag.hidden = worst === 'ok'; tag.className = 'chk-tag swx-sum ' + worst; tag.textContent = `⚠︎ Space wx ${worst === 'bad' ? 'alert' : 'advisory'}`; }
+    box.innerHTML = `<div class="swx-head">Space weather <span class="swx-sum ${worst}">${worst === 'ok' ? 'No impact' : '⚠︎ ' + (worst === 'bad' ? 'Alert' : 'Advisory')}${r.future ? ' · forecast' : ''}</span></div>
+      ${r.alerts.map(([c, t]) => `<div class="swx-alert ${c}"><b>⚠︎</b> ${esc(t)}</div>`).join('')}
       <div class="swx-row"><span class="swx-kp ${kpCls(r.kp ?? 0)}">Kp ${r.kp != null ? r.kp.toFixed(1) : '—'}</span><span>${kpWord(r.kp ?? 0)}${r.future ? ' (max forecast for the flight)' : ''}</span>
         ${chip('R', r.R)}${chip('S', r.S)}${chip('G', r.G)}
         <span class="hint">route up to ${Math.round(r.gm)}° geomagnetic · auroral zone from ${Math.round(r.boundary)}°</span></div>`;

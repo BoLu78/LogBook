@@ -1154,3 +1154,11 @@ table.apt-aoi-t { font-size: 13px; margin-bottom: 4px; } table.apt-aoi-t td, tab
 .ri > span small { font-size: 10px; letter-spacing: .06em; color: var(--muted); margin-left: 4px; }
 .fn-rows select { border: 0; background: transparent; font: inherit; font-weight: 700; color: var(--ink); text-align: right; }
 .fn-rows > .ri[hidden] { display: none; }
+
+/* 3.23: controlli OM-A */
+.ftl-chk h2 { display: flex; align-items: center; gap: 10px; }
+.ftl-chk ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.ftl-chk li { padding: 7px 10px; border-left: 3px solid var(--rule); margin-bottom: 6px; font-size: 13.5px; line-height: 1.4; background: var(--paper); border-radius: 0 6px 6px 0; }
+.ftl-chk li.bad { border-left-color: var(--red); }
+.ftl-chk li.warn { border-left-color: var(--amber); }
+.ftl-chk li small { color: var(--muted); }

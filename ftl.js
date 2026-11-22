@@ -54,18 +54,38 @@ const dk3Ready = (async () => {
   // la prima schermata può essere stata disegnata prima: FTL e riepilogo si ridisegnano con i massimi DK3
   if (DK3 && typeof route === 'function' && typeof data !== 'undefined' && data && /^#(ftl|riepilogo)?$/.test(location.hash || '')) route();
 })();
+// C/O dopo un volo effettivo: stesso intervallo del roster dopo il block-in (di solito 30')
+function shiftCo(co, shift) {
+  if (!co || !shift || !co.time) return co;
+  const m = ((+co.time.slice(0, 2) * 60 + +co.time.slice(2, 4) + shift) % 1440 + 1440) % 1440;
+  return { ...co, time: String(Math.floor(m / 60)).padStart(2, '0') + String(m % 60).padStart(2, '0') };
+}
 // giorni del roster salvato nel formato del parser di DK3
 function dk3Days() {
   const R = data.roster || {}, airports = {};
+  // voli registrati (non programmati): orari effettivi OUT/IN al posto di quelli del roster
+  const flown = new Map(); for (const f of data.flights) if (f.kind === 'flight' && !f.planned && f.out && f.inn) flown.set(`${f.date}|${f.dep}|${f.arr}`, f);
+  const hh = t => String(t || '').replace(':', '');
+  const tm = t => t ? +t.slice(0, 2) * 60 + +t.slice(2, 4) : null;
   const days = Object.keys(R).sort().map(date => {
     const r = R[date];
     for (const [c, country] of Object.entries(r.apc || {})) airports[c] = { country };
     const pt = x => x ? { label: x.label || '', airport: x.ap || null, time: x.t || null } : null;
-    const legs = (r.legs || []).map(l => ({ kind: l.k, airline: l.al || (l.k === 'flight' ? 'NO' : null), number: l.n || null, code: l.c || null, dep: l.dep || null, arr: l.arr || null,
-      depTime: l.out || null, arrTime: l.inn || null, ac: l.ac || null, sim: l.k === 'ground' ? !!l.sim : undefined, crew: { cockpit: Array.from({ length: l.pc || 0 }, () => ({})), cabin: [], other: [] } }));
-    const seq = (r.seq || []).map(x => x.t === 'leg' ? { t: 'leg', index: x.i } : x.t === 'pickup' ? { t: 'pickup', time: x.time } : { t: x.t, label: x.label, airport: x.ap || null, time: x.time });
+    const ub = r.ub || date, prevD = new Date(Date.parse(ub + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10), nextD = new Date(Date.parse(ub + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
+    let lastShift = null;   // spostamento (min) del block-in dell'ultima tratta volata: sposta anche il C/O
+    const legs = (r.legs || []).map(l => {
+      let depTime = l.out || null, arrTime = l.inn || null, actual = false;
+      if (l.k === 'flight') {
+        const k = d => `${d}|${icaoOf(l.dep)}|${icaoOf(l.arr)}`, f = flown.get(k(ub)) || flown.get(k(nextD)) || flown.get(k(prevD));
+        if (f) { depTime = hh(f.out); arrTime = hh(f.inn); actual = true; lastShift = l.inn ? ((tm(arrTime) - tm(l.inn) + 2160) % 1440) - 720 : 0; } else lastShift = null;
+      }
+      return { kind: l.k, airline: l.al || (l.k === 'flight' ? 'NO' : null), number: l.n || null, code: l.c || null, dep: l.dep || null, arr: l.arr || null,
+        depTime, arrTime, actual, ac: l.ac || null, sim: l.k === 'ground' ? !!l.sim : undefined, crew: { cockpit: Array.from({ length: l.pc || 0 }, () => ({})), cabin: [], other: [] } };
+    });
+    const co = shiftCo(pt(r.co), lastShift);
+    const seq = (r.seq || []).map(x => x.t === 'leg' ? { t: 'leg', index: x.i } : x.t === 'pickup' ? { t: 'pickup', time: x.time } : { t: x.t, label: x.label, airport: x.ap || null, time: x.t === 'co' && co ? co.time : x.time });
     return { date, utcBase: r.ub || undefined, kind: r.kind, code: r.code || null, window: r.win || null, airport: r.ap || null, pickup: r.pickup || null,
-      checkIn: pt(r.ci), checkOut: pt(r.co), legs, seq, flags: r.fl || [], hotel: r.hotel ? { code: r.hotel } : null, ft: r.ft || null, dt: r.dt || null, notes: [] };
+      checkIn: pt(r.ci), checkOut: co, legs, seq, flags: r.fl || [], hotel: r.hotel ? { code: r.hotel } : null, ft: r.ft || null, dt: r.dt || null, notes: [] };
   });
   return { days, airports };
 }
@@ -90,7 +110,10 @@ function dk3Analysis() {
       }
       if (Object.keys(crewByDuty).length || Object.keys(cabinRestByDuty).length) res = DK3.analyze(days, { ...opts, crewByDuty, cabinRestByDuty });
     }
-    return new Map(res.duties.filter(x => x.fdp).map(x => [x.startMs, x]));
+    const duties = new Map(res.duties.filter(x => x.fdp).map(x => [x.startMs, x]));
+    duties.rests = new Map(res.rests.map(r => [r.toMs, r]));
+    duties.issues = res.issues || [];
+    return duties;
   } catch (e) { console.warn('DK3 FTL failed', e); return null; }
 }
 
@@ -182,6 +205,9 @@ function ftlModel() {
       // stato: entro il massimo, al limite (30' come DK3), serve Extension, oltre
       const m = d.maxFdp, ext = d.dk3 && !d.dk3.extPlanned ? d.extMax : null;
       d.fdpCls = d.fdp <= m - (d.dk3 ? DK3.WARN_MARGIN_MIN : m * 0.1) ? 'ok' : d.fdp <= m ? 'warn' : ext != null && d.fdp <= ext ? 'warn' : 'bad';
+      // oltre il massimo a volo fatto: Cpt Discretion (OMA 7.1.10) se entro il limite della discrezione, altrimenti superamento
+      d.cdUsed = d.fdp > m && d.discretion != null && d.fdp <= d.discretion && (d.flown || d.legs.some(l => l.aIn)) ? Math.round(d.fdp - m) : 0;
+      if (d.cdUsed) d.fdpCls = 'warn';
     }
     // segnalazioni nel fuso di acclimatazione
     const tz = d.refTz || tzOf(d.ap), s = localMin(d.start, tz), e = localMin(d.end, tz);
@@ -198,6 +224,9 @@ function ftlModel() {
       d.rest = (d.start - prev.end) / MIN;
       const atHome = icaoOf(d.ap) === icaoOf(home);
       d.minRest = Math.max(prev.dp, atHome ? 720 : (prev.tzDiff >= 240 ? 840 : 600));
+      // stesso controllo di DK3 (con gli orari effettivi): 14 h dopo riposo in volo, notte locale, riposo in più dopo Extension
+      const r = d.src === 'roster' ? dk3?.rests?.get(d.start) : null;
+      if (r) { d.rest = r.restMin; d.minRest = r.needMin; d.restWhy = r.why; d.restNight = r.hasNight; d.restSt = r.status; }
     }
     if (d.factor > 0 && d.kind !== 'standby') prev = d;
   }
@@ -280,7 +309,8 @@ function fdpNote(d) {
   if (d.limitKind === 'ext') p.push('ext');
   else if (d.limitKind === 'inflight') p.push(`in-flight rest${d.cabinRest ? `, cabin ${durHM(d.cabinRest)}` : ''}`);
   if (d.fdp > d.maxFdp && d.extMax != null && d.fdp <= d.extMax && !d.dk3.extPlanned) p.push(`needs ext (${durHM(d.extMax)})`);
-  if (d.discretion && d.fdp > d.maxFdp) p.push(`CD ${durHM(d.discretion)}`);
+  if (d.cdUsed) p.push(`Cpt Discretion used +${durHM(d.cdUsed)} (max ${durHM(d.discretion)}): report required`);
+  else if (d.discretion && d.fdp > d.maxFdp) p.push(`CD ${durHM(d.discretion)}`);
   return p.length ? ` · ${p.join(' · ')}` : '';
 }
 const lvl = (v, lim) => v > lim ? 'bad' : v >= lim * 0.9 ? 'warn' : 'ok';
@@ -288,6 +318,21 @@ function gaugeRow(label, v, lim, peak, peakDay) {
   return `<div class="ftl-g ${lvl(Math.max(v, peak ?? 0), lim)}"><div class="ftl-gh"><span>${label}</span><b>${durHM(v)}</b><small>/ ${lim / 60} h</small></div>
     <div class="ftl-bar"><i style="width:${Math.min(100, pct(v, lim))}%"></i>${peak != null && peak > v ? `<em style="left:${Math.min(100, pct(peak, lim))}%" title="Planned peak"></em>` : ''}</div>
     ${peak != null && peak > v ? `<small class="ftl-peak">planned peak ${durHM(peak)} on ${dmy(peakDay)}</small>` : '<small class="ftl-peak">&nbsp;</small>'}</div>`;
+}
+// controlli OMA cap. 7 con le stesse regole di DK3 Roster, sugli orari effettivi dove il volo è registrato
+function ftlChecksCard(model) {
+  const dk = dk3Analysis(); if (!dk) return '';
+  const from = addDays(today(), -28), td = today();
+  const list = dk.issues.filter(i => (i.severity === 'bad' || i.severity === 'warn') && i.date >= from).sort((a, b) => a.date.localeCompare(b.date));
+  const cd = model.duties.filter(d => d.cdUsed && d.date >= from), cdDates = new Set(cd.map(d => d.date));
+  // FDP oltre il massimo ma entro la Cpt Discretion: resta solo la riga della discrezione
+  for (let i = list.length - 1; i >= 0; i--) if (cdDates.has(list[i].date) && /^FDP .* above the maximum/.test(list[i].text)) list.splice(i, 1);
+  const rows = [...cd.map(d => ({ severity: 'warn', date: d.date, text: `Cpt Discretion used: FDP ${durHM(d.fdp)}, max ${durHM(d.maxFdp)} (+${durHM(d.cdUsed)}). Discretion report and longer rest required.` })), ...list]
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const bad = rows.filter(r => r.severity === 'bad').length;
+  return `<section class="chart-card ftl-chk"><h2>OM-A checks <span class="tag ${bad ? 'bad' : rows.length ? 'warn' : 'ok'}">${bad ? `${bad} exceeded` : rows.length ? `${rows.length} to watch` : 'all within limits'}</span></h2>
+    ${rows.length ? `<ul>${rows.map(r => `<li class="${r.severity}"><b>${dmy(r.date)}</b>${r.date <= td ? ' <small>flown / actual</small>' : ' <small>planned</small>'} ${esc(r.text)}</li>`).join('')}</ul>` : '<p class="hint">No exceedances in the last 28 days and in the roster.</p>'}
+    <p class="hint">Same rules as DK3 Roster (FDP, Extension, in-flight rest, rest with local night, 14 h after in-flight rest or ≥ 4 h time difference, rest after Extension, extended recovery rest). Flown legs use your actual OUT/IN times, C/O moved accordingly.</p></section>`;
 }
 function viewFTL(main) {
   if (typeof IATA !== 'undefined' && !IATA) { fetch('data/iata.json').then(r => r.json()).then(j => { IATA = j; viewFTL(main); }); main.innerHTML = '<h1>FTL</h1><p class="lede">Loading…</p>'; return; }
@@ -302,7 +347,7 @@ function viewFTL(main) {
   const row = d => {
     const tz = tzOf(d.ap), past = d.end < now;
     const fdpCls = d.fdp != null ? d.fdpCls || lvl(d.fdp, d.maxFdp) : '';
-    const restCls = d.rest != null ? (d.rest < d.minRest ? 'bad' : 'ok') : '';
+    const restCls = d.rest != null ? (d.restSt === 'over' || d.rest < d.minRest ? 'bad' : d.restSt === 'warn' ? 'warn' : 'ok') : '';
     const what = d.kind === 'standby' ? (d.code === 'RESERVE' ? 'Reserve' : 'Stand-by') : d.kind === 'sim' ? 'Simulator' : d.kind === 'transport' ? 'Positioning' : d.kind === 'ground' ? 'Ground' : (d.legs.filter(l => l.k === 'flight').map(l => icaoOf(l.dep)).concat(icaoOf(d.legs.filter(l => l.k === 'flight').at(-1)?.arr)).join('–') || 'Duty');
     const day = d.date === td ? 'today' : d.date === tmw ? 'tomorrow' : '';
     return `<tr class="${[past && !day ? 'past' : '', day ? 'day-' + day : ''].join(' ').trim()}"><td class="l">${dmy(d.date)}${day ? `<small class="day-lbl">${day === 'today' ? 'Today' : 'Tomorrow'}</small>` : ''}</td><td class="l">${esc(what)}${d.src === 'logbook' ? ' <span class="tag est" title="Rebuilt from the logbook: no roster for this day">est.</span>' : ''}</td>
@@ -310,12 +355,13 @@ function viewFTL(main) {
       <td>${d.factor === 1 ? durHM(d.dp) : d.factor ? `${durHM(d.dp * d.factor)}<small>25%</small>` : '—'}</td>
       <td class="${fdpCls}">${d.fdp != null ? `${durHM(d.fdp)}<small>max ${durHM(d.maxFdp)}${d.unknown ? ' (X)' : d.refTz !== tz ? ' (B)' : ''}${fdpNote(d)}</small>` : ''}</td>
       <td>${d.sectors || ''}</td>
-      <td class="${restCls}">${d.rest != null ? `${durHM(d.rest)}<small>min ${durHM(d.minRest)}</small>` : ''}</td>
+      <td class="${restCls}" ${d.restWhy ? `title="${esc(d.restWhy.join('; '))}"` : ''}>${d.rest != null ? `${durHM(d.rest)}<small>min ${durHM(d.minRest)}${d.restNight === false ? ' · no local night' : ''}</small>` : ''}</td>
       <td class="l">${d.flags.map(f => `<span class="tag fl">${f}</span>`).join(' ')}${d.flown ? ' <span class="tag ok">flown</span>' : ''}</td></tr>`;
   };
   main.innerHTML = `<h1>FTL</h1>
   <p class="lede">EASA FTL as in OM-A chapter 7. Duties come from the NetLine roster${hasRoster ? '' : ' (none imported yet)'}; days without a roster are rebuilt from the logbook (report 60' before OUT on the 737, 90' on the 787, end 30' after IN). For awareness only: NetLine and Crew Control are the reference.</p>
   ${hasRoster ? '' : '<p><button class="btn primary" data-act="roster">Import roster</button></p>'}
+  ${ftlChecksCard(model)}
   <section class="chart-card"><h2>Duty time</h2><div class="ftl-gs">
     ${gaugeRow('7 days', w.cur.d7, FTL_LIM.d7, w.peak.d7, w.peakDay.d7)}${gaugeRow('14 days', w.cur.d14, FTL_LIM.d14, w.peak.d14, w.peakDay.d14)}
     ${gaugeRow('28 days', w.cur.d28, FTL_LIM.d28, w.peak.d28, w.peakDay.d28)}${gaugeRow('Year ' + td.slice(0, 4), w.dYear, FTL_LIM.dYear)}</div></section>

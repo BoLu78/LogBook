@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.19.5';
+const APP_VERSION = '3.20.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -630,7 +630,7 @@ function viewFlights(main) {
   const LOCK = '<svg class="lockmark" viewBox="0 0 16 16" aria-label="Locked"><title>Locked</title><rect x="3" y="7" width="10" height="7.5" rx="1.6"/><path d="M5.3 7V5a2.7 2.7 0 0 1 5.4 0v2"/></svg>';
   const rows = shown.map(f => {
     const r = roleOf(f);
-    if (f.kind === 'sim') return `<tr class="click" data-id="${f.id}"><td class="l">${f.locked ? LOCK : '<i class="lockgap"></i>'}${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}</td><td class="l"><span class="tag sim">SIM</span></td><td class="l">${esc(f.simReg || '')}</td><td>${hm(f.sim)}</td><td></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l"></td><td class="rem o"><div>${esc(fstdRemarks(f))}</div></td></tr>`;
+    if (f.kind === 'sim') return `<tr class="click${f.planned ? ' planned' : ''}" data-id="${f.id}"><td class="l">${f.locked ? LOCK : f.planned && !f.seen ? '<i class="newdot" title="Unseen"></i>' : '<i class="lockgap"></i>'}${dmy(f.date)}</td><td class="l" colspan="4">${esc(f.simType)}${f.planned && f.out ? ` <small>${esc(f.out)}–${esc(f.inn)}</small>` : ''}</td><td class="l"><span class="tag sim">SIM</span></td><td class="l">${esc(f.simReg || '')}</td><td>${hm(f.sim)}</td><td>${f.planned ? `<span class="tag plan">${f.date < today() ? 'to confirm' : 'planned'}</span>` : ''}</td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l"></td><td class="rem o"><div>${esc(fstdRemarks(f))}</div></td></tr>`;
     if (f.planned) return `<tr class="click planned${f.date === nextDay ? ' next' : ''}" data-id="${f.id}"><td class="l">${f.seen ? '<i class="lockgap"></i>' : '<i class="newdot" title="Unseen"></i>'}${f.date === nextDay ? '<b class="next-lbl">NEXT</b>' : ''}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type || f.acHint || '')}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag plan">${f.date < today() ? 'actuals missing' : 'planned'}</span></td><td class="o"></td><td class="o"></td><td class="o"></td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.change || f.flightNo || '')}</div></td></tr>`;
     return `<tr class="click" data-id="${f.id}"><td class="l">${f.locked ? LOCK : '<i class="lockgap"></i>'}${dmy(f.date)}</td><td class="l">${esc(f.dep)}</td><td>${esc(f.out)}</td><td class="l">${esc(f.arr)}</td><td>${esc(f.inn)}</td><td class="l">${esc(f.type)}</td><td class="l">${esc(f.reg)}</td><td>${hm(f.total)}</td><td><span class="tag${r.startsWith('PIC') ? ' pic' : ''}">${r}</span></td><td class="o">${hm(f.night)}</td><td class="o">${(f.toDay + f.toNight) || ''}</td><td class="o">${(f.ldgDay + f.ldgNight) || ''}</td><td class="l">${esc(f.picName)}</td><td class="rem o"><div>${esc(f.remarks)}</div></td></tr>`;
   }).join('');
@@ -1740,7 +1740,7 @@ async function importNetline(buf) {
   IATA ||= await fetch('data/iata.json').then(r => r.json());
   const me = roster.meta?.pilotCode || '';
   const icao = c => IATA[c] || c;
-  const legs = [];
+  const legs = [], sims = [];
   // data UTC di ogni tratta: gli orari del parser sono UTC e vanno avanti nel giorno; se tornano indietro si è passata la mezzanotte UTC
   const addDay = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
   const tmin = t => t ? +t.slice(0, 2) * 60 + +t.slice(2, 4) : null;
@@ -1751,10 +1751,11 @@ async function importNetline(buf) {
       if (dep != null && prev != null && dep < prev) date = addDay(date, 1);
       if (dep != null) prev = dep;
       if (l.kind === 'flight') legs.push({ d: { ...d, date }, l });
+      else if (l.kind === 'ground' && l.sim) sims.push({ d: { ...d, date }, l });   // sessione al simulatore
       const arr = tmin(l.arrTime); if (arr != null) { if (prev != null && arr < prev) date = addDay(date, 1), prev = null; prev = arr; }
     }
   }
-  if (!legs.length) throw new Error('no flights found in the PDF: is it a NetLine Individual duty plan?');
+  if (!legs.length && !sims.length) throw new Error('no flights found in the PDF: is it a NetLine Individual duty plan?');
   const hhmm = t => t ? `${t.slice(0, 2)}:${t.slice(2)}` : '';
   const key = f => `${f.date}|${f.dep}|${f.arr}`;
   const byKey = new Map(); for (const f of data.flights) if (f.kind === 'flight') byKey.set(key(f), f);
@@ -1788,11 +1789,28 @@ async function importNetline(buf) {
     const rec = { ...EMPTY(), ...fields, id: nextId(), kind: 'flight', type: '', reg: '', src: 'netline', planned: true, seen: false, mt: Date.now() };
     data.flights.push(rec); byKey.set(k, rec); added++;
   }
+  // sessioni al simulatore del roster: pianificate come i voli (orari UTC dello schedulato); una per giorno
+  const simSeen = new Set(); let simAdded = 0;
+  for (const { d, l } of sims) {
+    const out = hhmm(l.depTime), inn = hhmm(l.arrTime), note = (l.note || '').toUpperCase();
+    simSeen.add(d.date);
+    const instr = (l.crew?.other || []).find(c => /^(TRI|TRE|SFI|SFE|INS|EXA)/.test(c.tag || '') && c.code !== me);
+    const fields = { date: d.date, out, inn, sched: { out, inn }, sim: ((toMin(inn) - toMin(out)) + 1440) % 1440,
+      simType: simName({ simType: '', remarks: `${l.ac || ''} ${note}` }, ''), simChecked: 1, remarks: note, picName: instr?.code || '', rosterCode: l.code || '' };
+    const ex = data.flights.find(f => f.kind === 'sim' && f.date === d.date);
+    if (ex && !ex.planned) { untouched++; continue; }       // già registrata: non si tocca
+    if (ex) {
+      if (ex.sched?.out !== out || ex.sched?.inn !== inn) { ex.change = `times changed from ${ex.sched?.out}–${ex.sched?.inn} to ${out}–${inn}`; Object.assign(ex, fields, { seen: false, mt: Date.now() }); updated++; }
+      continue;
+    }
+    data.flights.push({ ...EMPTY(), ...fields, id: nextId(), kind: 'sim', simReg: '', src: 'netline', planned: true, seen: false, mt: Date.now() });
+    added++; simAdded++;
+  }
   // voli ancora programmati nel periodo del PDF che nel turno nuovo non ci sono più
   const p0 = roster.meta?.periodStart, p1 = roster.meta?.periodEnd;
   // vengono tolti: se non sono più nel turno non si fanno. I voli confermati o bloccati non si toccano mai.
   if (p0 && p1) {
-    const goneIds = data.flights.filter(f => f.kind === 'flight' && f.planned && !f.locked && f.date >= p0 && f.date <= p1 && !seenKeys.has(key(f))).map(f => f.id);
+    const goneIds = data.flights.filter(f => f.planned && !f.locked && f.date >= p0 && f.date <= p1 && (f.kind === 'sim' ? !simSeen.has(f.date) : !seenKeys.has(key(f)))).map(f => f.id);
     if (goneIds.length) {
       const del = (data.deleted ||= {}); for (const id of goneIds) del[id] = Date.now();
       data.flights = data.flights.filter(f => !goneIds.includes(f.id)); gone = goneIds.length;
@@ -1800,9 +1818,14 @@ async function importNetline(buf) {
   }
   // servizi del roster (check-in/out, OFF, standby, DH, hotel) per Next days e FTL: il nuovo roster sostituisce i giorni del suo periodo
   { const now = Date.now(), R = (data.roster ||= {}), pt = x => x ? { ap: x.airport || '', t: x.time || '', label: x.label || '' } : null;
-    for (const d of roster.days || []) R[d.date] = { kind: d.kind, code: d.code || '', ci: pt(d.checkIn), co: pt(d.checkOut), dt: d.dt || '', ft: d.ft || '', win: d.window || null, hotel: typeof d.hotel === 'string' ? d.hotel : d.hotel?.name || '', pickup: (d.seq || []).find(x => x.t === 'pickup')?.time || '', legs: (d.legs || []).map(l => ({ k: l.kind, n: l.number || '', c: l.code || '', dep: l.dep || '', arr: l.arr || '', out: l.depTime || '', inn: l.arrTime || '', ac: l.ac || '' })), mt: now };
+    // per l'FTL come DK3 Roster: data UTC del primo orario (ub), flag E_FDP (fl), ordine degli eventi (seq), piloti per tratta (pc), paese degli aeroporti (apc, per i fusi)
+    const apc = c => roster.airports?.[c]?.country ? { [c]: roster.airports[c].country } : {};
+    for (const d of roster.days || []) R[d.date] = { kind: d.kind, code: d.code || '', ci: pt(d.checkIn), co: pt(d.checkOut), dt: d.dt || '', ft: d.ft || '', win: d.window || null, hotel: typeof d.hotel === 'string' ? d.hotel : d.hotel?.name || d.hotel?.code || '', pickup: (d.seq || []).find(x => x.t === 'pickup')?.time || '',
+      legs: (d.legs || []).map(l => ({ k: l.kind, n: l.number || '', c: l.code || '', al: l.airline || '', dep: l.dep || '', arr: l.arr || '', out: l.depTime || '', inn: l.arrTime || '', ac: l.ac || '', pc: l.crew?.cockpit?.length || 0, ...(l.sim ? { sim: 1 } : {}) })),
+      ub: d.utcBase || '', fl: d.flags || [], ap: d.airport || '', seq: (d.seq || []).map(x => x.t === 'leg' ? { t: 'leg', i: x.index } : { t: x.t, ap: x.airport || '', time: x.time || '', label: x.label || '' }),
+      apc: Object.assign({}, ...[d.checkIn?.airport, d.checkOut?.airport, d.airport, ...(d.legs || []).flatMap(l => [l.dep, l.arr])].filter(Boolean).map(apc)), mt: now };
     data.rosterBase = roster.meta?.base || data.rosterBase || 'MXP'; }
-  const parts = [`${added} added`, updated && `${updated} changed`, gone && `${gone} removed (no longer in roster)`, untouched && `${untouched} already flown, unchanged`].filter(Boolean);
+  const parts = [`${added} added${simAdded ? ` (${simAdded} simulator)` : ''}`, updated && `${updated} changed`, gone && `${gone} removed (no longer in roster)`, untouched && `${untouched} already flown, unchanged`].filter(Boolean);
   await save('NetLine: ' + parts.join(', '));
   updateBadge(); route();
 }

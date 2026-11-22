@@ -1063,6 +1063,10 @@ table.apt-rw .tw { color: var(--amber); font-weight: 700; }
 .apt-nsec details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 10px 0 4px; }
 .apt-svg .ncl { fill: none; stroke: var(--red); opacity: .8; stroke-linecap: butt; stroke-dasharray: 18 10; }
 .apt-svg .ncl.rwy { opacity: .55; stroke-dasharray: 40 20; }
+.apt-svg .ncl.part { stroke: var(--amber); opacity: .9; stroke-dasharray: 22 12; }
+.apt-svg .ncx { fill: none; stroke: var(--red); stroke-width: 4; stroke-linecap: round; }
+.apt-notams .nmap.part { background: var(--amber); }
+.apt-notams .nmap.none { background: var(--muted); }
 .apt-tools button.on.red { background: var(--red); border-color: var(--red); color: #fff; }
 .apt-legend .ncl::before { background: var(--red); }
 .apt-exits span.clsd { border-left-color: var(--red); opacity: .75; } .apt-exits span.clsd b { text-decoration: line-through; }

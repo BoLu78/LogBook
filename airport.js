@@ -278,22 +278,159 @@ function aptNLvl(n) {
   return /\b(TWY|TAXIWAY|APRON|STAND|VOR|DME|NDB|SID|STAR|CRANE|OBST)\b/.test(t) ? 'warn' : 'low';
 }
 const aptNTime = v => !v || /PERM/i.test(v) ? null : (x => isFinite(x) ? x : null)(Date.parse(v));
-// chiusure da disegnare: solo testi che chiudono un raccordo o una pista per intero (nessun "tra", "parte", "da/a")
-function aptNClosed(n) {
-  const t = aptNText(n).toUpperCase().replace(/\.$/, '').replace(/\s+DUE\s+(TO\s+)?[A-Z0-9 ]+$/, '');
-  if (/\b(BTN|BETWEEN|PORTION|PART|SECTION|FM|FROM|TO|EXC|EXCEPT|FOR|ACFT|WINGSPAN|ONLY)\b/.test(t.replace(/^\S+\s+\S+/, ''))) return null;
-  let m = t.match(/^RWY\s+(\d{2}[LCR]?)(?:\/(\d{2}[LCR]?))?\s+CLSD$/);
-  if (m) return { rwy: [m[1], m[2]].filter(Boolean) };
-  m = t.match(/^TWY\s+([A-Z0-9 ,]+?)\s+CLSD$/);
-  if (m) { const refs = m[1].split(/[\s,]+|\bAND\b/).map(x => x.trim()).filter(Boolean); if (refs.length && refs.every(x => /^[A-Z]{1,2}\d{0,2}[A-Z]?$/.test(x))) return { twy: refs }; }
+// chiusure da disegnare, frase per frase: raccordi o piste chiusi per intero ("TWY E AND F CLSD", "RWY 02/20 CLSD")
+// e tratti di raccordo tra due punti ("TWY A CLSD BTN 60M AFT TWY D AND 60M BFR TWY G", "... BTN TWY A AND 60M BFR INT OF TXL F1")
+const APT_TW = '[A-Z]{1,2}\\d{0,2}[A-Z]?';
+function aptNEnd(t) {
+  t = t.trim();
+  let m = t.match(/^(?:(\d+)\s*M\s+(AFT|AFTER|PAST|BFR|BEFORE|PRIOR\s+TO)\s+)?(?:(?:THE\s+)?(?:INT|INTERSECTION|JUNCTION)\s+(?:OF|WITH)\s+)?(?:TWY|TXL|TAXIWAY|TAXILANE|TL)\s*(.+)$/);
+  if (m && new RegExp('^' + APT_TW + '$').test(m[3].trim())) return { ref: m[3].trim(), off: (+m[1] || 0) * (/^(AFT|AFTER|PAST)/.test(m[2] || '') ? 1 : -1) };
+  m = t.match(/^(?:(\d+)\s*M\s+(AFT|AFTER|PAST|BFR|BEFORE|PRIOR\s+TO)\s+)?(?:(?:INT|INTERSECTION)\s+(?:OF|WITH)\s+)?RWY\s*(\d{2}[LCR]?(?:\/\d{2}[LCR]?)?)$/);
+  if (m) return { rwy: m[3].split('/')[0], off: (+m[1] || 0) * (/^(AFT|AFTER|PAST)/.test(m[2] || '') ? 1 : -1) };
   return null;
 }
+function aptNClosed(n) {
+  const out = { id: n.number || n.id || '', twy: [], rwy: [], part: [] };
+  const txt = aptNText(n).toUpperCase().replace(/\s+/g, ' ');
+  for (let t of txt.split(/\.\s+|\.$/)) {
+    t = t.trim().replace(/\s+DUE\s+(TO\s+)?.*$/, '').trim();
+    if (!t || /\b(EXC|EXCEPT|FOR ACFT|WINGSPAN|ONLY|MAX|WIP|PORTION|PART|SECTION)\b/.test(t)) continue;
+    let m = t.match(new RegExp('^(?:TWY|TAXIWAY)\\s+(' + APT_TW + ')\\s+(?:CLSD|CLOSED)\\s+(?:BTN|BETWEEN)\\s+(.+?)\\s+AND\\s+(.+)$'))
+      || t.match(new RegExp('^(?:TWY|TAXIWAY)\\s+(' + APT_TW + ')\\s+(?:BTN|BETWEEN)\\s+(.+?)\\s+AND\\s+(.+?)\\s+(?:CLSD|CLOSED)$'));
+    if (m) { const a = aptNEnd(m[2]), b = aptNEnd(m[3]); if (a && b) out.part.push({ tw: m[1], a, b, txt: t }); else out.part.push({ tw: m[1], bad: true, txt: t }); continue; }
+    if (/\b(BTN|BETWEEN|FM|FROM)\b/.test(t)) continue;
+    m = t.match(/^RWY\s+(\d{2}[LCR]?)(?:\/(\d{2}[LCR]?))?\s+(?:CLSD|CLOSED)$/);
+    if (m) { out.rwy.push(...[m[1], m[2]].filter(Boolean)); continue; }
+    m = t.match(/^(?:TWY|TAXIWAY)S?\s+([A-Z0-9 ,]+?)\s+(?:CLSD|CLOSED)$/);
+    if (m) { const refs = m[1].split(/[\s,]+|\bAND\b/).map(x => x.trim()).filter(x => x && x !== 'AND'); if (refs.length && refs.every(x => new RegExp('^' + APT_TW + '$').test(x))) out.twy.push(...refs); }
+  }
+  return out.twy.length || out.rwy.length || out.part.length ? out : null;
+}
+// ---------- geometria: tratto chiuso di un raccordo, in metri
+// catene di un raccordo: i tratti OSM con lo stesso nome uniti dove si toccano
+function aptChains(lines) {
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]), left = lines.map(l => l.slice()), out = [];
+  while (left.length) {
+    let c = left.shift(), grow = true;
+    while (grow) {
+      grow = false;
+      for (let i = 0; i < left.length; i++) {
+        const l = left[i];
+        if (d(c.at(-1), l[0]) < 2) c = c.concat(l.slice(1)); else if (d(c.at(-1), l.at(-1)) < 2) c = c.concat(l.slice(0, -1).reverse());
+        else if (d(c[0], l.at(-1)) < 2) c = l.concat(c.slice(1)); else if (d(c[0], l[0]) < 2) c = l.slice(1).reverse().concat(c);
+        else continue;
+        left.splice(i, 1); grow = true; break;
+      }
+    }
+    out.push(c);
+  }
+  return out;
+}
+// prolunga una catena con i tratti di raccordo senza nome che la continuano quasi in linea retta (OSM: nome solo su una parte)
+function aptExtend(c, free) {
+  const used = new Set(), dir = (p, q) => { const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; return [(q[0] - p[0]) / L, (q[1] - p[1]) / L]; };
+  const back = (pts, from) => { let i = pts.length - 1, acc = 0; while (i > 0 && acc < 40) { acc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); i--; } return pts[i]; };
+  for (let side = 0; side < 2; side++) {
+    for (let guard = 0; guard < 30; guard++) {
+      const end = c.at(-1), d0 = dir(back(c), end);
+      let best = null;
+      free.forEach((l, li) => {
+        if (used.has(li)) return;
+        for (let k = 0; k < l.length; k++) {
+          if (Math.hypot(l[k][0] - end[0], l[k][1] - end[1]) > 3) continue;
+          for (const tail of [l.slice(k), l.slice(0, k + 1).reverse()]) {
+            if (tail.length < 2) continue;
+            let j = 1; while (j < tail.length - 1 && Math.hypot(tail[j][0] - tail[0][0], tail[j][1] - tail[0][1]) < 15) j++;
+            const d1 = dir(tail[0], tail[j]), cos = d0[0] * d1[0] + d0[1] * d1[1];
+            if (cos > 0.85 && (!best || cos > best.cos)) best = { li, tail, cos };
+          }
+        }
+      });
+      if (!best) break;
+      used.add(best.li); c = c.concat(best.tail.slice(1));
+    }
+    c = c.slice().reverse();
+  }
+  return c;
+}
+// posizione lungo la catena (metri dall'inizio) del punto più vicino a q, e distanza
+function aptOnChain(c, q) {
+  let best = { s: 0, d: Infinity }, acc = 0;
+  for (let i = 1; i < c.length; i++) {
+    const [ax, ay] = c[i - 1], [bx, by] = c[i], L = Math.hypot(bx - ax, by - ay) || 1e-9;
+    const u = Math.max(0, Math.min(1, ((q[0] - ax) * (bx - ax) + (q[1] - ay) * (by - ay)) / (L * L)));
+    const dd = Math.hypot(ax + u * (bx - ax) - q[0], ay + u * (by - ay) - q[1]);
+    if (dd < best.d) best = { s: acc + u * L, d: dd };
+    acc += L;
+  }
+  return best;
+}
+function aptSegX(a, b, c, d) {   // intersezione di due segmenti
+  const r = [b[0] - a[0], b[1] - a[1]], q = [d[0] - c[0], d[1] - c[1]], den = r[0] * q[1] - r[1] * q[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + t * r[0], a[1] + t * r[1]] : null;
+}
+// dove il raccordo (catena) incontra le linee "target": incroci veri, oppure estremi del target a meno di 20 m
+function aptMeet(c, targets) {
+  const hits = [];
+  for (const g of targets) {
+    for (let i = 1; i < g.length; i++) for (let j = 1; j < c.length; j++) { const x = aptSegX(g[i - 1], g[i], c[j - 1], c[j]); if (x) hits.push(aptOnChain(c, x).s); }
+    for (const q of [g[0], g.at(-1)]) { const o = aptOnChain(c, q); if (o.d < 20) hits.push(o.s); }
+  }
+  return hits;
+}
+function aptCut(c, s0, s1) {
+  if (s0 > s1) [s0, s1] = [s1, s0];
+  const pt = s => { let acc = 0; for (let i = 1; i < c.length; i++) { const L = Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]); if (acc + L >= s) { const u = L ? (s - acc) / L : 0; return [c[i - 1][0] + u * (c[i][0] - c[i - 1][0]), c[i - 1][1] + u * (c[i][1] - c[i - 1][1])]; } acc += L; } return c.at(-1); };
+  const out = [pt(s0)]; let acc = 0;
+  for (let i = 1; i < c.length; i++) { acc += Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]); if (acc > s0 && acc < s1) out.push(c[i]); }
+  out.push(pt(s1));
+  return out;
+}
+// tratto chiuso: catena del raccordo, i due punti di riferimento e gli spostamenti (60 m dopo/prima)
+function aptPartGeom(part, ways, heads, P) {
+  const tw = ways.filter(w => w.a === 'taxiway' && w.r === part.tw && w.g.length > 1).map(w => w.g.map(P));
+  if (!tw.length) return null;
+  const tgt = e => e.ref ? ways.filter(w => w.a === 'taxiway' && w.r === e.ref && w.g.length > 1).map(w => w.g.map(P))
+    : heads.filter(h => h.id === e.rwy).slice(0, 1).map(h => [P(h.pair.A), P(h.pair.B)]);
+  const ta = tgt(part.a), tb = tgt(part.b);
+  if (!ta.length || !tb.length) return null;
+  let best = null;
+  const free = ways.filter(w => w.a === 'taxiway' && !w.r && w.g.length > 1).map(w => w.g.map(P));
+  for (const c of aptChains(tw).map(c => aptExtend(c, free))) {
+    const len = aptOnChain(c, c.at(-1)).s || 0;
+    for (const sa of aptMeet(c, ta)) for (const sb of aptMeet(c, tb)) {
+      if (Math.abs(sa - sb) < 1) continue;
+      if (!best || Math.abs(sa - sb) < Math.abs(best.sa - best.sb)) best = { c, sa, sb, len };
+    }
+  }
+  if (!best) return null;
+  const dir = Math.sign(best.sb - best.sa), clamp = v => Math.max(0, Math.min(best.len, v));
+  const s0 = clamp(best.sa + part.a.off * dir), s1 = clamp(best.sb + part.b.off * dir);
+  if ((s1 - s0) * dir <= 0) return null;
+  return aptCut(best.c, s0, s1);
+}
+// risultato del disegno per NOTAM: 'all' tutto sulla mappa, 'some' in parte, 'none' niente (raccordo senza nome nella mappa)
+const APT_N_DRAWN = new Map();
 function aptNotamSVG(list, ways, heads, P) {
   const path = g => g.map((p, i) => { const [x, y] = P(p); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`; }).join('');
-  const tw = new Set(list.flatMap(c => c.twy || [])), rw = new Set(list.flatMap(c => c.rwy || []));
-  let g = ways.filter(w => w.a === 'taxiway' && tw.has(w.r)).map(w => `<path class="ncl" d="${path(w.g)}" stroke-width="${(w.w || 20) + 6}"/>`).join('');
+  const mpath = g => g.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  const cross = ([x, y]) => `<path class="ncx" d="M${(x - 16).toFixed(1)},${(y - 16).toFixed(1)}L${(x + 16).toFixed(1)},${(y + 16).toFixed(1)}M${(x + 16).toFixed(1)},${(y - 16).toFixed(1)}L${(x - 16).toFixed(1)},${(y + 16).toFixed(1)}"/>`;
+  const named = new Set(ways.filter(w => w.a === 'taxiway' && w.r).map(w => w.r));
+  APT_N_DRAWN.clear();
+  let g = '';
   const done = new Set();
-  for (const h of heads) if (rw.has(h.id) && !done.has(h.pair)) { done.add(h.pair); g += `<path class="ncl rwy" d="${path([h.pair.A, h.pair.B])}" stroke-width="${h.w + 8}"/>`; }
+  for (const c of list) {
+    let ok = 0, ko = 0;
+    for (const r of c.twy) { const ws = ways.filter(w => w.a === 'taxiway' && w.r === r); if (ws.length) { ok++; g += ws.map(w => `<path class="ncl" d="${path(w.g)}" stroke-width="${(w.w || 20) + 6}"/>`).join(''); } else ko++; }
+    for (const r of c.rwy) { const h = heads.find(x => x.id === r); if (h && !done.has(h.pair)) { done.add(h.pair); g += `<path class="ncl rwy" d="${path([h.pair.A, h.pair.B])}" stroke-width="${h.w + 8}"/>`; } if (h) ok++; else ko++; }
+    for (const p of c.part) {
+      const geo = !p.bad && named.has(p.tw) ? aptPartGeom(p, ways, heads, P) : null;
+      if (geo && geo.length > 1) { ok++; g += `<path class="ncl part" d="${mpath(geo)}" stroke-width="26"/>${cross(geo[0])}${cross(geo.at(-1))}`; } else ko++;
+    }
+    APT_N_DRAWN.set(c.id, ok && !ko ? 'all' : ok ? 'some' : 'none');
+  }
   return g;
 }
 const aptNFmt = ms => { if (ms == null) return 'PERM'; const d = new Date(ms); return `${pad2(d.getUTCDate())} ${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getUTCMonth()]} ${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}Z`; };
@@ -310,13 +447,13 @@ function aptNotamHTML(icao, res, ref, refLab, drawn) {
   const rows = items.map(n => ({ n, s: aptNTime(n.start), e: aptNTime(n.end), lvl: aptNLvl(n), cl: aptNClosed(n) }))
     .map(x => ({ ...x, act: (x.s == null || x.s <= ref + 3600e3) && (x.e == null || x.e >= ref - 3600e3) }))
     .sort((a, b) => (lvR[a.lvl] - lvR[b.lvl]) || ((a.s || 0) - (b.s || 0)));
-  const li = x => `<li class="${x.lvl}"><i></i><div><b>${esc(x.n.number || x.n.id)}</b>${x.cl && x.act && drawn ? ' <span class="nmap">on map</span>' : ''}<p>${esc(aptNText(x.n))}</p>
+  const li = x => `<li class="${x.lvl}"><i></i><div><b>${esc(x.n.number || x.n.id)}</b>${x.cl && x.act && drawn ? (d => d === 'all' ? ' <span class="nmap">on map</span>' : d === 'some' ? ' <span class="nmap part">partly on map</span>' : ' <span class="nmap none">not on map</span>')(APT_N_DRAWN.get(x.cl.id)) : ''}<p>${esc(aptNText(x.n))}</p>
     <small>${aptNFmt(x.s)} – ${aptNFmt(x.e)}${x.n.est || /C\)\s*\d{10}\s*EST/.test(x.n.text || '') ? ' EST' : ''}${(d => d ? ' · ' + esc(d) : '')(aptNField(x.n.text, 'D') || x.n.sched)}</small></div></li>`;
   const on = rows.filter(x => x.act), off = rows.filter(x => !x.act);
   return head + (res?.state === 'err' ? `<p class="hint">Service ${esc(res.why || 'not reachable')}: saved NOTAMs.</p>` : '')
     + `<h5>Active at ${esc(refLab)} ±1 h <small>${on.length}</small></h5>${on.length ? `<ul class="apt-notams">${on.map(li).join('')}</ul>` : '<p class="muted">None.</p>'}`
     + (off.length ? `<details><summary>Not active at that time (${off.length})</summary><ul class="apt-notams far">${off.map(li).join('')}</ul></details>` : '')
-    + '<p class="hint">Red: runway, ILS, approaches and lights · yellow: taxiways, aprons, navaids, SID/STAR, obstacles · grey: the rest. Only whole-taxiway or whole-runway closures are drawn on the map. The official briefing package is the reference.</p>';
+    + '<p class="hint">Red: runway, ILS, approaches and lights · yellow: taxiways, aprons, navaids, SID/STAR, obstacles · grey: the rest. Closures are drawn at the flight time ±1 h: whole taxiways and runways, and taxiway portions between two named points (with the metres before/after); a taxiway without its name on the OpenStreetMap map cannot be placed and is marked “not on map”. The official briefing package is the reference.</p>';
 }
 
 // vento del METAR sulla mappa: la freccia punta dove va il vento (la mappa è orientata al nord vero), la scritta è in magnetico

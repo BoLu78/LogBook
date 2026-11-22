@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.24.0';
+const APP_VERSION = '3.25.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -519,6 +519,40 @@ function spaceTrip(kmTot, career) {
     </div>
     <p>${esc(line)}</p></div>`;
 }
+// ---------- esposizione alla radiazione cosmica: dose stimata per volo, ultimi 12/9/6/3 mesi e andamento mensile
+const radCache = new Map();
+function radOf(f) {
+  if (f.kind !== 'flight' || f.planned || !APT) return 0;
+  const k = `${f.id}|${f.mt || 0}|${f.dep}|${f.arr}|${f.total}|${f.off}|${f.on}`;
+  if (radCache.has(k)) return radCache.get(k);
+  const air = toMin(f.off) != null && toMin(f.on) != null ? ((toMin(f.on) - toMin(f.off)) + 1440) % 1440 : f.total ? Math.max(0, f.total - 20) : 0;
+  const v = radiationUSv(apt(f.dep), apt(f.arr), air) || 0;
+  radCache.set(k, v); return v;
+}
+const addMonths = (iso, n) => { const [y, m, d] = iso.split('-').map(Number), t = new Date(Date.UTC(y, m - 1 + n, 1)), last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); t.setUTCDate(Math.min(d, last)); return t.toISOString().slice(0, 10); };
+const fmtDose = u => u >= 1000 ? `${(u / 1000).toFixed(2)} mSv` : `${Math.round(u)} µSv`;
+function radiationHTML() {
+  if (!APT || typeof geomagLat !== 'function') return '';
+  const td = today(), from12 = addDays(td, -364);
+  const fl = data.flights.filter(f => f.kind === 'flight' && !f.planned && f.date >= addDays(td, -400) && f.date <= td);
+  if (!fl.length) return '';
+  const win = m => fl.filter(f => f.date > addMonths(td, -m)).reduce((a, f) => a + radOf(f), 0);
+  const w = [12, 9, 6, 3].map(m => [m, win(m)]);
+  // mesi: gli ultimi 12 compreso quello in corso
+  const months = []; for (let i = 11; i >= 0; i--) months.push(addMonths(td.slice(0, 7) + '-01', -i).slice(0, 7));
+  const per = months.map(m => fl.filter(f => f.date.startsWith(m)).reduce((a, f) => a + radOf(f), 0));
+  const avg3 = per.map((_, i) => { const a = per.slice(Math.max(0, i - 2), i + 1); return a.reduce((x, y) => x + y, 0) / a.length; });
+  const max = Math.max(...per, ...avg3, 1), W = 600, H = 150, pad = 22, bw = (W - pad * 2) / 12;
+  const y = v => H - pad - (v / max) * (H - pad * 2);
+  const bars = per.map((v, i) => `<rect x="${(pad + i * bw + 4).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw - 8).toFixed(1)}" height="${(H - pad - y(v)).toFixed(1)}" rx="3" class="rad-bar"><title>${MESI[+months[i].slice(5) - 1]} ${months[i].slice(0, 4)}: ${fmtDose(v)}</title></rect>`
+    + (v ? `<text x="${(pad + i * bw + bw / 2).toFixed(1)}" y="${(y(v) - 4).toFixed(1)}" class="rad-val">${Math.round(v)}</text>` : '')
+    + `<text x="${(pad + i * bw + bw / 2).toFixed(1)}" y="${H - 6}" class="rad-lbl">${MESI[+months[i].slice(5) - 1].slice(0, 3)}</text>`).join('');
+  const line = avg3.map((v, i) => `${i ? 'L' : 'M'}${(pad + i * bw + bw / 2).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  return `<h2>Cosmic radiation</h2>
+  <div class="recency rad-tiles">${w.map(([m, v]) => `<div><b>${fmtDose(v)}</b><span>last ${m} months</span>${m === 12 ? gauge(v, 6000) : ''}</div>`).join('')}</div>
+  <div class="rad-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated monthly dose, last 12 months">${bars}<path d="${line}" class="rad-avg"/></svg>
+    <p class="hint">Monthly dose in µSv (bars) and 3-month average (line). Estimated for each flight from the great circle, geomagnetic latitude and airborne time (FL350): a guide, not a measurement (official models such as CARI-7 ±30%). Reference: EU 2013/59/Euratom, aircrew above 1 mSv a year are assessed; the 12-month gauge is scaled to 6 mSv.</p></div>`;
+}
 function viewSummary(main) {
   if ((!APT || !IATA) && !viewSummary.loading && data.roster) viewSummary.loading = Promise.all([loadAirports(), IATA ? 0 : fetch('data/iata.json').then(r => r.json()).then(j => { IATA = j; })]).then(() => { if ((location.hash || '#riepilogo') === '#riepilogo') viewSummary(main); }).catch(() => {});
   const years = [...new Set(data.flights.map(f => f.date.slice(0, 4)))].sort().reverse();
@@ -574,6 +608,7 @@ function viewSummary(main) {
   ${recBanner(rec, nextPl)}
   ${(() => { try { return nextDaysHTML(); } catch (e) { console.error(e); return ''; } })()}
   <p class="lede">${fmtN(t.legs)} sectors and ${t.sims} simulator sessions ${label}. Average sector ${avg(sum(list.filter(f => f.kind === 'flight')))}.</p>
+  ${(() => { try { return radiationHTML(); } catch (e) { console.error(e); return ''; } })()}
   <div class="hero">
     <div class="tot">${hm0(t.total)}<small>total time</small></div>
     <div class="split">${splitBar(t, fn, 'bar')}
@@ -1069,7 +1104,7 @@ function viewEdit(main, id) {
   const ftlUi = () => {
     const n = +(form.querySelector('input[name=ftlCrew]:checked')?.value || 2);
     g('cabRow').hidden = n < 3;
-    g('ftlHint').textContent = `${rosterPc ? `Roster: ${rosterPc} pilots. ` : ''}Pilots${n >= 3 ? ' and cabin rest' : ''} apply to the whole duty and set the FDP max on the FTL page, as in DK3 Roster${n >= 3 && !g('ftlCabin').value ? ' (cabin rest: as needed for the planned FDP)' : ''}.`;
+    g('ftlHint').textContent = `${rosterPc ? `Roster: ${rosterPc} pilots. ` : ''}Pilots${n >= 3 ? ' and cabin rest' : ''} apply to the whole duty and set the FDP max on the FTL page, as in DK3 Roster${n >= 3 && !g('ftlCabin').value ? ' (cabin rest not set: the cabin rests as needed, so the pilots limit applies)' : ''}.`;
   };
   form.querySelectorAll('input[name=ftlCrew]').forEach(r => r.addEventListener('change', ftlUi)); g('ftlCabin').addEventListener('change', ftlUi); ftlUi();
   function fuelTag() { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value), dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase() }); }

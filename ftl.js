@@ -97,19 +97,24 @@ function dk3Analysis() {
     let res = DK3.analyze(days, opts);
     // piloti e riposo cabina scelti nella scheda del volo (una tratta qualsiasi del servizio vale per tutto il servizio)
     const picked = data.flights.filter(f => f.kind === 'flight' && (f.ftlCrew || f.ftlCabin) && (f.out || f.sched?.out));
-    if (picked.length) {
-      const crewByDuty = {}, cabinRestByDuty = {};
-      for (const x of res.duties) {
-        if (!x.fdp) continue;
-        for (const f of picked) {
-          const o = utcMs(f.date, f.sched?.out || f.out);
-          if (o < x.startMs || o > x.endMs) continue;
-          if (f.ftlCrew) crewByDuty[x.key] = Math.max(crewByDuty[x.key] || 0, f.ftlCrew);
-          if (f.ftlCabin) cabinRestByDuty[x.key] = f.ftlCabin;
-        }
+    const crewByDuty = {}, cabinRestByDuty = {};
+    for (const x of res.duties) {
+      if (!x.fdp) continue;
+      for (const f of picked) {
+        const o = utcMs(f.date, f.sched?.out || f.out);
+        if (o < x.startMs || o > x.endMs) continue;
+        if (f.ftlCrew) crewByDuty[x.key] = Math.max(crewByDuty[x.key] || 0, f.ftlCrew);
+        if (f.ftlCabin) cabinRestByDuty[x.key] = f.ftlCabin;
       }
-      if (Object.keys(crewByDuty).length || Object.keys(cabinRestByDuty).length) res = DK3.analyze(days, { ...opts, crewByDuty, cabinRestByDuty });
     }
+    if (Object.keys(crewByDuty).length || Object.keys(cabinRestByDuty).length) res = DK3.analyze(days, { ...opts, crewByDuty, cabinRestByDuty });
+    // riposo cabina non scelto: la cabina riposa quanto serve, quindi il massimo è quello dei piloti (la cabina limita solo con un riposo scelto più corto)
+    const auto = new Set();
+    for (const x of res.duties) if (x.fdp && x.crew >= 3 && x.limits?.inflightPilots && cabinRestByDuty[x.key] == null) {
+      cabinRestByDuty[x.key] = Math.max(...DK3.cabinRestOptions(x.limits.restClass)); auto.add(x.key);
+    }
+    if (auto.size) res = DK3.analyze(days, { ...opts, crewByDuty, cabinRestByDuty });
+    for (const x of res.duties) if (auto.has(x.key)) x.cabinAuto = true;
     const duties = new Map(res.duties.filter(x => x.fdp).map(x => [x.startMs, x]));
     duties.rests = new Map(res.rests.map(r => [r.toMs, r]));
     duties.issues = res.issues || [];
@@ -200,7 +205,7 @@ function ftlModel() {
       if (x && x.limits?.used != null) {
         d.dk3 = x; d.maxFdp = x.limits.used;
         d.unknown = x.acclimatisation?.state === 'X'; if (x.acclimatisation?.state === 'B') d.refTz = homeTz; else if (x.acclimatisation) d.refTz = repTz;
-        d.crew = x.crew; d.limitKind = x.limitKind || 'basic'; d.discretion = x.limits.discretion; d.extMax = x.limits.ext; d.cabinRest = x.usedInflight || x.limitedBy ? x.limits.cabinRest : null;
+        d.crew = x.crew; d.limitKind = x.limitKind || 'basic'; d.discretion = x.limits.discretion; d.extMax = x.limits.ext; d.cabinRest = x.usedInflight || x.limitedBy ? x.limits.cabinRest : null; d.cabinAuto = !!x.cabinAuto; d.restClass = x.limits.restClass;
       }
       // stato: entro il massimo, al limite (30' come DK3), serve Extension, oltre
       const m = d.maxFdp, ext = d.dk3 && !d.dk3.extPlanned ? d.extMax : null;
@@ -307,7 +312,11 @@ function fdpNote(d) {
   const p = [];
   if (d.crew > 2) p.push(`${d.crew} pilots`);
   if (d.limitKind === 'ext') p.push('ext');
-  else if (d.limitKind === 'inflight') p.push(`in-flight rest${d.cabinRest ? `, cabin ${durHM(d.cabinRest)}` : ''}`);
+  else if (d.limitKind === 'inflight') {
+    // riposo cabina automatico: quanto deve riposare ogni assistente per l'FDP (pianificato o effettivo)
+    const need = d.cabinAuto ? (d.fdp > 870 ? DK3.cabinRestNeeded(Math.round(d.fdp), d.restClass) : 90) : null;
+    p.push(`in-flight rest${d.cabinAuto ? need ? `, cabin needs ${durHM(need)} rest` : ', FDP beyond the cabin table' : d.cabinRest ? `, cabin ${durHM(d.cabinRest)}` : ''}`);
+  }
   if (d.fdp > d.maxFdp && d.extMax != null && d.fdp <= d.extMax && !d.dk3.extPlanned) p.push(`needs ext (${durHM(d.extMax)})`);
   if (d.cdUsed) p.push(`Cpt Discretion used +${durHM(d.cdUsed)} (max ${durHM(d.discretion)}): report required`);
   else if (d.discretion && d.fdp > d.maxFdp) p.push(`CD ${durHM(d.discretion)}`);
@@ -375,7 +384,7 @@ function viewFTL(main) {
   <section class="chart-card"><h2>Duties · last 14 days and roster</h2>
     <div class="scroll"><table class="data ftl-t"><thead><tr><th class="l">Date</th><th class="l">Duty</th><th>Report UTC</th><th>End UTC</th><th>DP</th><th>FDP</th><th>Sect.</th><th>Rest before</th><th class="l"></th></tr></thead>
     <tbody>${shown.map(row).join('') || '<tr><td colspan="9" class="l">No duties.</td></tr>'}</tbody></table></div>
-    <p class="hint">FDP max calculated as in DK3 Roster: table 7.1.7.1 at the reference time, planned Extension (E_FDP in the roster), augmented crew with in-flight rest (pilots from the roster, cabin rest as needed for the FDP); (B) acclimatised to home base, (X) unknown state; CD = Cpt Discretion. Home stand-by counts 25%, reserve 0. Rest minimum: home base the longer of the previous duty or 12 h, away 10 h (14 h after an FDP with ≥ 4 h time difference). Flags in the acclimatised time zone.</p></section>`;
+    <p class="hint">FDP max calculated as in DK3 Roster: table 7.1.7.1 at the reference time, planned Extension (E_FDP in the roster), augmented crew with in-flight rest (pilots from the roster or the flight sheet; cabin rest as needed unless set in the flight sheet); (B) acclimatised to home base, (X) unknown state; CD = Cpt Discretion. Home stand-by counts 25%, reserve 0. Rest minimum: home base the longer of the previous duty or 12 h, away 10 h (14 h after an FDP with ≥ 4 h time difference). Flags in the acclimatised time zone.</p></section>`;
   const P = projection(model), drawP = () => { const k = viewFTL.k || 'f'; projChart($('#projBox'), P, k, k === 'f' ? FTL_LIM.f28 : FTL_LIM.d28, k === 'f' ? 'Flight time' : 'Duty time'); main.querySelectorAll('.seg-mini button').forEach(b => b.classList.toggle('on', b.dataset.k === k)); };
   main.querySelectorAll('.seg-mini button').forEach(b => b.onclick = () => { viewFTL.k = b.dataset.k; drawP(); });
   drawP();

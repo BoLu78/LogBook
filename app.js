@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '3.23.0';
+const APP_VERSION = '3.24.0';
 const APP_DATE = '16/11/2026';
 /* Logbook – PWA locale. Tutti i dati restano nel browser (IndexedDB) e nella cartella di backup scelta. */
 
@@ -162,13 +162,33 @@ const typeRank = t => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; 
 const SUM_KEYS = ['total', 'spSe', 'spMe', 'mp', 'night', 'ifr', 'pic', 'sic', 'dual', 'instr', 'sim', 'toDay', 'toNight', 'ldgDay', 'ldgNight'];
 // riepilogo mostrato sulle sezioni chiuse del volo
 const remTagOf = (rem, signed) => [rem ? (rem.length > 28 ? rem.slice(0, 27) + '…' : rem) : '', signed ? '✓ signed' : ''].filter(Boolean).join(' · ') || 'Tap to add';
-const fuelTagOf = f => [f.pax ? `${f.pax} PAX` : '', f.payload ? `${f.payload} t payload` : '', f.fuelUsed ? `${f.fuelUsed} t fuel` : '', f.nm ? `${fmtN(f.nm)} NM` : ''].filter(Boolean).join(' · ') || 'Tap to add';
+const fuelTagOf = f => { const nm = f.kind === 'flight' || f.dep ? nmOf({ kind: 'flight', dep: f.dep, arr: f.arr }) : 0; return [f.pax ? `${f.pax} PAX` : '', f.payload ? `${f.payload} t payload` : '', f.fuelUsed ? `${f.fuelUsed} t fuel` : '', nm ? `${fmtN(nm)} NM` : ''].filter(Boolean).join(' · ') || 'Tap to add'; };
 // time dilation (per gioco): l'orologio di bordo rispetto a terra. Quota (+, relatività generale) meno velocità (−, relatività ristretta).
 // Quota media 10 000 m sul tempo in volo, velocità media = distanza / tempo in volo. Risultato in nanosecondi.
-function timeDilationNs(airMin, nm) {
-  if (!airMin || !nm) return null;
-  const T = airMin * 60, v = nm * 1852 / T, c2 = 299792458 ** 2;
-  return T * (9.81 * 10000 / c2 - v * v / (2 * c2)) * 1e9;
+// Con la rotazione della Terra (come Hafele–Keating): verso est si "perde", verso ovest si "guadagna". Lungo l'ortodromia, 60 tratti.
+function timeDilationNs(A, B, airMin) {
+  if (!A || !B || !airMin) return null;
+  const c2 = 299792458 ** 2, T = airMin * 60, N = 60, dt = T / N, h = 10000, R = 6371000, w = 7.2921e-5;
+  let sum = 0;
+  for (let i = 0; i < N; i++) {
+    const p = gcPoint(A, B, i / N), q = gcPoint(A, B, (i + 1) / N), lat = rad((p[0] + q[0]) / 2);
+    const vn = rad(q[0] - p[0]) * R / dt, ve = rad(((q[1] - p[1] + 540) % 360) - 180) * R * Math.cos(lat) / dt;
+    const u = w * (R + h) * Math.cos(lat), u0 = w * R * Math.cos(lat);   // velocità di rotazione in quota e a terra
+    sum += dt * (9.81 * h / c2 - ((u + ve) ** 2 + vn * vn - u0 * u0) / (2 * c2));
+  }
+  return sum * 1e9;
+}
+// dose di radiazione cosmica stimata (µSv): tasso a FL350 secondo la latitudine geomagnetica (circa 1,6 µSv/h all'equatore
+// fino a 6 µSv/h oltre 60°), salita e discesa al 40%. Una stima, non una misura: i modelli ufficiali (CARI-7) danno ±30%.
+function radiationUSv(A, B, airMin) {
+  if (!A || !B || !airMin || typeof geomagLat !== 'function') return null;
+  const N = 40, cruise = Math.max(0, airMin - 40), eff = cruise + 0.4 * Math.min(40, airMin);
+  let r = 0;
+  for (let i = 0; i < N; i++) {
+    const p = gcPoint(A, B, (i + .5) / N), gm = Math.abs(geomagLat(p[0], p[1]));
+    r += 1.6 + 4.4 * Math.min(1, Math.max(0, (gm - 15) / 45)) ** 1.5;
+  }
+  return r / N * eff / 60;
 }
 const EMPTY = () => ({ id: '', date: '', kind: 'flight', dep: '', arr: '', out: '', inn: '', type: '', reg: '', spSe: 0, spMe: 0, mp: 0, total: 0, picName: '', toDay: 0, toNight: 0, ldgDay: 0, ldgNight: 0, night: 0, ifr: 0, pic: 0, sic: 0, dual: 0, instr: 0, simType: '', sim: 0, remarks: '', src: 'app' });
 
@@ -801,8 +821,8 @@ function viewEdit(main, id) {
         <label><span>Fuel used</span><input id="fuelUsed" inputmode="decimal" value="${f.fuelUsed || ''}" placeholder="0"><small id="fuelDiff">t</small><small class="fpm" id="fpm"></small></label>
         <label><span>Planned burn</span><input id="fuelPlan" inputmode="decimal" value="${f.fuelPlan || ''}" placeholder="0"><small>t</small><small class="fpm" id="fpmPlan"></small></label>
       </div>
-      <div class="pfr-line">
-        <label><span>Distance</span><input id="nm" type="number" min="0" inputmode="numeric" value="${f.nm || ''}" placeholder="—"><em>NM</em><small id="nmHint"></small></label>
+      <div class="pfr-mini">
+        <div><span>Radiation</span><b id="rad">—</b><small>estimate</small></div>
         <div><span>Time dilation</span><b id="tdil">—</b><small>just for fun</small></div>
       </div>
       <div class="swx" id="swxCard" hidden></div>
@@ -937,11 +957,11 @@ function viewEdit(main, id) {
     g('fpm').textContent = kpm ? `${kpm.toFixed(1)} kg/min` : '';
     g('fpm').className = 'fpm' + (kpm && ppm ? kpm > ppm + 0.05 ? ' late' : kpm < ppm - 0.05 ? ' early' : '' : '');
     g('fpmPlan').textContent = ppm ? `${ppm.toFixed(1)} kg/min` : '';
-    const gc = nmOf({ kind: 'flight', dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase() });
-    g('nm').placeholder = gc ? String(gc) : '—';
-    g('nmHint').textContent = !num(g('nm').value) && gc ? 'great circle' : '';
-    const td = timeDilationNs(air || blk, num(g('nm').value) || gc);
+    const A = apt(g('dep').value.trim().toUpperCase()), B = apt(g('arr').value.trim().toUpperCase()), airT = air || (blk ? Math.max(0, blk - 20) : 0);
+    const td = timeDilationNs(A, B, airT), rd = radiationUSv(A, B, airT);
     g('tdil').textContent = td == null ? '—' : `${td >= 0 ? '+' : '−'}${Math.abs(td).toFixed(1)} ns`;
+    g('rad').textContent = rd == null ? '—' : `≈ ${rd.toFixed(1)} µSv`;
+    fuelTag();
     drawTO(); drawLDG();
   };
   const runNight = async () => {
@@ -1052,8 +1072,8 @@ function viewEdit(main, id) {
     g('ftlHint').textContent = `${rosterPc ? `Roster: ${rosterPc} pilots. ` : ''}Pilots${n >= 3 ? ' and cabin rest' : ''} apply to the whole duty and set the FDP max on the FTL page, as in DK3 Roster${n >= 3 && !g('ftlCabin').value ? ' (cabin rest: as needed for the planned FDP)' : ''}.`;
   };
   form.querySelectorAll('input[name=ftlCrew]').forEach(r => r.addEventListener('change', ftlUi)); g('ftlCabin').addEventListener('change', ftlUi); ftlUi();
-  const fuelTag = () => { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value), nm: num(g('nm').value) }); };
-  ['pax', 'payload', 'fuelUsed', 'nm'].forEach(k => g(k).addEventListener('input', fuelTag));
+  function fuelTag() { g('fuelTag').textContent = fuelTagOf({ pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelUsed: parseDec(g('fuelUsed').value), dep: g('dep').value.trim().toUpperCase(), arr: g('arr').value.trim().toUpperCase() }); }
+  ['pax', 'payload', 'fuelUsed'].forEach(k => g(k).addEventListener('input', fuelTag));
   let chk = null;
   const chkInit = () => { if (!chk && g('chkBox').open) chk = signaturePad(g('chkSig'), f.check?.sig, schedule); };
   g('chkBox').addEventListener('toggle', chkInit); chkInit();
@@ -1115,7 +1135,7 @@ function viewEdit(main, id) {
         instr: g('instrOn').checked ? total : 0, toDay: num(g('toDay').value), toNight: num(g('toNight').value),
         ldgDay: num(g('ldgDay').value), ldgNight: num(g('ldgNight').value), sim: 0, simType: '', remarks: rem,
         pax: num(g('pax').value), payload: parseDec(g('payload').value), fuelPlan: parseDec(g('fuelPlan').value), fuelUsed: parseDec(g('fuelUsed').value),
-        approach: g('approach').value, nm: num(g('nm').value) || (calc ? calc.nm : (rec.nm || 0))
+        approach: g('approach').value, nm: calc ? calc.nm : (rec.nm || 0)
       });
       if (std || sta) rec.sched = { out: std, inn: sta }; else delete rec.sched;
       const ftlN = +(form.querySelector('input[name=ftlCrew]:checked')?.value || 2), ftlC = num(g('ftlCabin').value);
